@@ -14,6 +14,7 @@ export { RepositoryModel, getRepositoryModel } from './Repository';
 export { AnalysisModel, getAnalysisModel } from './Analysis';
 export { AnalysisJobModel, getAnalysisJobModel } from './AnalysisJob';
 export { JobModel, getJobModel } from './Job';
+export { ReviewLockModel, getReviewLockModel } from './ReviewLock';
 export { WebhookEventModel, getWebhookEventModel } from './WebhookEvent';
 export { UsageMetricModel, getUsageMetricModel } from './UsageMetric';
 
@@ -22,4 +23,3 @@ export { OAuthInstallationModel, getOAuthInstallationModel } from './OAuthInstal
 export { OAuthAuthorizeModel, getOAuthAuthorizeModel } from './OAuthAuthorize';
 export { OAuthTokenModel, getOAuthTokenModel } from './OAuthToken';
 export type { TokenType } from './OAuthToken';
-

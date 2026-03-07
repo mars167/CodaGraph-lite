@@ -204,6 +204,7 @@ function isSupportedFile(filePath: string): boolean {
 function extractLineNumber(patch: string, needle: RegExp): number | undefined {
   const lines = patch.split('\n');
   let nextLine = 0;
+  const matcher = new RegExp(needle.source, needle.flags.replace(/g/g, ''));
 
   for (const line of lines) {
     const hunk = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
@@ -213,7 +214,8 @@ function extractLineNumber(patch: string, needle: RegExp): number | undefined {
     }
 
     if (line.startsWith('+')) {
-      if (needle.test(line.slice(1))) {
+      matcher.lastIndex = 0;
+      if (matcher.test(line.slice(1))) {
         return nextLine;
       }
       nextLine += 1;
@@ -706,22 +708,23 @@ export class AdvancedReviewEngine {
     const findings: ReviewFinding[] = [];
     const patch = file.patch;
     const maybeAdd = (
-      pattern: RegExp,
+      patchPattern: RegExp,
+      linePattern: RegExp,
       finding: Omit<ReviewFinding, 'filePath' | 'lineNumber' | 'source'>
     ) => {
-      if (!pattern.test(patch)) {
+      if (!patchPattern.test(patch)) {
         return;
       }
 
       findings.push({
         filePath: file.path,
-        lineNumber: extractLineNumber(patch, pattern),
+        lineNumber: extractLineNumber(patch, linePattern),
         source: 'rule',
         ...finding,
       });
     };
 
-    maybeAdd(/(^|\n)\+.*\b(eval|new Function)\s*\(/, {
+    maybeAdd(/(^|\n)\+.*\b(eval|new Function)\s*\(/, /\b(eval|new Function)\s*\(/, {
       severity: 'critical',
       category: 'security',
       title: '检测到动态执行代码',
@@ -729,15 +732,19 @@ export class AdvancedReviewEngine {
       suggestion: '改为显式分支、白名单映射或安全解释器，避免执行动态字符串。',
     });
 
-    maybeAdd(/(^|\n)\+.*\b(password|secret|token|api[_-]?key)\b/i, {
+    maybeAdd(
+      /(^|\n)\+.*\b(password|secret|token|api[_-]?key)\b[^\n]*(?:[:=])[^\n]*(?:["'`][^"'`\s]{6,}["'`]|[A-Za-z0-9_\-]{16,})/i,
+      /\b(password|secret|token|api[_-]?key)\b[^\n]*(?:[:=])[^\n]*(?:["'`][^"'`\s]{6,}["'`]|[A-Za-z0-9_\-]{16,})/i,
+      {
       severity: 'high',
       category: 'security',
       title: '疑似引入敏感信息',
       description: '变更中出现了密码、token 或 API key 相关字段，需要确认没有把秘密写进仓库。',
       suggestion: '将密钥迁移到环境变量或密钥管理系统，并避免在源码中硬编码。',
-    });
+      }
+    );
 
-    maybeAdd(/(^|\n)\+.*\b(innerHTML|dangerouslySetInnerHTML)\b/, {
+    maybeAdd(/(^|\n)\+.*\b(innerHTML|dangerouslySetInnerHTML)\b/, /\b(innerHTML|dangerouslySetInnerHTML)\b/, {
       severity: 'high',
       category: 'security',
       title: '存在直接注入 HTML 的变更',
@@ -745,7 +752,7 @@ export class AdvancedReviewEngine {
       suggestion: '优先使用安全模板渲染，必要时先做严格 sanitization。',
     });
 
-    maybeAdd(/(^|\n)\+.*\b(console\.log|debugger)\b/, {
+    maybeAdd(/(^|\n)\+.*\b(console\.log|debugger)\b/, /\b(console\.log|debugger)\b/, {
       severity: 'medium',
       category: 'maintainability',
       title: '存在调试语句',
@@ -753,7 +760,7 @@ export class AdvancedReviewEngine {
       suggestion: '在合并前移除调试语句，或替换为受控日志设施。',
     });
 
-    maybeAdd(/(^|\n)\+.*\b(TODO|FIXME|HACK)\b/i, {
+    maybeAdd(/(^|\n)\+.*\b(TODO|FIXME|HACK)\b/i, /\b(TODO|FIXME|HACK)\b/i, {
       severity: 'low',
       category: 'maintainability',
       title: '留下了待办标记',
@@ -874,13 +881,19 @@ export class AdvancedReviewEngine {
     const fallbackFindings: ReviewFinding[] = [];
 
     for (const finding of findings) {
-      if (!finding.lineNumber || finding.filePath === 'PR_OVERALL') {
+      if (finding.filePath === 'PR_OVERALL') {
         fallbackFindings.push(finding);
         continue;
       }
 
       const patch = patchByFile.get(finding.filePath);
-      const position = patch ? mapLineToInlineComment(patch, finding.lineNumber) : null;
+      const targetLine = finding.lineNumber || (patch ? getChangedHeadLines(patch)[0] : undefined);
+      if (!targetLine) {
+        fallbackFindings.push(finding);
+        continue;
+      }
+
+      const position = patch ? mapLineToInlineComment(patch, targetLine) : null;
 
       if (!position || inlineComments.length >= maxInlineComments) {
         fallbackFindings.push(finding);
@@ -888,7 +901,10 @@ export class AdvancedReviewEngine {
       }
 
       inlineComments.push({
-        finding,
+        finding: {
+          ...finding,
+          lineNumber: targetLine,
+        },
         position,
       });
     }

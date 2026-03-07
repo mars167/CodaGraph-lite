@@ -1,6 +1,7 @@
 import { getOAuthInstallationModel } from '../models/OAuthInstallation';
 import type { OAuthInstallation } from '../models/types';
 import { refreshAccessToken } from '../oauth/handlers';
+import { getGitHubAppService } from './GitHubAppService';
 
 function isExpired(tokenExpiresAt?: string | Date | null): boolean {
   if (!tokenExpiresAt) {
@@ -17,8 +18,43 @@ function isExpired(tokenExpiresAt?: string | Date | null): boolean {
 
 export class OAuthInstallationService {
   private installationModel = getOAuthInstallationModel();
+  private gitHubAppService = getGitHubAppService();
+
+  private async ensureGitHubAppToken(
+    installation: OAuthInstallation,
+    forceRefresh: boolean
+  ): Promise<OAuthInstallation> {
+    const appInstallation = await this.gitHubAppService.resolveInstallation(installation);
+    const tokenResponse = await this.gitHubAppService.getInstallationAccessToken(
+      String(appInstallation.id),
+      forceRefresh || isExpired(installation.token_expires_at)
+    );
+
+    const updated = this.installationModel.update(installation.id, {
+      auth_type: 'github_app',
+      github_app_installation_id: String(appInstallation.id),
+      account_name: appInstallation.account?.login || installation.account_name || null,
+      access_token: tokenResponse.token,
+      refresh_token: null,
+      token_expires_at: tokenResponse.expires_at,
+      permissions: JSON.stringify(appInstallation.permissions || tokenResponse.permissions || null),
+    });
+
+    if (!updated) {
+      throw new Error('刷新 GitHub App installation token 后更新本地安装记录失败');
+    }
+
+    return updated;
+  }
 
   async ensureValidAccessToken(installation: OAuthInstallation, forceRefresh = false): Promise<OAuthInstallation> {
+    if (installation.platform === 'github' && installation.auth_type === 'github_app') {
+      if (!forceRefresh && installation.github_app_installation_id && !isExpired(installation.token_expires_at)) {
+        return installation;
+      }
+      return this.ensureGitHubAppToken(installation, forceRefresh);
+    }
+
     if (!forceRefresh && !isExpired(installation.token_expires_at)) {
       return installation;
     }

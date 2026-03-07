@@ -25,6 +25,18 @@ const statusLabels = {
   cancelled: '已取消',
 } as const;
 
+const jobTypeLabels: Record<AnalysisJob['type'], string> = {
+  analyze_pr: 'PR Review',
+  sync_repository: '上下文分析',
+  refresh_oauth: '代码审查',
+};
+
+const triggerSourceLabels: Record<NonNullable<AnalysisJob['triggerSource']>, string> = {
+  manual: '手动触发',
+  watch: 'Watch 触发',
+  webhook: 'Webhook 触发',
+};
+
 export default function JobsPage() {
   const { success, error } = useNotificationHelpers();
   const [jobs, setJobs] = useState<AnalysisJob[]>([]);
@@ -106,7 +118,30 @@ export default function JobsPage() {
     const start = new Date(startedAt).getTime();
     const end = new Date(completedAt).getTime();
     const seconds = (end - start) / 1000;
-    return seconds.toFixed(1) + 's';
+    return `${seconds.toFixed(1)}s`;
+  };
+
+  const getJobHeadline = (job: AnalysisJob) => {
+    if (job.prTitle) {
+      return job.prTitle;
+    }
+    if (job.prNumber && job.repoName) {
+      return `${job.repoName} · PR #${job.prNumber}`;
+    }
+    if (job.prNumber) {
+      return `PR #${job.prNumber}`;
+    }
+    return jobTypeLabels[job.type];
+  };
+
+  const getJobMeta = (job: AnalysisJob) => {
+    if (job.repoName && job.prNumber) {
+      return `${job.repoName} · PR #${job.prNumber}`;
+    }
+    if (job.repoName) {
+      return job.repoName;
+    }
+    return jobTypeLabels[job.type];
   };
 
   return (
@@ -120,13 +155,12 @@ export default function JobsPage() {
         </p>
       </div>
 
-      {/* 统计卡片 */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           <Card>
             <CardContent>
               <p className="text-sm text-gray-600 dark:text-gray-400">等待中</p>
-              <p className="text-2xl font-bold mt-1 text-yellow-600 dark:text-yellow-400">
+              <p className="mt-1 text-2xl font-bold text-yellow-600 dark:text-yellow-400">
                 {stats.pending}
               </p>
             </CardContent>
@@ -134,7 +168,7 @@ export default function JobsPage() {
           <Card>
             <CardContent>
               <p className="text-sm text-gray-600 dark:text-gray-400">处理中</p>
-              <p className="text-2xl font-bold mt-1 text-blue-600 dark:text-blue-400">
+              <p className="mt-1 text-2xl font-bold text-blue-600 dark:text-blue-400">
                 {stats.processing}
               </p>
             </CardContent>
@@ -142,7 +176,7 @@ export default function JobsPage() {
           <Card>
             <CardContent>
               <p className="text-sm text-gray-600 dark:text-gray-400">已完成</p>
-              <p className="text-2xl font-bold mt-1 text-green-600 dark:text-green-400">
+              <p className="mt-1 text-2xl font-bold text-green-600 dark:text-green-400">
                 {stats.completed}
               </p>
             </CardContent>
@@ -150,7 +184,7 @@ export default function JobsPage() {
           <Card>
             <CardContent>
               <p className="text-sm text-gray-600 dark:text-gray-400">失败</p>
-              <p className="text-2xl font-bold mt-1 text-red-600 dark:text-red-400">
+              <p className="mt-1 text-2xl font-bold text-red-600 dark:text-red-400">
                 {stats.failed}
               </p>
             </CardContent>
@@ -158,7 +192,6 @@ export default function JobsPage() {
         </div>
       )}
 
-      {/* 筛选器 */}
       <Card>
         <CardContent>
           <div className="flex flex-wrap gap-2">
@@ -167,10 +200,10 @@ export default function JobsPage() {
                 key={status}
                 onClick={() => loadJobs(1, status)}
                 className={`
-                  px-4 py-2 rounded-md text-sm font-medium transition-colors
+                  rounded-md px-4 py-2 text-sm font-medium transition-colors
                   ${filter === status
                     ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
                   }
                 `}
               >
@@ -181,7 +214,6 @@ export default function JobsPage() {
         </CardContent>
       </Card>
 
-      {/* 作业列表 */}
       {jobs.length > 0 ? (
         <>
           <Card>
@@ -190,35 +222,51 @@ export default function JobsPage() {
                 {jobs.map((job) => (
                   <div
                     key={job.id}
-                    className="p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                    className="p-4 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
                   >
                     <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
                           <Badge className={statusColors[job.status]}>
                             {statusLabels[job.status]}
                           </Badge>
-                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                            {job.type}
+                          <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                            {jobTypeLabels[job.type]}
                           </span>
+                          {job.triggerSource ? (
+                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                              {triggerSourceLabels[job.triggerSource]}
+                            </span>
+                          ) : null}
                         </div>
-                        <div className="mt-2 text-sm text-gray-500 dark:text-gray-400 space-y-1">
+
+                        <div className="min-w-0">
+                          <p className="truncate text-lg font-semibold text-gray-900 dark:text-white">
+                            Job #{job.id} · {getJobHeadline(job)}
+                          </p>
+                          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                            {getJobMeta(job)}
+                          </p>
+                        </div>
+
+                        <div className="mt-3 space-y-1 text-sm text-gray-500 dark:text-gray-400">
                           <p>创建时间: {formatDate(job.createdAt)}</p>
-                          {job.startedAt && <p>开始时间: {formatDate(job.startedAt)}</p>}
-                          {job.completedAt && (
+                          {job.startedAt ? <p>开始时间: {formatDate(job.startedAt)}</p> : null}
+                          {job.completedAt ? (
                             <p>
                               完成时间: {formatDate(job.completedAt)} · 耗时: {formatDuration(job.startedAt, job.completedAt)}
                             </p>
-                          )}
-                          {job.errorMessage && (
+                          ) : null}
+                          {job.errorMessage ? (
                             <p className="text-red-600 dark:text-red-400">
                               错误: {job.errorMessage}
                             </p>
-                          )}
+                          ) : null}
                           <p>尝试次数: {job.attempts} / {job.maxAttempts}</p>
                         </div>
                       </div>
-                    {job.status === 'pending' || job.status === 'processing' ? (
+
+                      {job.status === 'pending' || job.status === 'processing' ? (
                         <div className="flex flex-col items-end gap-2">
                           <Link
                             href={`/dashboard/jobs/${job.id}`}
@@ -264,13 +312,12 @@ export default function JobsPage() {
             </CardContent>
           </Card>
 
-          {/* 分页 */}
-          {totalPages > 1 && (
-            <div className="flex justify-center gap-2 mt-4">
+          {totalPages > 1 ? (
+            <div className="mt-4 flex justify-center gap-2">
               <button
                 onClick={() => loadJobs(page - 1, filter)}
                 disabled={page === 1}
-                className="px-4 py-2 rounded-md border border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded-md border border-gray-300 px-4 py-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600"
               >
                 上一页
               </button>
@@ -280,17 +327,17 @@ export default function JobsPage() {
               <button
                 onClick={() => loadJobs(page + 1, filter)}
                 disabled={page === totalPages}
-                className="px-4 py-2 rounded-md border border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded-md border border-gray-300 px-4 py-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600"
               >
                 下一页
               </button>
             </div>
-          )}
+          ) : null}
         </>
       ) : (
         <Card>
           <CardContent className="py-12 text-center">
-            <svg className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="mx-auto mb-4 h-16 w-16 text-gray-400 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
             </svg>
             <p className="text-gray-600 dark:text-gray-400">

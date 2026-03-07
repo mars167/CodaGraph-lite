@@ -12,6 +12,11 @@ import type { TokenResponse } from '../oauth/handlers';
  */
 type FetchHeadersInit = Record<string, string>;
 
+export interface PlatformClientOptions {
+  authType?: 'oauth' | 'github_app';
+  githubAppInstallationId?: string | null;
+}
+
 /**
  * 仓库信息
  */
@@ -124,10 +129,12 @@ abstract class BaseApiClient {
   protected accessToken: string;
   protected baseUrl: string;
   protected userAgent = 'CodaGraph/1.0';
+  protected options: PlatformClientOptions;
 
-  constructor(accessToken: string, baseUrl: string) {
+  constructor(accessToken: string, baseUrl: string, options: PlatformClientOptions = {}) {
     this.accessToken = accessToken;
     this.baseUrl = baseUrl;
+    this.options = options;
   }
 
   /**
@@ -262,14 +269,30 @@ abstract class BaseApiClient {
  * GitHub API 客户端
  */
 export class GitHubApiClient extends BaseApiClient {
-  constructor(accessToken: string) {
-    super(accessToken, 'https://api.github.com');
+  constructor(accessToken: string, options: PlatformClientOptions = {}) {
+    super(accessToken, 'https://api.github.com', options);
+  }
+
+  protected override getHeaders(): FetchHeadersInit {
+    return {
+      ...super.getHeaders(),
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
   }
 
   async getRepositories(options?: PaginationOptions): Promise<Repository[]> {
     const params = new URLSearchParams();
     if (options?.page) params.append('page', options.page.toString());
     if (options?.per_page) params.append('per_page', options.per_page.toString());
+
+    if (this.options.authType === 'github_app') {
+      const query = params.toString();
+      const path = query ? `/installation/repositories?${query}` : '/installation/repositories';
+      const response = await this.get<{ repositories: Repository[] }>(path);
+      return response.repositories || [];
+    }
+
     params.append('visibility', 'all');
     params.append('affiliation', 'owner,collaborator');
 
@@ -329,7 +352,11 @@ export class GitHubApiClient extends BaseApiClient {
 
   async verifyToken(): Promise<boolean> {
     try {
-      await this.get<unknown>('/user');
+      if (this.options.authType === 'github_app') {
+        await this.get<unknown>('/installation/repositories?per_page=1');
+      } else {
+        await this.get<unknown>('/user');
+      }
       return true;
     } catch {
       return false;
@@ -578,11 +605,12 @@ export class GitLabApiClient extends BaseApiClient {
  */
 export function createPlatformClient(
   platform: Platform,
-  accessToken: string
+  accessToken: string,
+  options: PlatformClientOptions = {}
 ): BaseApiClient {
   switch (platform) {
     case 'github':
-      return new GitHubApiClient(accessToken);
+      return new GitHubApiClient(accessToken, options);
     case 'gitee':
       return new GiteeApiClient(accessToken);
     case 'gitlab':
@@ -597,11 +625,12 @@ export function createPlatformClient(
  */
 export function createClientFromTokenResponse(
   platform: Platform,
-  tokenResponse: TokenResponse
+  tokenResponse: TokenResponse,
+  options: PlatformClientOptions = {}
 ): BaseApiClient {
   if (!tokenResponse.access_token) {
     throw new Error('无效的令牌响应：缺少 access_token');
   }
 
-  return createPlatformClient(platform, tokenResponse.access_token);
+  return createPlatformClient(platform, tokenResponse.access_token, options);
 }

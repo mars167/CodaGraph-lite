@@ -25,6 +25,12 @@ const levelStyleMap: Record<JobLog['level'], string> = {
   error: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-300',
 };
 
+const jobTypeLabels: Record<AnalysisJob['type'], string> = {
+  analyze_pr: 'PR Review',
+  sync_repository: '上下文分析',
+  refresh_oauth: '代码审查',
+};
+
 export default function JobDetailPage() {
   const params = useParams<{ id: string }>();
   const jobId = params?.id;
@@ -139,7 +145,9 @@ export default function JobDetailPage() {
             返回作业列表
           </Link>
           <div>
-            <h1 className="text-3xl font-semibold text-gray-900 dark:text-white">作业 #{job.id}</h1>
+            <h1 className="text-3xl font-semibold text-gray-900 dark:text-white">
+              作业 #{job.id}{analysis?.prTitle ? ` · ${analysis.prTitle}` : ''}
+            </h1>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">查看实时状态和实时日志。{isLive ? '当前作业进行中，页面自动刷新。' : '当前作业已结束。'}</p>
           </div>
         </div>
@@ -166,7 +174,7 @@ export default function JobDetailPage() {
           <CardContent className="p-5 space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={statusVariantMap[job.status]}>{job.status}</Badge>
-              <Badge variant="default">{job.type}</Badge>
+              <Badge variant="default">{jobTypeLabels[job.type]}</Badge>
             </div>
             <div className="grid grid-cols-1 gap-3 text-sm text-gray-600 dark:text-gray-300 md:grid-cols-2">
               <p>创建时间: {formatDate(job.createdAt)}</p>

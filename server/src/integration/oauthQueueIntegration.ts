@@ -5,10 +5,9 @@
  */
 
 import type { Request, Response } from 'express';
+import { getAnalysisModel } from '../models/Analysis';
 import { getJobModel } from '../models/Job';
 import { getRepositoryModel } from '../models/Repository';
-import { getAnalysisModel } from '../models/Analysis';
-import { getAnalysisJobModel } from '../models/AnalysisJob';
 import { getOAuthInstallationModel } from '../models/OAuthInstallation';
 import type { Platform } from '../models/types';
 import type {
@@ -18,10 +17,10 @@ import type {
 import {
   extractRepositoryInfo,
   extractPullRequestInfo,
-  extractCommitInfo,
   parseWebhookEventType,
 } from '../webhook/validator';
 import { shouldProcessEvent } from '../webhook/handlers';
+import { getReviewTriggerService } from '../services/ReviewTriggerService';
 
 /**
  * Webhook 到作业队列的集成选项
@@ -68,9 +67,8 @@ export async function createAnalysisJobFromWebhook(
     // 提取仓库和 PR 信息
     const repositoryInfo = extractRepositoryInfo(payload, platform);
     const prInfo = extractPullRequestInfo(payload, platform);
-    const commitInfo = extractCommitInfo(payload, platform);
 
-    if (!repositoryInfo || !prInfo || !commitInfo) {
+    if (!repositoryInfo || !prInfo) {
       return {
         success: false,
         error: '无法从 Webhook payload 中提取必要信息',
@@ -94,7 +92,7 @@ export async function createAnalysisJobFromWebhook(
 
     // 获取仓库记录
     const repositoryModel = getRepositoryModel();
-    const repository = repositoryModel.findByPlatformOwnerName(
+    let repository = repositoryModel.findByPlatformOwnerName(
       platform,
       repositoryInfo.owner,
       repositoryInfo.repo
@@ -111,7 +109,19 @@ export async function createAnalysisJobFromWebhook(
         is_active: true,
       };
       repositoryModel.create(createDto);
+      repository = repositoryModel.findByPlatformOwnerName(
+        platform,
+        repositoryInfo.owner,
+        repositoryInfo.repo
+      );
       console.log(`📦 创建仓库记录: ${repositoryInfo.fullName}`);
+    }
+
+    if (!repository) {
+      return {
+        success: false,
+        error: '创建或读取仓库记录失败',
+      };
     }
 
     // 检查是否应该处理该事件
@@ -122,50 +132,19 @@ export async function createAnalysisJobFromWebhook(
       };
     }
 
-    // 创建分析记录
-    const analysisModel = getAnalysisModel();
-    const analysis = analysisModel.create({
-      platform,
-      owner: repositoryInfo.owner,
-      repo_name: repositoryInfo.repo,
-      pr_number: prInfo.number,
-      pr_title: prInfo.title,
-      pr_author: prInfo.author,
-      base_commit: commitInfo.baseSha || '',
-      head_commit: commitInfo.headSha,
+    const result = await getReviewTriggerService().triggerForRepository(repository, prInfo.number, {
+      source: 'webhook',
+      priority: calculateJobPriority(action, platform),
+      force: false,
     });
 
-    // 创建分析作业记录
-    const analysisJobModel = getAnalysisJobModel();
-    analysisJobModel.create(analysis.id, 'cloning');
-
-    // 创建作业队列任务
-    const jobModel = getJobModel();
-    const jobPayload: WebhookJobPayload = {
-      platform,
-      owner: repositoryInfo.owner,
-      repo: repositoryInfo.repo,
-      fullName: repositoryInfo.fullName,
-      prNumber: prInfo.number,
-      prTitle: prInfo.title,
-      prAuthor: prInfo.author,
-      baseCommit: commitInfo.baseSha || '',
-      headCommit: commitInfo.headSha,
-      installationId: installation.id,
-      action: normalizeJobAction(action),
-      eventType,
-      receivedAt: new Date().toISOString(),
-    };
-
-    const job = jobModel.create('pr_analysis', jobPayload as any, calculateJobPriority(action, platform));
-
     console.log(
-      `📝 创建分析作业: ${repositoryInfo.fullName}#${prInfo.number} (${action})`
+      `📝 Webhook 触发分析作业: ${repositoryInfo.fullName}#${prInfo.number} (${action})`
     );
 
     return {
       success: true,
-      jobId: job.id,
+      jobId: result.jobId || undefined,
     };
   } catch (error) {
     console.error('创建分析作业失败:', error);

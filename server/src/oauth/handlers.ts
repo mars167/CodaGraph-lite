@@ -125,6 +125,17 @@ export function buildAuthorizationUrl(
   state: string,
   authType: OAuthAuthType = 'oauth'
 ): string {
+  if (platform === 'github' && authType === 'github_app') {
+    const appSlug = process.env.GITHUB_APP_SLUG;
+    if (!appSlug) {
+      throw new Error('GITHUB_APP_SLUG 未配置，无法发起 GitHub App 安装');
+    }
+
+    const params = new URLSearchParams();
+    params.append('state', state);
+    return `https://github.com/apps/${appSlug}/installations/new?${params.toString()}`;
+  }
+
   const config = getConfig(platform, authType);
   const params = new URLSearchParams();
   params.append('client_id', config.clientId);

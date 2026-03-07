@@ -78,10 +78,12 @@ interface RepositoryApiItem {
   html_url?: string | null;
   webhook_url?: string | null;
   is_active: boolean;
+  watch_enabled?: boolean;
   created_at: string;
   updated_at: string;
   last_synced_at?: string | null;
   last_analyzed_at?: string | null;
+  watch_last_checked_at?: string | null;
   last_commit_at?: string | null;
   pushed_at?: string | null;
 }
@@ -189,6 +191,10 @@ interface JobApiItem {
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'dead';
   priority: number;
   payload: string;
+  repo_name?: string | null;
+  pr_number?: number | null;
+  pr_title?: string | null;
+  trigger_source?: 'manual' | 'watch' | 'webhook' | null;
   attempts: number;
   max_attempts: number;
   error_message?: string | null;
@@ -245,6 +251,8 @@ function mapRepository(item: RepositoryApiItem): Repository {
     htmlUrl: item.html_url || undefined,
     webhookUrl: item.webhook_url || undefined,
     lastSyncedAt: item.last_synced_at || item.last_analyzed_at || undefined,
+    watchEnabled: Boolean(item.watch_enabled),
+    watchLastCheckedAt: item.watch_last_checked_at || undefined,
     active: item.is_active,
     stars: item.stars_count ?? 0,
     forks: item.forks_count ?? 0,
@@ -333,6 +341,10 @@ function mapJob(item: JobApiItem): AnalysisJob {
         return {};
       }
     })(),
+    repoName: item.repo_name || undefined,
+    prNumber: typeof item.pr_number === 'number' ? item.pr_number : undefined,
+    prTitle: item.pr_title || undefined,
+    triggerSource: item.trigger_source || undefined,
     attempts: item.attempts,
     maxAttempts: item.max_attempts,
     errorMessage: item.error_message || undefined,
@@ -680,17 +692,35 @@ class ApiClient {
   async startRepositoryPullRequestReview(
     repositoryId: string,
     prNumber: number
-  ): Promise<ApiResponse<{ jobId: string; analysisId?: string }>> {
-    const response = await this.post<{ jobId: number; analysis?: { id: number | string } }>(
+  ): Promise<ApiResponse<{ jobId?: string; analysisId?: string; created: boolean; message: string }>> {
+    const response = await this.post<{
+      jobId?: number | null;
+      created: boolean;
+      message: string;
+      analysis?: { id: number | string } | null;
+    }>(
       `/api/repositories/${repositoryId}/pull-requests/${prNumber}/review`
     );
 
     return {
       success: true,
       data: {
-        jobId: String(response.jobId),
+        jobId: response.jobId ? String(response.jobId) : undefined,
         analysisId: response.analysis?.id ? String(response.analysis.id) : undefined,
+        created: response.created,
+        message: response.message,
       },
+    };
+  }
+
+  async setRepositoryWatch(id: string, enabled: boolean): Promise<ApiResponse<Repository>> {
+    const response = await this.patch<{ repository: RepositoryApiItem }>(`/api/repositories/${id}/watch`, {
+      enabled,
+    });
+
+    return {
+      success: true,
+      data: mapRepository(response.repository),
     };
   }
 

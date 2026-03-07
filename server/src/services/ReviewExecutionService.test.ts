@@ -38,6 +38,10 @@ const queueServiceMock = {
   isCancellationRequested: jest.fn(() => false),
 };
 
+const reviewLockModelMock = {
+  releaseByAnalysisId: jest.fn(),
+};
+
 const platformApiClientMock = {
   getPullRequest: jest.fn(),
   getRepository: jest.fn(),
@@ -47,6 +51,7 @@ const platformApiClientMock = {
 const commentClientMock = {
   postComment: jest.fn(),
   postReviewComment: jest.fn(),
+  submitReview: jest.fn(),
 };
 
 const reviewEngineReviewMock = jest.fn();
@@ -79,6 +84,10 @@ jest.mock('../jobs/QueueService', () => ({
   getQueueService: () => queueServiceMock,
 }));
 
+jest.mock('../models/ReviewLock', () => ({
+  getReviewLockModel: () => reviewLockModelMock,
+}));
+
 jest.mock('../platform/client', () => ({
   createPlatformClient: () => platformApiClientMock,
 }));
@@ -100,6 +109,9 @@ import { ReviewExecutionService } from './ReviewExecutionService';
 describe('ReviewExecutionService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    commentClientMock.submitReview.mockResolvedValue(undefined);
+    commentClientMock.postReviewComment.mockResolvedValue(undefined);
+    commentClientMock.postComment.mockResolvedValue(undefined);
 
     repositoryModelMock.findById.mockReturnValue({
       id: 7,
@@ -239,7 +251,7 @@ describe('ReviewExecutionService', () => {
     });
   });
 
-  it('orchestrates advanced review, posts inline comments, and persists the richer payload', async () => {
+  it('submits a GitHub review with inline comments and persists the richer payload', async () => {
     const service = new ReviewExecutionService();
 
     const result = await service.execute(1001, JSON.stringify({
@@ -264,8 +276,29 @@ describe('ReviewExecutionService', () => {
       ],
     }));
 
-    expect(commentClientMock.postReviewComment).toHaveBeenCalledTimes(1);
-    expect(commentClientMock.postComment).toHaveBeenCalledTimes(1);
+    expect(commentClientMock.submitReview).toHaveBeenCalledTimes(1);
+    expect(commentClientMock.submitReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platform: 'github',
+        owner: 'mars',
+        repo: 'lite',
+        prNumber: '42',
+      }),
+      expect.objectContaining({
+        commitId: 'head-sha',
+        comments: [
+          expect.objectContaining({
+            body: expect.stringContaining('存在调试语句'),
+            position: expect.objectContaining({
+              path: 'src/review.ts',
+              line: 2,
+            }),
+          }),
+        ],
+      })
+    );
+    expect(commentClientMock.postReviewComment).not.toHaveBeenCalled();
+    expect(commentClientMock.postComment).not.toHaveBeenCalled();
     expect(result.postedCommentCount).toBe(2);
     expect(result.riskLevel).toBe('medium');
 
@@ -273,5 +306,89 @@ describe('ReviewExecutionService', () => {
     expect(persistedPayload.mode).toBe('rule-only');
     expect(persistedPayload.inlineComments).toEqual({ planned: 1, posted: 1 });
     expect(persistedPayload.fileReviews).toHaveLength(1);
+  });
+
+  it('falls back to single inline comments and a summary comment when GitHub batch review fails', async () => {
+    commentClientMock.submitReview.mockRejectedValueOnce(new Error('review batch rejected'));
+    const service = new ReviewExecutionService();
+
+    const result = await service.execute(1002, JSON.stringify({
+      platform: 'github',
+      repo_name: 'mars/lite',
+      pr_number: '42',
+      repository_id: '7',
+      analysis_id: '13',
+      analysis_job_id: '17',
+    }));
+
+    expect(commentClientMock.submitReview).toHaveBeenCalledTimes(1);
+    expect(commentClientMock.postReviewComment).toHaveBeenCalledTimes(1);
+    expect(commentClientMock.postComment).toHaveBeenCalledTimes(1);
+    expect(result.postedCommentCount).toBe(2);
+
+    const persistedPayload = JSON.parse(analysisModelMock.markComplete.mock.calls[0][1]);
+    expect(persistedPayload.inlineComments).toEqual({ planned: 1, posted: 1 });
+  });
+
+  it('still creates a GitHub review when there are no inline findings', async () => {
+    reviewEngineReviewMock.mockResolvedValueOnce({
+      fileReviews: [
+        {
+          filePath: 'src/review.ts',
+          status: 'modified',
+          language: 'typescript',
+          fileSummary: 'review.ts 已完成审查，未发现高价值问题。',
+          findings: [],
+          semanticContext: {
+            changedSymbols: ['run'],
+            relatedSnippets: [],
+            callers: [],
+            callees: [],
+            usedGitAi: false,
+          },
+          patch: '@@ -1,2 +1,2 @@\n export const run = () => {\n }\n',
+          usedFallback: true,
+        },
+      ],
+      allFindings: [],
+      summaryFindings: [],
+      inlineComments: [],
+      fallbackFindings: [],
+      summary: '已完成仓库上下文驱动的 PR review，未发现需要处理的问题。',
+      riskLevel: 'low',
+      mode: 'rule-only',
+      metadata: {
+        llmEnabled: false,
+        llmUsed: false,
+        gitAiAvailable: false,
+        reviewedFiles: 1,
+        inlineCommentLimit: 8,
+      },
+    });
+
+    const service = new ReviewExecutionService();
+
+    const result = await service.execute(1003, JSON.stringify({
+      platform: 'github',
+      repo_name: 'mars/lite',
+      pr_number: '42',
+      repository_id: '7',
+      analysis_id: '13',
+      analysis_job_id: '17',
+    }));
+
+    expect(commentClientMock.submitReview).toHaveBeenCalledTimes(1);
+    expect(commentClientMock.submitReview).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        comments: [],
+      })
+    );
+    expect(commentClientMock.postReviewComment).not.toHaveBeenCalled();
+    expect(commentClientMock.postComment).not.toHaveBeenCalled();
+    expect(result.postedCommentCount).toBe(1);
+
+    const persistedPayload = JSON.parse(analysisModelMock.markComplete.mock.calls[0][1]);
+    expect(persistedPayload.inlineComments).toEqual({ planned: 0, posted: 0 });
   });
 });

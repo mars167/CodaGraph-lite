@@ -72,15 +72,18 @@ CREATE TABLE IF NOT EXISTS repository (
   webhook_secret TEXT,
   webhook_url TEXT,
   is_active BOOLEAN DEFAULT 1,
+  watch_enabled BOOLEAN DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   last_synced_at DATETIME,
-  last_analyzed_at DATETIME
+  last_analyzed_at DATETIME,
+  watch_last_checked_at DATETIME
 );
 
 CREATE INDEX IF NOT EXISTS idx_repository_platform ON repository(platform);
 CREATE INDEX IF NOT EXISTS idx_repository_owner ON repository(owner);
 CREATE INDEX IF NOT EXISTS idx_repository_installation ON repository(installation_id);
+CREATE INDEX IF NOT EXISTS idx_repository_watch_enabled ON repository(watch_enabled, is_active);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_unique ON repository(platform, owner, name);
 `;
 
@@ -175,6 +178,31 @@ CREATE INDEX IF NOT EXISTS idx_jobs_type ON jobs(type);
 CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC);
 `;
 
+export const REVIEW_LOCK_TABLE = `
+CREATE TABLE IF NOT EXISTS review_lock (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  platform TEXT NOT NULL CHECK(platform IN ('github', 'gitee', 'gitlab')),
+  owner TEXT NOT NULL,
+  repo_name TEXT NOT NULL,
+  pr_number INTEGER NOT NULL,
+  head_commit TEXT NOT NULL,
+  source TEXT NOT NULL CHECK(source IN ('manual', 'watch', 'webhook')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'released')),
+  analysis_id INTEGER REFERENCES analysis(id) ON DELETE SET NULL,
+  job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  released_at DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_lock_analysis ON review_lock(analysis_id);
+CREATE INDEX IF NOT EXISTS idx_review_lock_job ON review_lock(job_id);
+CREATE INDEX IF NOT EXISTS idx_review_lock_pr ON review_lock(platform, owner, repo_name, pr_number, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_review_lock_active
+ON review_lock(platform, owner, repo_name, pr_number, head_commit)
+WHERE status = 'active';
+`;
+
 export const JOB_LOG_TABLE = `
 CREATE TABLE IF NOT EXISTS job_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -258,6 +286,7 @@ export const ALL_TABLES = [
   { name: 'analysis', sql: ANALYSIS_TABLE },
   { name: 'analysis_job', sql: ANALYSIS_JOB_TABLE },
   { name: 'jobs', sql: JOBS_TABLE },
+  { name: 'review_lock', sql: REVIEW_LOCK_TABLE },
   { name: 'job_log', sql: JOB_LOG_TABLE },
   { name: 'webhook_event', sql: WEBHOOK_EVENT_TABLE },
   { name: 'usage_metric', sql: USAGE_METRIC_TABLE },

@@ -37,6 +37,17 @@ export interface CommentPosition {
   startSide?: 'RIGHT' | 'LEFT';
 }
 
+export interface ReviewCommentInput {
+  body: string;
+  position: CommentPosition;
+}
+
+export interface ReviewSubmission {
+  body: string;
+  commitId?: string;
+  comments: ReviewCommentInput[];
+}
+
 /**
  * API 错误类型
  */
@@ -174,6 +185,14 @@ export interface PlatformClient {
   ): Promise<void>;
 
   /**
+   * 提交批量 review（GitHub 优先支持）
+   */
+  submitReview?(
+    prInfo: PRInfo,
+    review: ReviewSubmission
+  ): Promise<void>;
+
+  /**
    * 健康检查
    */
   healthCheck(): Promise<boolean>;
@@ -305,6 +324,65 @@ export class GitHubClient implements PlatformClient {
         `GitHub 行级评论发布成功: ${position.path}:${position.line}`
       );
     }, 'GitHub 行级评论发布');
+  }
+
+  async submitReview(
+    prInfo: PRInfo,
+    review: ReviewSubmission
+  ): Promise<void> {
+    return withRetry(async () => {
+      if (this.rateLimitInfo && this.rateLimitInfo.remaining < 10) {
+        await waitForRateReset(this.rateLimitInfo);
+      }
+
+      const url = `${this.apiUrl}/repos/${prInfo.owner}/${prInfo.repo}/pulls/${prInfo.prNumber}/reviews`;
+      const requestBody = {
+        body: review.body,
+        event: 'COMMENT',
+        ...(review.commitId ? { commit_id: review.commitId } : {}),
+        comments: review.comments.map((comment) => ({
+          body: comment.body,
+          path: comment.position.path,
+          line: comment.position.line,
+          side: 'RIGHT',
+          ...(comment.position.startLine && comment.position.endLine
+            ? {
+                start_line: comment.position.startLine,
+                start_side: comment.position.startSide || 'RIGHT',
+              }
+            : {}),
+        })),
+      };
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const newRateLimit = parseGitHubRateLimit(response.headers);
+      if (newRateLimit) {
+        this.rateLimitInfo = newRateLimit;
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        const retryable = isRetryableStatus(response.status);
+        throw new PlatformApiError(
+          `GitHub API 批量 review 失败: ${response.status}: ${errorText}`,
+          response.status,
+          retryable
+        );
+      }
+
+      logger.info(
+        `GitHub 批量 review 发布成功: ${prInfo.owner}/${prInfo.repo}#${prInfo.prNumber} comments=${review.comments.length}`
+      );
+    }, 'GitHub 批量 review 发布');
   }
 
   async healthCheck(): Promise<boolean> {
