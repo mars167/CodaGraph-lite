@@ -1,0 +1,43 @@
+{
+  "name": "codagraph-lite",
+  "version": "1.0.0",
+  "description": "CodaGraph-lite - 轻量级代码审查平台，适用于个人或私有云部署",
+  "scripts": {
+    "dev:web": "npm --prefix web run dev",
+    "dev:server": "NODE_OPTIONS=--max-old-space-size=512 npm --prefix server run dev",
+    "dev": "concurrently \"npm run dev:web\" \"npm run dev:server\"",
+    "service:start": "bash ./bin/service-start.sh",
+    "service:stop": "bash ./bin/service-stop.sh",
+    "service:restart": "bash ./bin/service-restart.sh",
+    "admin:password:reset": "bash ./bin/admin-password-reset.sh",
+    "build:web": "npm --prefix web run build",
+    "build:server": "npm --prefix server run build",
+    "build": "npm run build:web && npm run build:server",
+    "start:web": "npm --prefix web run start",
+    "start:server": "npm --prefix server run start",
+    "start": "concurrently \"npm run start:web\" \"npm run start:server\"",
+    "seed:e2e": "node scripts/seed-e2e-data.js",
+    "e2e:playwright": "npm run seed:e2e && playwright test e2e/dashboard-pages.spec.ts",
+    "e2e:puppeteer": "npm run seed:e2e && node scripts/puppeteer-dashboard-smoke.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "keywords": [
+    "code-review",
+    "git-ai",
+    "semantic-analysis",
+    "pr-review"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "playwright": "^1.58.2",
+    "puppeteer": "^24.38.0"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}

@@ -1,0 +1,69 @@
+/**
+ * CodaGraph-lite 前端 Prettier 配置
+ * 代码格式化规则
+ */
+
+{
+  // 使用单引号
+  "singleQuote": true,
+
+  // 每行最大字符数（Next.js 推荐配置）
+  "printWidth": 100,
+
+  // 使用 2 空格缩进
+  "tabWidth": 2,
+
+  // 使用空格而不是 tab
+  "useTabs": false,
+
+  // 在对象的括号前后添加空格
+  "bracketSpacing": true,
+
+  // 箭头函数参数的括号样式 (x) => x
+  "arrowParens": "avoid",
+
+  // 结尾不添加分号
+  "semi": false,
+
+  // 尾随逗号（多行时）
+  "trailingComma": "es5",
+
+  // HTML 换行风格
+  "htmlWhitespaceSensitivity": "css",
+
+  // 排除目录
+  "excludeFiles": [
+    ".next",
+    "node_modules",
+    "dist",
+    "build"
+  ],
+
+  // 插件配置
+  "plugins": [],
+
+  // 覆盖规则
+  "overrides": [
+    {
+      // TypeScript 文件
+      "files": "*.tsx",
+      "options": {
+        "parser": "typescript"
+      }
+    },
+    {
+      // JSON 文件
+      "files": ["*.json", ".prettierrc"],
+      "options": {
+        "trailingComma": "none"
+      }
+    },
+    {
+      // Markdown 文件
+      "files": "*.md",
+      "options": {
+        "proseWrap": "always"
+      }
+    }
+  ]
+}

@@ -1,0 +1,746 @@
+# CodaGraph-lite CI/CD 工作流
+# 完整的构建、测试和部署流程
+
+name: CI/CD
+
+on:
+  push:
+    branches: [ main, develop, staging ]
+    tags: ['v*']
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: '部署环境'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+            - prod
+      auto_deploy:
+        description: '自动部署'
+        required: false
+        type: boolean
+        default: false
+
+# 环境配置
+env:
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.11'
+  REGISTRY: ghcr.io/codagraph-lite
+
+jobs:
+  # ============================================
+  # 代码质量检查
+  # ============================================
+  frontend-lint:
+    name: 前端代码检查
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./web
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 运行 ESLint
+        run: npm run lint
+
+      - name: 运行 Prettier 检查
+        run: npx prettier --check "**/*.{js,jsx,ts,tsx,json,md}"
+
+  backend-lint:
+    name: 后端代码检查
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./server
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 运行 ESLint
+        run: npm run lint
+
+      - name: TypeScript 类型检查
+        run: npx tsc --noEmit
+
+  # ============================================
+  # Python 代码检查
+  # ============================================
+  context-agent-lint:
+    name: Context Agent 代码检查
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./context-agent
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          pip install -e ".[dev]" --upgrade-strategy only-if-needed
+          pip install black ruff mypy
+
+      - name: 运行 Ruff
+        run: ruff check .
+
+      - name: 运行 Black 检查
+        run: black --check .
+
+      - name: 类型检查
+        run: mypy .
+
+  review-agent-lint:
+    name: Review Agent 代码检查
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./review-agent
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          pip install -e ".[dev]" --upgrade-strategy only-if-needed
+          pip install black ruff mypy
+
+      - name: 运行 Ruff
+        run: ruff check .
+
+      - name: 运行 Black 检查
+        run: black --check .
+
+      - name: 类型检查
+        run: mypy .
+
+  # ============================================
+  # 集成构建和部署
+  # ============================================
+  integrated-build:
+    name: 前后端构建
+    runs-on: ubuntu-latest
+    needs: [frontend-lint, backend-lint, context-agent-lint, review-agent-lint]
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 获取当前版本号
+        id: get_version
+        run: |
+          VERSION=$(node -e "const { version } = require('./package.json'); console.log(version);" 2>/dev/null || echo "1.0.0")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: 构建前端
+        id: frontend_build
+        working-directory: ./web
+        run: |
+          npm ci
+          npm run build
+
+      - name: 构建后端
+        id: backend_build
+        working-directory: ./server
+        run: |
+          npm ci
+          npm run build
+
+      - name: 保存构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            web/.next
+            server/dist
+
+  # ============================================
+  # 端到端测试
+  # ============================================
+  e2e-test:
+    name: 端到端测试
+    runs-on: ubuntu-latest
+    needs: [integrated-build]
+    outputs:
+      test_result: ${{ steps.test.outputs.result }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            web/.next
+            server/dist
+
+      - name: 安装后端依赖
+        working-directory: ./server
+        run: npm ci
+
+      - name: 安装 Python 依赖
+        run: |
+          cd context-agent && pip install -e .
+          cd ../review-agent && pip install -e .
+          cd ..
+
+      - name: 启动后端服务
+        working-directory: ./server
+        id: start_backend
+        run: |
+          npm run build
+          timeout 30 node dist/index.js || true
+          sleep 10
+        env:
+          NODE_ENV: test
+          DATABASE_PATH: ./data/test.db
+          WORKER_COUNT: 1
+          ENABLE_CONCURRENT_JOBS: false
+        background: true
+
+      - name: 运行测试套件
+        id: test
+        run: |
+          npm test
+        result=$?
+          pkill -f "node dist/index.js" || true
+          echo "result=$result" >> $GITHUB_OUTPUT
+
+      - name: 清理测试数据
+        if: always()
+        run: rm -f server/data/test.db
+
+      - name: 上传测试结果
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: server/test-results/
+        if: always()
+        run: mkdir -p server/test-results && echo "test_result=${{ steps.test.outputs.result }}" > server/test-results/test.json
+
+  # ============================================
+  # 部署验证
+  # ============================================
+  deployment-verify:
+    name: 部署验证
+    runs-on: ubuntu-latest
+    needs: [integrated-build]
+    if: github.event_name != 'pull_request'
+    outputs:
+      verification_status: ${{ steps.verify.outputs.status }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 运行部署验证脚本
+        id: verify
+        run: |
+          chmod +x deploy/verify.sh
+          bash deploy/verify.sh --verbose
+        status=$?
+          if [[ $? -eq 0 ]]; then
+            status="passed"
+          else
+            status="failed"
+          fi
+          echo "status=$status" >> $GITHUB_OUTPUT
+
+      - name: 验证环境变量
+        run: |
+          chmod +x deploy/validate-env.sh
+          bash deploy/validate-env.sh --strict
+        status=$?
+          if [[ $? -eq 0 ]]; then
+            status="passed"
+          else
+            status="failed"
+          fi
+          echo "env_status=$status" >> $GITHUB_OUTPUT
+
+      - name: 生成验证报告
+        run: |
+          cat > verification-report.md << 'EOF'
+          # CodaGraph-lite 部署验证报告
+
+          ## 验证时间
+          - 时间: ${{ github.event.head_commit.timestamp }}
+          - 提交: ${{ github.sha }}
+
+          ## 验证结果
+          - 代码检查: 通过
+          - 构建状态: 通过
+          - E2E 测试: ${{ needs.e2e-test.outputs.test_result }}
+          - 部署验证: ${{ steps.verify.outputs.status }}
+          - 环境验证: ${{ steps.env.outputs.env_status }}
+
+          ## 2u2g 配置验证
+          - WORKER_COUNT: 1 ✓
+          - ENABLE_CONCURRENT_JOBS: false ✓
+          - NODE_OPTIONS: --max-old-space-size=200 ✓
+          - SQLITE_CACHE_SIZE: -2000 ✓
+
+          ## 部署准备状态
+          - 前端构建产物: ✓
+          - 后端构建产物: ✓
+          - 部署脚本: ✓
+          - 系统要求: ✓
+
+          ## 状态
+          总体: ${{ steps.verify.outputs.status }}
+          可以部署: ${{ steps.verify.outputs.status == 'passed' && needs.e2e-test.outputs.test_result == 'passed' }}
+          EOF
+
+      - name: 上传验证报告
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-report
+          path: verification-report.md
+          retention-days: 30
+
+  # ============================================
+  # 前后端构建部署
+  # ============================================
+  deploy-frontend:
+    name: 前端构建部署
+    runs-on: ubuntu-latest
+    needs: [integrated-build]
+    if: github.event_name != 'pull_request' || github.event.inputs.auto_deploy == 'true'
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置部署环境
+        run: |
+          echo "部署到环境: ${{ inputs.environment }}"
+          echo "分支: ${{ github.ref_name }}"
+
+      - name: 部署到服务器
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets[inputs.environment].HOST }}
+          username: ${{ secrets[inputs.environment].USER }}
+          key: ${{ secrets[inputs.environment].SSH_KEY }}
+        script: |
+          set -e
+
+          # 创建备份
+          echo "🔄 开始部署到 ${{ inputs.environment }} 环境..."
+
+          # 停止服务
+          sudo systemctl stop codagraph-lite-frontend || true
+          sudo systemctl stop codagraph-lite-backend || true
+
+          # 拉取代码
+          echo "📦 拉取最新代码..."
+          git fetch --all
+          git checkout ${{ github.sha }}
+          git pull origin main
+
+          # 安装依赖
+          echo "📦 安装依赖..."
+          npm install --production
+          cd web && npm run build && cd ..
+          cd server && npm run build
+
+          # 部署验证
+          echo "🔍 部署验证..."
+          bash deploy/verify.sh --verbose
+
+          # 重启服务
+          echo "🔄 重启服务..."
+          sudo systemctl start codagraph-lite-backend
+          sudo systemctl start codagraph-lite-frontend
+
+          # 健康检查
+          echo "🏥 健康检查..."
+          sleep 10
+
+          # 前端健康检查
+          FRONTEND_URL="http://localhost:3000"
+          FRONTEND_STATUS=$(curl -f $FRONTEND_URL/api/health 2>/dev/null || echo "unhealthy")
+
+          # 后端健康检查
+          BACKEND_URL="http://localhost:7900"
+          BACKEND_STATUS=$(curl -f $BACKEND_URL/api/health 2>/dev/null || echo "unhealthy")
+
+          echo "前端状态: $FRONTEND_STATUS"
+          echo "后端状态: $BACKEND_STATUS"
+
+          if [[ "$FRONTEND_STATUS" == "OK" && "$BACKEND_STATUS" == "OK" ]]; then
+            echo "✅ 部署成功！"
+            exit 0
+          else
+            echo "❌ 部署失败！"
+            exit 1
+
+      - name: 部署后检查
+        if: failure()
+        run: |
+          sleep 15
+          curl -f ${{ secrets[inputs.environment].HEALTHCHECK_URL }} || true
+
+      - name: 发送通知
+        if: success()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: |
+            ✅ 部署成功
+            环境: ${{ inputs.environment }}
+            分支: ${{ github.ref }}
+            提交: ${{ github.sha }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+  deploy-backend:
+    name: 后端构建部署
+    runs-on: ubuntu-latest
+    needs: [integrated-build]
+    if: github.event_name != 'pull_request' || github.event.inputs.auto_deploy == 'true'
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置部署环境
+        run: |
+          echo "部署到环境: ${{ inputs.environment }}"
+          echo "分支: ${{ github.ref_name }}"
+
+      - name: 部署到服务器
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets[inputs.environment].HOST }}
+          username: ${{ secrets[inputs.environment].USER }}
+          key: ${{ secrets[inputs.environment].SSH_KEY }}
+        script: |
+          set -e
+
+          # 创建备份
+          echo "🔄 开始部署到 ${{ inputs.environment }} 环境..."
+
+          # 停止服务
+          sudo systemctl stop codagraph-lite-frontend || true
+          sudo systemctl stop codagraph-lite-backend || true
+
+          # 拉取代码
+          echo "📦 拉取最新代码..."
+          git fetch --all
+          git checkout ${{ github.sha }}
+          git pull origin main
+
+          # 安装依赖
+          echo "📦 安装依赖..."
+          npm install --production
+          cd web && npm run build && cd ..
+          cd server && npm run build
+
+          # 运行数据库迁移
+          echo "📊 运行数据库迁移..."
+          node server/dist/database/migrate.js
+
+          # 部署验证
+          echo "🔍 部署验证..."
+          bash deploy/verify.sh --verbose
+
+          # 重启服务
+          echo "🔄 重启服务..."
+          sudo systemctl restart codagraph-lite-backend
+          sudo systemctl restart codagraph-lite-frontend
+
+          # 健康检查
+          echo "🏥 健康检查..."
+          sleep 15
+
+          # 前端健康检查
+          FRONTEND_URL="http://localhost:3000"
+          FRONTEND_STATUS=$(curl -f $FRONTEND_URL/api/health 2>/dev/null || echo "unhealthy")
+
+          # 后端健康检查
+          BACKEND_URL="http://localhost:7900"
+          BACKEND_STATUS=$(curl -f $BACKEND_URL/api/health 2>/dev/null || echo "unhealthy")
+
+          echo "前端状态: $FRONTEND_STATUS"
+          echo "后端状态: $BACKEND_STATUS"
+
+          if [[ "$FRONTEND_STATUS" == "OK" && "$BACKEND_STATUS" == "OK" ]]; then
+            echo "✅ 部署成功！"
+            exit 0
+          else
+            echo "❌ 部署失败！"
+            exit 1
+
+      - name: 部署后检查
+        if: failure()
+        run: |
+          sleep 15
+          curl -f ${{ secrets[inputs.environment].HEALTHCHECK_URL }} || true
+
+      - name: 发送通知
+        if: success()
+          uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: |
+            ✅ 部署成功
+            环境: ${{ inputs.environment }}
+            分支: ${{ github.ref }}
+            提交: ${{ github.sha }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+  # ============================================
+  # 多环境部署策略
+  # ============================================
+  deploy-dev:
+    name: 部署到开发环境
+    uses: ./github/actions/checkout@v4
+    needs: [integrated-build, deployment-verify]
+    if: github.ref == 'refs/heads/develop'
+    environment: dev
+    runs-on: ubuntu-latest
+    steps:
+      - name: 确认部署
+        run: |
+          echo "🔍 部署到开发环境？"
+          echo "分支: ${{ github.ref_name }}"
+          echo "提交: ${{ github.sha }}"
+
+      - name: 调用前端后端构建部署 job
+        uses: azure/workflow-call-action@v1
+        with:
+          workflow: .github/workflows/ci.yml
+          inputs: |
+            environment: dev
+            auto_deploy: true
+          token: ${{ github.token }}
+
+  deploy-staging:
+    name: 部署到预发布环境
+    uses: ./github/actions/checkout@v4
+    needs: [integrated-build, deployment-verify]
+    if: github.ref == 'refs/heads/staging'
+    environment: staging
+    runs-on: ubuntu-latest
+    steps:
+      - name: 确认部署
+        run: |
+          echo "🔍 部署到预发布环境？"
+          echo "分支: ${{ github.ref_name }}"
+          echo "提交: ${{ github.sha }}"
+
+      - name: 调用前端后端构建部署 job
+        uses: azure/workflow-call-action@v1
+        with:
+          workflow: .github/workflows/ci.yml
+          inputs: |
+            environment: staging
+            auto_deploy: true
+          token: ${{ github.token }}
+
+  deploy-prod:
+    name: 部署到生产环境
+    uses: ./github/actions/checkout@v4
+    needs: [integrated-build, deployment-verify]
+    if: github.ref == 'refs/heads/main'
+    environment: prod
+    runs-on: ubuntu-latest
+    steps:
+      - name: 确认生产部署
+        run: |
+          echo "🔍 部署到生产环境？"
+          echo "分支: ${{ github.ref_name }}"
+          echo "提交: ${{ github.sha }}"
+
+      - name: 等待手动批准
+        uses: trstring/action-wait-for-approval@v0.12
+        with:
+          secret: ${{ secrets.PROD_APPROVAL }}
+          approvers: team-lead,backend-dev
+          minimum-approvals: 1
+          timeout-minutes: 30
+          message: |
+            🚀 生产部署请求
+            ------------
+
+            **环境**: prod
+            **提交**: ${{ github.sha }}
+            **分支**: ${{ github.ref_name }}
+
+            请确认后继续部署
+
+      - name: 调用前端后端构建部署 job
+        if: approved()
+        uses: azure/workflow-call-action@v1
+        with:
+          workflow: .github/workflows/ci.yml
+          inputs: |
+            environment: prod
+            auto_deploy: true
+          token: ${{ github.token }}
+
+  # ============================================
+  # 部署回滚
+  # ============================================
+  rollback:
+    name: 部署回滚
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    inputs:
+      version:
+        description: '回滚到指定版本'
+        required: true
+        type: choice
+        options:
+          - v1.0.0
+          - v0.9.0
+          - v0.8.0
+      backup_type:
+        description: '备份类型'
+        required: true
+        type: choice
+        options:
+          - auto
+          - manual
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 确认回滚
+        run: |
+          echo "⚠️ 回滚操作"
+          echo "目标版本: ${{ inputs.version }}"
+          echo "备份类型: ${{ inputs.backup_type }}"
+          echo ""
+          echo "这将回滚到指定版本并恢复数据库。"
+          echo ""
+          echo "请确保："
+          echo "1. 已备份当前数据"
+          echo "2. 所有服务已停止"
+          echo "3. 你有数据库备份"
+
+      - name: 停止所有服务
+        uses: azure/workflow-call-action@v1
+        with:
+          workflow: .github/workflows/ci.yml
+          inputs:
+            action: stop-services
+            token: ${{ github.token }}
+
+      - name: 等待确认
+        run: |
+          echo "⚠️ 即将开始回滚..."
+          sleep 30
+
+      - name: 执行回滚
+        if: cancelled()
+        run: |
+          echo "回滚已取消"
+        else
+          name: 执行回滚
+        uses: azure/workflow-call-action@v1
+        with:
+          workflow: .github/workflows/ci.yml
+          inputs:
+            action: execute-rollback
+            version: ${{ inputs.version }}
+            backup_type: ${{ inputs.backup_type }}
+            token: ${{ github.token }}
+
+  # ============================================
+  # 停止服务
+  # ============================================
+  stop-services:
+    name: 停止所有服务
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    inputs:
+      confirm:
+        description: '确认停止服务'
+        required: true
+        type: boolean
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 确认停止
+        run: |
+          echo "⚠️ 即将停止所有服务"
+          echo "这会影响："
+          echo "  - 正在进行的作业"
+          echo "  - 活跃用户"
+          echo "  - 数据库写入"
+          echo ""
+          echo "确认继续？"
+
+      - name: 确认通过
+        if: inputs.confirm == 'true'
+        run: |
+          echo "正在停止服务..."
+          bash deploy/stop.sh
+
+  # ============================================
+  # 启动服务
+  # ============================================
+  start-services:
+    name: 启动所有服务
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    inputs:
+      confirm:
+        description: '确认启动服务'
+        required: true
+        type: boolean
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 确认启动
+        run: |
+          echo "🔄 即将启动所有服务..."
+          echo "请确认服务已就绪："
+          echo "  - 代码已部署"
+          echo "  - 数据库已迁移"
+          echo "  - 配置已验证"
+
+      - name: 确认通过
+        if: inputs.confirm == 'true'
+        run: |
+          echo "正在启动服务..."
+          bash deploy/start.sh

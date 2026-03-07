@@ -1,0 +1,374 @@
+/**
+ * 数据库性能优化
+ *
+ * 提供：
+ * - 自动 VACUUM（回收空间）
+ * - 自动 ANALYZE（更新查询优化器统计）
+ * - 慢查询检测和日志
+ * - 索引建议
+ */
+
+import { getConnection } from './connection';
+
+/**
+ * 慢查询记录
+ */
+interface SlowQuery {
+  sql: string;
+  duration: number;
+  timestamp: Date;
+  parameters?: any[];
+}
+
+/**
+ * 性能优化配置
+ */
+export interface OptimizerConfig {
+  vacuumThresholdBytes?: number; // 触发 VACUUM 的文件大小阈值（字节）
+  vacuumIntervalMs?: number; // VACUUM 执行间隔（毫秒）
+  analyzeAfterVacuum?: boolean; // VACUUM 后是否执行 ANALYZE
+  slowQueryThresholdMs?: number; // 慢查询阈值（毫秒）
+  enableSlowQueryLog?: boolean; // 是否启用慢查询日志
+}
+
+/**
+ * 数据库性能优化器
+ */
+export class DatabaseOptimizer {
+  private db = getConnection();
+  private config: Required<OptimizerConfig>;
+  private slowQueries: SlowQuery[] = [];
+  private lastVacuumTime: number = 0;
+  private lastAnalyzeTime: number = 0;
+
+  constructor(config: OptimizerConfig = {}) {
+    this.config = {
+      vacuumThresholdBytes: config.vacuumThresholdBytes || 50 * 1024 * 1024, // 50MB
+      vacuumIntervalMs: config.vacuumIntervalMs || 24 * 60 * 60 * 1000, // 24小时
+      analyzeAfterVacuum: config.analyzeAfterVacuum ?? true,
+      slowQueryThresholdMs: config.slowQueryThresholdMs || 100, // 100ms
+      enableSlowQueryLog: config.enableSlowQueryLog ?? true,
+    };
+  }
+
+  /**
+   * 检查是否需要执行 VACUUM
+   */
+  shouldVacuum(): boolean {
+    const now = Date.now();
+    const timeSinceLastVacuum = now - this.lastVacuumTime;
+
+    // 检查时间间隔
+    if (timeSinceLastVacuum < this.config.vacuumIntervalMs) {
+      return false;
+    }
+
+    // 检查文件大小
+    const stats = this.db.getStats();
+    if (stats.size < this.config.vacuumThresholdBytes) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * 执行 VACUUM
+   */
+  async vacuum(): Promise<void> {
+    if (!this.shouldVacuum()) {
+      console.log('⏭️  VACUUM 不需要执行');
+      return;
+    }
+
+    console.log('🧹 执行 VACUUM 以回收数据库空间...');
+
+    const startTime = Date.now();
+    try {
+      // 执行 VACUUM
+      this.db.vacuum();
+
+      // 可选：执行 ANALYZE
+      if (this.config.analyzeAfterVacuum) {
+        console.log('📊 执行 ANALYZE...');
+        await this.analyze();
+      }
+
+      const duration = Date.now() - startTime;
+      const beforeSize = this.db.getSize();
+
+      console.log(`✅ VACUUM 完成，耗时 ${duration}ms`);
+      console.log(`📊 数据库大小: ${this.formatBytes(beforeSize)}`);
+
+      this.lastVacuumTime = Date.now();
+    } catch (error) {
+      console.error('❌ VACUUM 失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 执行 ANALYZE
+   */
+  async analyze(): Promise<void> {
+    console.log('📊 执行 ANALYZE 以更新查询优化器统计...');
+
+    const startTime = Date.now();
+    try {
+      this.db.analyze();
+      const duration = Date.now() - startTime;
+      this.lastAnalyzeTime = Date.now();
+      console.log(`✅ ANALYZE 完成，耗时 ${duration}ms`);
+    } catch (error) {
+      console.error('❌ ANALYZE 失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 检查查询是否慢
+   */
+  checkSlowQuery(sql: string, duration: number): void {
+    if (duration > this.config.slowQueryThresholdMs) {
+      const record: SlowQuery = {
+        sql: sql.substring(0, 200), // 限制 SQL 长度
+        duration,
+        timestamp: new Date(),
+      };
+
+      this.slowQueries.push(record);
+
+      if (this.config.enableSlowQueryLog) {
+        console.warn(
+          `⚠️  慢查询检测 (${duration}ms): ${sql.substring(0, 100)}`
+        );
+      }
+    }
+  }
+
+  /**
+   * 获取慢查询日志
+   */
+  getSlowQueries(limit = 100): SlowQuery[] {
+    return this.slowQueries.slice(-limit);
+  }
+
+  /**
+   * 获取慢查询统计
+   */
+  getSlowQueryStats(): {
+    total: number;
+    avgDuration: number;
+    maxDuration: number;
+    medianDuration: number;
+  } {
+    if (this.slowQueries.length === 0) {
+      return {
+        total: 0,
+        avgDuration: 0,
+        maxDuration: 0,
+        medianDuration: 0,
+      };
+    }
+
+    const durations = this.slowQueries.map((q) => q.duration);
+    const sorted = [...durations].sort((a, b) => a - b);
+
+    const total = durations.length;
+    const sum = durations.reduce((a, b) => a + b, 0);
+    const avgDuration = sum / total;
+    const maxDuration = sorted[sorted.length - 1];
+    const medianDuration =
+      sorted[Math.floor(sorted.length / 2)];
+
+    return {
+      total,
+      avgDuration: Math.round(avgDuration),
+      maxDuration,
+      medianDuration,
+    };
+  }
+
+  /**
+   * 清空慢查询日志
+   */
+  clearSlowQueries(): void {
+    const count = this.slowQueries.length;
+    this.slowQueries = [];
+    console.log(`🧹 清空了 ${count} 条慢查询记录`);
+  }
+
+  /**
+   * 检查缺失的索引
+   */
+  async checkMissingIndexes(): Promise<string[]> {
+    console.log('🔍 检查缺失的索引...');
+
+    // SQLite 没有内置的索引检查工具
+    // 我们使用启发式方法检查常见模式
+
+    const suggestions: string[] = [];
+
+    // 检查常见 WHERE 列是否有索引
+    const commonWhereColumns = [
+      ['analysis', 'status'],
+      ['analysis', 'platform', 'owner', 'repo_name'],
+      ['analysis', 'created_at'],
+      ['jobs', 'status', 'priority'],
+      ['jobs', 'type'],
+      ['webhook_event', 'processed'],
+      ['webhook_event', 'platform'],
+    ];
+
+    for (const [table, column] of commonWhereColumns) {
+      const indexExists = this.db.get<{ count: number }>(
+        `SELECT COUNT(*) as count
+         FROM sqlite_master
+         WHERE type = 'index'
+           AND tbl_name = ?
+           AND sql LIKE ?`,
+        [table, `%"${column}"%`]
+      );
+
+      if (indexExists && indexExists.count === 0) {
+        suggestions.push(
+          `建议为 ${table}.${column} 添加索引以提高 WHERE 查询性能`
+        );
+      }
+    }
+
+    return suggestions;
+  }
+
+  /**
+   * 获取数据库性能报告
+   */
+  async getPerformanceReport(): Promise<{
+    databaseSize: string;
+    walMode: boolean;
+    cacheSize: string;
+    integrityOk: boolean;
+    vacuumStatus: string;
+    analyzeStatus: string;
+    slowQueryStats: ReturnType<typeof this.getSlowQueryStats>;
+    indexSuggestions: string[];
+  }> {
+    const stats = this.db.getStats();
+    const now = Date.now();
+
+    return {
+      databaseSize: stats.sizeFormatted,
+      walMode: this.db.isWALMode(),
+      cacheSize: this.formatBytes(this.db.getCacheSize()),
+      integrityOk: stats.integrityOk,
+      vacuumStatus: this.shouldVacuum()
+        ? '需要执行'
+        : `上次执行: ${new Date(this.lastVacuumTime).toLocaleString('zh-CN')}`,
+      analyzeStatus: `上次执行: ${new Date(this.lastAnalyzeTime).toLocaleString('zh-CN')}`,
+      slowQueryStats: this.getSlowQueryStats(),
+      indexSuggestions: await this.checkMissingIndexes(),
+    };
+  }
+
+  /**
+   * 格式化字节数
+   */
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+  }
+
+  /**
+   * 优化数据库（综合操作）
+   */
+  async optimize(): Promise<void> {
+    console.log('🚀 开始数据库优化...');
+
+    const startTime = Date.now();
+
+    try {
+      // 1. 执行 VACUUM
+      await this.vacuum();
+
+      // 2. 执行 ANALYZE
+      await this.analyze();
+
+      // 3. 检查缺失索引
+      const suggestions = await this.checkMissingIndexes();
+      if (suggestions.length > 0) {
+        console.log('\n💡 索引优化建议:');
+        for (const suggestion of suggestions) {
+          console.log(`   - ${suggestion}`);
+        }
+      }
+
+      const duration = Date.now() - startTime;
+      console.log(`\n✅ 数据库优化完成，总耗时 ${duration}ms`);
+    } catch (error) {
+      console.error('❌ 数据库优化失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取优化统计
+   */
+  getOptimizationStats(): {
+    lastVacuum: Date | null;
+    lastAnalyze: Date | null;
+    slowQueryCount: number;
+    needsVacuum: boolean;
+  } {
+    return {
+      lastVacuum: this.lastVacuumTime > 0 ? new Date(this.lastVacuumTime) : null,
+      lastAnalyze: this.lastAnalyzeTime > 0 ? new Date(this.lastAnalyzeTime) : null,
+      slowQueryCount: this.slowQueries.length,
+      needsVacuum: this.shouldVacuum(),
+    };
+  }
+
+  /**
+   * 重置统计
+   */
+  resetStats(): void {
+    this.slowQueries = [];
+    this.lastVacuumTime = 0;
+    this.lastAnalyzeTime = 0;
+    console.log('🧹 已重置优化统计');
+  }
+}
+
+/**
+ * 获取优化器单例
+ */
+let optimizerInstance: DatabaseOptimizer | null = null;
+
+export function getOptimizer(config?: OptimizerConfig): DatabaseOptimizer {
+  if (!optimizerInstance) {
+    optimizerInstance = new DatabaseOptimizer(config);
+  }
+  return optimizerInstance;
+}
+
+/**
+ * 启动定时优化任务
+ */
+export function startAutoOptimization(intervalMs = 60 * 60 * 1000): NodeJS.Timeout {
+  console.log('⏰ 启动自动优化定时任务...');
+
+  return setInterval(async () => {
+    const optimizer = getOptimizer();
+
+    if (optimizer.shouldVacuum()) {
+      console.log('⏰ 定时任务：执行数据库优化');
+      try {
+        await optimizer.optimize();
+      } catch (error) {
+        console.error('定时优化任务失败:', error);
+      }
+    }
+  }, intervalMs);
+}

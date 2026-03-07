@@ -1,0 +1,45 @@
+# CodaGraph-lite 前端服务 systemd 配置
+# 适用于 2u2g 服务器优化
+
+[Unit]
+Description=CodaGraph-lite 前端服务 (Next.js 14)
+Documentation=https://github.com/codagraph/codagraph-lite
+After=network.target
+Wants=network.target
+
+[Service]
+Type=notify
+NotifyAccess=all
+WorkingDirectory=/opt/codagraph-lite/web
+
+# 环境变量
+Environment="NODE_ENV=production"
+Environment="NODE_OPTIONS=--max-old-space-size=200"
+
+# 启动命令
+ExecStart=/usr/bin/node /opt/codagraph-lite/web/node_modules/.bin/next start
+ExecReload=/bin/kill -s HUP $MAINPID
+
+# 2u2g 资源限制
+MemoryLimit=1G
+MemoryMax=1G
+LimitNOFILE=65536
+
+# 重启策略
+Restart=always
+RestartSec=10
+
+# 安全配置
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/codagraph-lite/web/.next
+ReadWritePaths=/opt/codagraph-lite/logs
+
+# 日志配置
+StandardOutput=append:/var/log/codagraph-lite/frontend.log
+StandardError=append:/var/log/codagraph-lite/frontend-error.log
+
+[Install]
+WantedBy=multi-user.target

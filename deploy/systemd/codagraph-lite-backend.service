@@ -1,0 +1,57 @@
+# CodaGraph-lite 后端服务 systemd 配置
+# 适用于 2u2g 服务器优化
+
+[Unit]
+Description=CodaGraph-lite 后端服务 (Express.js + SQLite)
+Documentation=https://github.com/codagraph/codagraph-lite
+After=network.target codagraph-lite-frontend.service
+Requires=network.target
+Wants=codagraph-lite-frontend.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/codagraph-lite/server
+
+# 环境变量 - 从 .env 文件加载
+EnvironmentFile=-/opt/codagraph-lite/.env
+Environment="NODE_ENV=production"
+Environment="NODE_OPTIONS=--max-old-space-size=200"
+
+# 启动命令
+ExecStartPre=/bin/mkdir -p /opt/codagraph-lite/data /opt/codagraph-lite/logs
+ExecStart=/usr/bin/node /opt/codagraph-lite/server/dist/index.js
+ExecReload=/bin/kill -s HUP $MAINPID
+
+# 2u2g 资源限制 - 后端占用更多内存
+MemoryLimit=1G
+MemoryMax=1G
+LimitNOFILE=65536
+
+# 重启策略
+Restart=always
+RestartSec=10
+StartLimitBurst=3
+StartLimitInterval=60
+
+# 安全配置
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/codagraph-lite/data
+ReadWritePaths=/opt/codagraph-lite/logs
+ReadWritePaths=/opt/codagraph-lite/backups
+ReadWritePaths=/tmp/repos
+
+# 进程管理 - 确保 Python agents 不成为僵尸进程
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# 日志配置
+StandardOutput=append:/var/log/codagraph-lite/backend.log
+StandardError=append:/var/log/codagraph-lite/backend-error.log
+SyslogIdentifier=codagraph-lite-backend
+
+[Install]
+WantedBy=multi-user.target

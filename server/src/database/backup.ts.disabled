@@ -1,0 +1,320 @@
+/**
+ * 数据库备份/恢复服务
+ *
+ * 功能：
+ * - 在线备份（不影响服务运行）
+ * - 完整备份和增量备份
+ * - 数据压缩
+ * - 自动备份调度
+ * - 数据恢复
+ * - 2u2g 优化：压缩备份以减少磁盘占用
+ */
+
+import { getConnection } from './index';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as zlib from 'zlib';
+import { promisify } from 'util';
+
+const gzip = promisify(zlib.gzip);
+const gunzip = promisify(zlib.gunzip);
+
+/**
+ * 备份选项
+ */
+export interface BackupOptions {
+  compress?: boolean;
+  incremental?: boolean;
+}
+
+/**
+ * 备份配置
+ */
+export interface BackupConfig {
+  backupDir?: string;
+  maxBackups?: number; // 保留的备份数量
+  compressionLevel?: number; // 0-9，默认 6
+  autoBackupEnabled?: boolean;
+  autoBackupInterval?: number; // 毫秒，默认 24 小时
+}
+
+/**
+ * 备份信息
+ */
+export interface BackupInfo {
+  id: string;
+  timestamp: Date;
+  size: number;
+  compressedSize: number;
+  version: number;
+  isCompressed: boolean;
+  filename: string;
+}
+
+/**
+ * 备份管理器类
+ */
+export class BackupManager {
+  private connection = getConnection();
+  private config: Required<BackupConfig>;
+  private backupHistory: BackupInfo[] = [];
+  private autoBackupTimer: NodeJS.Timeout | null = null;
+
+  constructor(config: BackupConfig = {}) {
+    this.config = {
+      backupDir: config.backupDir || path.join(process.cwd(), 'backups'),
+      maxBackups: config.maxBackups ?? 7, // 保留 7 天的备份
+      compressionLevel: config.compressionLevel ?? 6,
+      autoBackupEnabled: config.autoBackupEnabled ?? false,
+      autoBackupInterval: config.autoBackupInterval ?? (24 * 60 * 60 * 1000), // 24 小时
+    };
+  }
+
+  /**
+   * 启动自动备份
+   */
+  startAutoBackup(): void {
+    if (this.config.autoBackupEnabled && !this.autoBackupTimer) {
+      const intervalMs = this.config.autoBackupInterval;
+      console.log(`⏰ 自动备份已启用，间隔: ${intervalMs / (60 * 60 * 1000)} 小时`);
+
+      this.autoBackupTimer = setInterval(async () => {
+        try {
+          await this.createBackup();
+          console.log('✅ 自动备份完成');
+        } catch (error) {
+          console.error('❌ 自动备份失败:', error);
+        }
+      }, intervalMs);
+    }
+  }
+
+  /**
+   * 停止自动备份
+   */
+  stopAutoBackup(): void {
+    if (this.autoBackupTimer) {
+      clearInterval(this.autoBackupTimer);
+      this.autoBackupTimer = null;
+      console.log('⏹️ 自动备份已停止');
+    }
+  }
+
+  /**
+   * 创建备份
+   */
+  async createBackup(description?: string): Promise<BackupInfo> {
+    try {
+      console.log('💾 开始创建备份...');
+
+      const db = this.connection.getDatabase();
+      const timestamp = new Date();
+      const backupId = `backup-${timestamp.getTime()}-${Math.random().toString(36).substr(2, 6)}`;
+
+      // 获取数据库路径
+      const dbPath = this.getDatabasePath(db);
+      const dbSize = await fs.stat(dbPath).then(s => s.size);
+
+      // 确保备份目录存在
+      await fs.mkdir(this.config.backupDir, { recursive: true });
+
+      // 2u2g 优化：使用在线备份（通过 SQLite backup API）
+      const backupFilename = `${backupId}.db`;
+      const backupPath = path.join(this.config.backupDir, backupFilename);
+
+      // 执行备份
+      db.backup(backupPath);
+
+      // 获取备份文件大小
+      const backupSize = await fs.stat(backupPath).then(s => s.size);
+
+      // 压缩备份（2u2g 优化：减少磁盘占用）
+      const compressedFilename = `${backupId}.db.gz`;
+      const compressedPath = path.join(this.config.backupDir, compressedFilename);
+
+      const dbData = await fs.readFile(backupPath);
+      const compressedData = await gzip(dbData, { level: this.config.compressionLevel });
+
+      await fs.writeFile(compressedPath, compressedData);
+
+      const compressedSize = compressedData.length;
+
+      // 获取当前 schema 版本
+      const versionResult = db
+        .prepare('SELECT MAX(version) as version FROM schema_version')
+        .get() as { version: number } | undefined;
+      const version = versionResult?.version ?? 1;
+
+      const backupInfo: BackupInfo = {
+        id: backupId,
+        timestamp,
+        size: dbSize,
+        compressedSize,
+        version,
+        isCompressed: true,
+        filename: compressedFilename,
+      };
+
+      // 添加到历史
+      this.backupHistory.unshift(backupInfo);
+
+      // 清理旧备份
+      await this.cleanupOldBackups();
+
+      console.log('✅ 备份创建完成');
+      console.log(`   备份 ID: ${backupId}`);
+      console.log(`   原始大小: ${(dbSize / 1024 / 1024).toFixed(2)} MB`);
+      console.log(`   压缩大小: ${(compressedSize / 1024 / 1024).toFixed(2)} MB`);
+      console.log(`   压缩率: ${((1 - compressedSize / dbSize) * 100).toFixed(1)}%`);
+
+      return backupInfo;
+    } catch (error) {
+      console.error('❌ 备份创建失败:', error);
+      throw new Error(`备份失败: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * 恢复备份
+   */
+  async restoreBackup(backupId: string): Promise<void> {
+    try {
+      console.log(`🔄 开始恢复备份: ${backupId}`);
+
+      // 查找备份
+      const backupInfo = this.backupHistory.find(b => b.id === backupId);
+      if (!backupInfo) {
+        throw new Error(`备份不存在: ${backupId}`);
+      }
+
+      // 解压缩备份（如果已压缩）
+      const backupPath = path.join(this.config.backupDir, backupInfo.filename);
+      let restoreData = await fs.readFile(backupPath);
+
+      if (backupInfo.isCompressed && backupInfo.filename.endsWith('.gz')) {
+        restoreData = await gunzip(restoreData);
+        console.log('   ✓ 备份已解压缩');
+      }
+
+      // 关闭当前数据库连接
+      this.connection.close();
+
+      // 写入恢复的数据
+      const dbPath = this.getDatabasePath(null);
+      await fs.writeFile(dbPath, restoreData);
+
+      // 重新初始化连接
+      this.connection.initialize();
+
+      console.log(`✅ 备份 ${backupId} 已恢复`);
+      console.log(`   版本: ${backupInfo.version}`);
+      console.log(`   时间: ${backupInfo.timestamp.toISOString()}`);
+    } catch (error) {
+      console.error('❌ 备份恢复失败:', error);
+      throw new Error(`恢复失败: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * 清理旧备份
+   */
+  private async cleanupOldBackups(): Promise<void> {
+    if (this.backupHistory.length <= this.config.maxBackups) {
+      return;
+    }
+
+    const toRemove = this.backupHistory.slice(this.config.maxBackups);
+
+    for (const backup of toRemove) {
+      try {
+        const backupPath = path.join(this.config.backupDir, backup.filename);
+        await fs.unlink(backupPath);
+        console.log(`   🗑️ 已删除旧备份: ${backup.filename}`);
+      } catch (error) {
+        console.error(`   ✗ 删除备份失败: ${backup.filename}`, error);
+      }
+    }
+
+    this.backupHistory = this.backupHistory.slice(0, this.config.maxBackups);
+  }
+
+  /**
+   * 获取所有备份
+   */
+  getBackups(): BackupInfo[] {
+    return [...this.backupHistory];
+  }
+
+  /**
+   * 获取数据库路径
+   */
+  private getDatabasePath(db: Database.Database | null): string {
+    if (db) {
+      return (db as any).name;
+    }
+    return this.config.backupDir.replace('backups', 'data', 'codagraph-lite.db');
+  }
+
+  /**
+   * 删除指定备份
+   */
+  async deleteBackup(backupId: string): Promise<void> {
+    const backupIndex = this.backupHistory.findIndex(b => b.id === backupId);
+    if (backupIndex === -1) {
+      throw new Error(`备份不存在: ${backupId}`);
+    }
+
+    const backup = this.backupHistory[backupIndex];
+    const backupPath = path.join(this.config.backupDir, backup.filename);
+
+    await fs.unlink(backupPath);
+    this.backupHistory.splice(backupIndex, 1);
+
+    console.log(`🗑️ 备份已删除: ${backupId}`);
+  }
+
+  /**
+   * 加载备份历史
+   */
+  async loadBackupHistory(): Promise<void> {
+    try {
+      const files = await fs.readdir(this.config.backupDir);
+      const backupFiles = files.filter(f => f.endsWith('.db.gz') || f.endsWith('.db'));
+
+      for (const file of backupFiles) {
+        const filePath = path.join(this.config.backupDir, file);
+        const stats = await fs.stat(filePath);
+
+        const isCompressed = file.endsWith('.gz');
+        const backupId = file.replace('.db', '').replace('.db.gz', '');
+
+        this.backupHistory.push({
+          id: backupId,
+          timestamp: stats.mtime,
+          size: 0, // 暂不计算未压缩大小
+          compressedSize: stats.size,
+          version: 1, // 暂不追踪版本
+          isCompressed,
+          filename: file,
+        });
+      }
+
+      console.log(`✅ 加载了 ${this.backupHistory.length} 个备份历史`);
+    } catch (error) {
+      console.error('❌ 加载备份历史失败:', error);
+    }
+  }
+}
+
+// 单例实例
+let backupManagerInstance: BackupManager | null = null;
+
+/**
+ * 获取备份管理器单例
+ */
+export function getBackupManager(config?: BackupConfig): BackupManager {
+  if (!backupManagerInstance) {
+    backupManagerInstance = new BackupManager(config);
+  }
+  return backupManagerInstance;
+}

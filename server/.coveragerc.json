@@ -1,0 +1,43 @@
+{
+  "coverageThreshold": {
+    "global": {
+      "branches": 50,
+      "functions": 50,
+      "lines": 50,
+      "statements": 50
+    },
+    "./src/database/": {
+      "branches": 40,
+      "functions": 40,
+      "lines": 40,
+      "statements": 40
+    },
+    "./src/routes/": {
+      "branches": 60,
+      "functions": 60,
+      "lines": 60,
+      "statements": 60
+    },
+    "./src/services/": {
+      "branches": 60,
+      "functions": 60,
+      "lines": 60,
+      "statements": 60
+    }
+  },
+  "collectCoverageFrom": [
+    "src/**/*.ts",
+    "!src/**/*.d.ts",
+    "!src/**/*.test.ts",
+    "!src/**/*.spec.ts",
+    "!src/types/**",
+    "!src/**/index.ts"
+  ],
+  "coverageReporters": ["text", "lcov", "html", "json-summary"],
+  "coverageDirectory": "coverage",
+  "coveragePathIgnorePatterns": [
+    "/node_modules/",
+    "/dist/",
+    "/tests/"
+  ]
+}

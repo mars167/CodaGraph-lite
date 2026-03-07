@@ -1,0 +1,14 @@
+/**
+ * CodaGraph-lite 项目根目录 Prettier 配置
+ * 用于格式化非 TypeScript 文件
+ */
+
+{
+  "singleQuote": true,
+  "printWidth": 100,
+  "tabWidth": 2,
+  "useTabs": false,
+  "bracketSpacing": true,
+  "semi": true,
+  "trailingComma": "es5"
+}

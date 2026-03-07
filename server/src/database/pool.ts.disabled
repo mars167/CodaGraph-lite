@@ -1,0 +1,221 @@
+/**
+ * SQLite 连接池管理
+ *
+ * 虽然 better-sqlite3 是同步的，但我们可以维护多个连接
+ * 用于处理并发请求（虽然 2u2g 服务器主要是单线程）
+ */
+
+import { DatabaseConnection } from './connection';
+
+/**
+ * 连接池配置
+ */
+export interface PoolConfig {
+  maxConnections?: number;
+  connectionConfig?: Parameters<typeof DatabaseConnection>[0];
+}
+
+/**
+ * 连接包装器
+ */
+interface ConnectionWrapper {
+  connection: DatabaseConnection;
+  inUse: boolean;
+  lastUsed: number;
+}
+
+/**
+ * 数据库连接池
+ */
+export class DatabasePool {
+  private connections: ConnectionWrapper[] = [];
+  private config: Required<PoolConfig>;
+  private maxConnections: number;
+
+  constructor(config: PoolConfig = {}) {
+    this.config = {
+      maxConnections: config.maxConnections || 5,
+      connectionConfig: config.connectionConfig || {},
+    };
+    this.maxConnections = this.config.maxConnections;
+  }
+
+  /**
+   * 获取一个连接
+   */
+  getConnection(): DatabaseConnection {
+    // 查找空闲连接
+    const wrapper = this.connections.find((c) => !c.inUse);
+
+    if (wrapper) {
+      wrapper.inUse = true;
+      wrapper.lastUsed = Date.now();
+      return wrapper.connection;
+    }
+
+    // 如果没有空闲连接，创建新的
+    if (this.connections.length < this.maxConnections) {
+      const connection = new DatabaseConnection(this.config.connectionConfig);
+      connection.connect();
+      const newWrapper: ConnectionWrapper = {
+        connection,
+        inUse: true,
+        lastUsed: Date.now(),
+      };
+      this.connections.push(newWrapper);
+      return connection;
+    }
+
+    // 如果达到最大连接数，等待或使用最少使用的连接
+    console.warn(
+      `⚠️  连接池已满 (${this.maxConnections} 个连接)`
+    );
+
+    // 作为后备，返回最旧使用的连接
+    const oldest = this.connections.reduce((oldest, current) => {
+      return current.lastUsed < oldest.lastUsed ? current : oldest;
+    }, this.connections[0]);
+
+    oldest.inUse = true;
+    oldest.lastUsed = Date.now();
+
+    return oldest.connection;
+  }
+
+  /**
+   * 释放连接
+   */
+  releaseConnection(connection: DatabaseConnection): void {
+    const wrapper = this.connections.find(
+      (c) => c.connection === connection
+    );
+
+    if (wrapper) {
+      wrapper.inUse = false;
+      wrapper.lastUsed = Date.now();
+    }
+  }
+
+  /**
+   * 获取池状态
+   */
+  getStats(): {
+    total: number;
+    inUse: number;
+    idle: number;
+    maxConnections: number;
+  } {
+    const inUse = this.connections.filter((c) => c.inUse).length;
+    const idle = this.connections.length - inUse;
+
+    return {
+      total: this.connections.length,
+      inUse,
+      idle,
+      maxConnections: this.maxConnections,
+    };
+  }
+
+  /**
+   * 关闭所有连接
+   */
+  closeAll(): void {
+    for (const wrapper of this.connections) {
+      try {
+        wrapper.connection.close();
+      } catch (error) {
+        console.error('关闭连接失败:', error);
+      }
+    }
+
+    this.connections = [];
+  }
+
+  /**
+   * 清理空闲连接（超过指定时间未使用）
+   */
+  cleanupIdleConnections(idleTimeoutMs: number = 5 * 60 * 1000): void {
+    const now = Date.now();
+    const toRemove: number[] = [];
+
+    for (let i = 0; i < this.connections.length; i++) {
+      const wrapper = this.connections[i];
+      if (
+        !wrapper.inUse &&
+        now - wrapper.lastUsed > idleTimeoutMs
+      ) {
+        try {
+          wrapper.connection.close();
+          toRemove.push(i);
+        } catch (error) {
+          console.error('关闭空闲连接失败:', error);
+        }
+      }
+    }
+
+    // 从后向前删除
+    toRemove.reverse();
+    for (const index of toRemove) {
+      this.connections.splice(index, 1);
+    }
+
+    if (toRemove.length > 0) {
+      console.log(`🧹 清理了 ${toRemove.length} 个空闲连接`);
+    }
+  }
+
+  /**
+   * 调整池大小
+   */
+  resize(newMaxConnections: number): void {
+    this.maxConnections = newMaxConnections;
+    console.log(`📊 连接池大小调整为: ${newMaxConnections}`);
+
+    // 如果需要关闭连接
+    while (this.connections.length > newMaxConnections) {
+      const wrapper = this.connections.pop();
+      if (wrapper) {
+        wrapper.connection.close();
+      }
+    }
+  }
+}
+
+/**
+ * 全局连接池实例
+ */
+let globalPool: DatabasePool | null = null;
+
+/**
+ * 获取全局连接池
+ */
+export function getPool(config?: PoolConfig): DatabasePool {
+  if (!globalPool) {
+    globalPool = new DatabasePool(config);
+  }
+  return globalPool;
+}
+
+/**
+ * 关闭全局连接池
+ */
+export function closePool(): void {
+  if (globalPool) {
+    globalPool.closeAll();
+    globalPool = null;
+  }
+}
+
+/**
+ * 使用连接池执行函数
+ */
+export function withConnection<T>(fn: (conn: DatabaseConnection) => T): T {
+  const pool = getPool();
+  const conn = pool.getConnection();
+
+  try {
+    return fn(conn);
+  } finally {
+    pool.releaseConnection(conn);
+  }
+}
