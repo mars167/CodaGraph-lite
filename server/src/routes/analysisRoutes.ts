@@ -5,10 +5,102 @@
 import express, { Request, Response } from 'express';
 import { getAnalysisModel } from '../models/Analysis';
 import { getAnalysisJobModel } from '../models/AnalysisJob';
+import { getOAuthInstallationModel } from '../models/OAuthInstallation';
+import { getRepositoryModel } from '../models/Repository';
 import { getQueueService } from '../jobs/QueueService';
 import type { AnalysisStatus, Platform } from '../models/types';
+import { createPlatformClient } from '../platform/client';
+import type { ReviewFinding } from '../review/reviewEngine';
+import {
+  buildReviewReportFileContexts,
+  type ReviewReportPatchFile,
+  type ReviewReportFileContext,
+  type StoredReviewReportFileReview,
+} from '../review/reportPresentation';
+import { getOAuthInstallationService } from '../services/OAuthInstallationService';
 
 const router = express.Router();
+
+interface StoredReviewReportPayload {
+  summary?: string;
+  riskLevel?: 'low' | 'medium' | 'high' | 'critical' | 'unknown';
+  reportMarkdown?: string;
+  findings?: ReviewFinding[];
+  files?: ReviewReportPatchFile[];
+  fileReviews?: StoredReviewReportFileReview[];
+  fileContexts?: ReviewReportFileContext[];
+  postedCommentCount?: number;
+  jobId?: string | number;
+  generatedAt?: string;
+}
+
+interface PlatformPullRequestFile {
+  filename: string;
+  status?: string;
+  additions?: number;
+  deletions?: number;
+  changes?: number;
+  previous_filename?: string;
+  patch?: string;
+}
+
+function parseReportPayload(raw: string): StoredReviewReportPayload | null {
+  try {
+    return JSON.parse(raw) as StoredReviewReportPayload;
+  } catch {
+    return null;
+  }
+}
+
+async function loadLivePatchFiles(params: {
+  platform: Platform;
+  owner: string;
+  repoName: string;
+  prNumber: number;
+}): Promise<ReviewReportPatchFile[]> {
+  const repository = getRepositoryModel().findByPlatformOwnerName(
+    params.platform,
+    params.owner,
+    params.repoName
+  );
+
+  if (!repository) {
+    return [];
+  }
+
+  const installation = getOAuthInstallationModel().findById(repository.installation_id);
+  if (!installation || !installation.is_active) {
+    return [];
+  }
+
+  try {
+    const validInstallation = await getOAuthInstallationService().ensureValidAccessToken(installation);
+    const client = createPlatformClient(
+      params.platform,
+      validInstallation.access_token,
+      {
+        authType: validInstallation.auth_type || 'oauth',
+        githubAppInstallationId: validInstallation.github_app_installation_id || null,
+      }
+    );
+
+    const files = await client.getPullRequestFiles(params.owner, params.repoName, params.prNumber) as PlatformPullRequestFile[];
+    return files.map((file) => ({
+      path: file.filename,
+      status: file.status,
+      additions: file.additions ?? 0,
+      deletions: file.deletions ?? 0,
+      changes: file.changes ?? ((file.additions ?? 0) + (file.deletions ?? 0)),
+      previousPath: file.previous_filename,
+      patch: file.patch,
+    }));
+  } catch (error) {
+    console.warn(
+      `获取 PR 实时 patch 失败: ${params.owner}/${params.repoName}#${params.prNumber} - ${(error as Error).message}`
+    );
+    return [];
+  }
+}
 
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -93,11 +185,26 @@ router.get('/:id/report', async (req: Request, res: Response) => {
       return res.status(404).json({ error: '分析记录不存在' });
     }
 
-    let report: Record<string, unknown> | null = null;
-    try {
-      report = JSON.parse(analysis.analysis_result) as Record<string, unknown>;
-    } catch {
-      report = null;
+    const storedReport = parseReportPayload(analysis.analysis_result);
+    let report: StoredReviewReportPayload | null = storedReport;
+
+    if (storedReport) {
+      const livePatchFiles = await loadLivePatchFiles({
+        platform: analysis.platform,
+        owner: analysis.owner,
+        repoName: analysis.repo_name,
+        prNumber: analysis.pr_number,
+      });
+
+      report = {
+        ...storedReport,
+        fileContexts: buildReviewReportFileContexts({
+          findings: Array.isArray(storedReport.findings) ? storedReport.findings : [],
+          files: Array.isArray(storedReport.files) ? storedReport.files : [],
+          fileReviews: Array.isArray(storedReport.fileReviews) ? storedReport.fileReviews : [],
+          patchFiles: livePatchFiles,
+        }),
+      };
     }
 
     return res.json({ analysis, report });

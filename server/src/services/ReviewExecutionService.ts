@@ -528,6 +528,7 @@ export class ReviewExecutionService {
         language: review.language,
         fileSummary: review.fileSummary,
         findings: review.findings,
+        patch: review.patch,
         semanticContext: review.semanticContext,
         usedFallback: review.usedFallback,
       })),
