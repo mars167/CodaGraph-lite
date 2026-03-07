@@ -329,4 +329,66 @@ describe('ReviewExecutionService', () => {
     const persistedPayload = JSON.parse(analysisModelMock.markComplete.mock.calls[0][1]);
     expect(persistedPayload.inlineComments).toEqual({ planned: 1, posted: 1 });
   });
+
+  it('still creates a GitHub review when there are no inline findings', async () => {
+    reviewEngineReviewMock.mockResolvedValueOnce({
+      fileReviews: [
+        {
+          filePath: 'src/review.ts',
+          status: 'modified',
+          language: 'typescript',
+          fileSummary: 'review.ts 已完成审查，未发现高价值问题。',
+          findings: [],
+          semanticContext: {
+            changedSymbols: ['run'],
+            relatedSnippets: [],
+            callers: [],
+            callees: [],
+            usedGitAi: false,
+          },
+          patch: '@@ -1,2 +1,2 @@\n export const run = () => {\n }\n',
+          usedFallback: true,
+        },
+      ],
+      allFindings: [],
+      summaryFindings: [],
+      inlineComments: [],
+      fallbackFindings: [],
+      summary: '已完成仓库上下文驱动的 PR review，未发现需要处理的问题。',
+      riskLevel: 'low',
+      mode: 'rule-only',
+      metadata: {
+        llmEnabled: false,
+        llmUsed: false,
+        gitAiAvailable: false,
+        reviewedFiles: 1,
+        inlineCommentLimit: 8,
+      },
+    });
+
+    const service = new ReviewExecutionService();
+
+    const result = await service.execute(1003, JSON.stringify({
+      platform: 'github',
+      repo_name: 'mars/lite',
+      pr_number: '42',
+      repository_id: '7',
+      analysis_id: '13',
+      analysis_job_id: '17',
+    }));
+
+    expect(commentClientMock.submitReview).toHaveBeenCalledTimes(1);
+    expect(commentClientMock.submitReview).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        comments: [],
+      })
+    );
+    expect(commentClientMock.postReviewComment).not.toHaveBeenCalled();
+    expect(commentClientMock.postComment).not.toHaveBeenCalled();
+    expect(result.postedCommentCount).toBe(1);
+
+    const persistedPayload = JSON.parse(analysisModelMock.markComplete.mock.calls[0][1]);
+    expect(persistedPayload.inlineComments).toEqual({ planned: 0, posted: 0 });
+  });
 });

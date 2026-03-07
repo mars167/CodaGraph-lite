@@ -401,8 +401,7 @@ export class ReviewExecutionService {
     };
 
     const canSubmitBatchReview = repository.platform === 'github'
-      && typeof commentClient.submitReview === 'function'
-      && advancedReview.inlineComments.length > 0;
+      && typeof commentClient.submitReview === 'function';
 
     if (canSubmitBatchReview) {
       this.ensureNotCancelled(jobId);
