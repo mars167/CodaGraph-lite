@@ -5,6 +5,7 @@ import { promisify } from 'util';
 import type { Platform } from '../models/types';
 import { logger } from '../utils/logger';
 import { annotateDiffWithLineNumbers, getChangedHeadLines, mapLineToInlineComment, type InlineCommentPosition } from './diffMapper';
+import { CodeContextRuntime } from './codeContextRuntime';
 import { ReviewLLMClient } from './llmClient';
 import { buildFileReviewPrompt, buildOverallReviewPrompt, buildSystemPrompt } from './prompts';
 import { parseFileReview } from './reviewParser';
@@ -40,9 +41,9 @@ export interface ReviewFinding {
 export interface FileSemanticContext {
   changedSymbols: string[];
   relatedSnippets: string[];
-  callers: string[];
-  callees: string[];
-  usedGitAi: boolean;
+  impactReferences: string[];
+  relatedTests: string[];
+  contextEngineAvailable: boolean;
 }
 
 export interface FileReviewResult {
@@ -73,7 +74,7 @@ export interface AdvancedReviewResult {
   metadata: {
     llmEnabled: boolean;
     llmUsed: boolean;
-    gitAiAvailable: boolean;
+    contextEngineAvailable: boolean;
     reviewedFiles: number;
     inlineCommentLimit: number;
   };
@@ -374,32 +375,11 @@ function createFallbackFileSummary(file: ReviewFileInput, findings: ReviewFindin
   return `${file.path} 存在 ${findings.length} 个值得关注的问题，需结合 diff 和上下文处理。`;
 }
 
-function formatSearchOutput(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => truncate(typeof item === 'string' ? item : JSON.stringify(item)))
-      .filter((item) => item.length > 0)
-      .slice(0, 5);
-  }
-
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .slice(0, 5)
-      .map(([key, item]) => `${key}: ${truncate(typeof item === 'string' ? item : JSON.stringify(item))}`);
-    return entries;
-  }
-
-  if (typeof value === 'string' && value.trim().length > 0) {
-    return value.split('\n').slice(0, 5).map((line) => truncate(line));
-  }
-
-  return [];
-}
-
 export class AdvancedReviewEngine {
   private readonly llmClient = new ReviewLLMClient();
+  private readonly codeContextRuntime = new CodeContextRuntime();
   private readonly semanticCache = new Map<string, FileSemanticContext>();
-  private gitAiAvailable = false;
+  private contextEngineAvailable = false;
 
   async review(input: AdvancedReviewInput): Promise<AdvancedReviewResult> {
     const workspacePath = createWorkspacePath(input);
@@ -411,8 +391,8 @@ export class AdvancedReviewEngine {
       input.onProgress?.('创建审查工作区');
       await this.cloneAndCheckout(input, workspacePath);
 
-      input.onProgress?.('尝试构建 git-ai 索引');
-      this.gitAiAvailable = await this.tryIndexWorkspace(workspacePath);
+      input.onProgress?.('初始化 Code Context Engine runtime');
+      this.contextEngineAvailable = await this.codeContextRuntime.prepare(workspacePath);
 
       const supportedFiles = input.files.filter((file) => file.patch && isSupportedFile(file.path));
       const fileReviews: FileReviewResult[] = [];
@@ -449,7 +429,7 @@ export class AdvancedReviewEngine {
         metadata: {
           llmEnabled,
           llmUsed,
-          gitAiAvailable: this.gitAiAvailable,
+          contextEngineAvailable: this.contextEngineAvailable,
           reviewedFiles: fileReviews.length,
           inlineCommentLimit: input.maxInlineComments ?? 8,
         },
@@ -509,19 +489,6 @@ export class AdvancedReviewEngine {
       await this.runCommand('git', ['checkout', input.headSha], workspacePath);
     } catch {
       await this.runCommand('git', ['checkout', `refs/remotes/origin/pr/${input.prNumber}`], workspacePath);
-    }
-  }
-
-  private async tryIndexWorkspace(workspacePath: string): Promise<boolean> {
-    const gitAiBinary = process.env.GIT_AI_BIN || 'git-ai';
-
-    try {
-      await this.runCommand(gitAiBinary, ['--version']);
-      await this.runCommand(gitAiBinary, ['index'], workspacePath);
-      return true;
-    } catch (error) {
-      logger.warn(`git-ai 不可用，切换到文本搜索回退: ${(error as Error).message}`);
-      return false;
     }
   }
 
@@ -619,53 +586,29 @@ export class AdvancedReviewEngine {
     const context: FileSemanticContext = {
       changedSymbols,
       relatedSnippets: [],
-      callers: [],
-      callees: [],
-      usedGitAi: false,
+      impactReferences: [],
+      relatedTests: [],
+      contextEngineAvailable: false,
     };
 
     const symbols = changedSymbols.length > 0
       ? changedSymbols
       : [path.basename(file.path, path.extname(file.path))].filter((value) => value.length > 1);
 
-    if (this.gitAiAvailable) {
-      const gitAiBinary = process.env.GIT_AI_BIN || 'git-ai';
-      const primarySymbol = symbols[0];
-
+    if (this.contextEngineAvailable) {
       try {
-        const searchResult = await this.runCommand(
-          gitAiBinary,
-          ['search', '--query', primarySymbol, '--limit', '5', '--output', 'json'],
-          workspacePath
+        const collected = await this.codeContextRuntime.collectContext(
+          workspacePath,
+          file.path,
+          file.patch,
+          symbols
         );
-        context.relatedSnippets = formatSearchOutput(JSON.parse(searchResult.stdout));
-        context.usedGitAi = true;
-      } catch {
-        context.usedGitAi = false;
-      }
-
-      if (primarySymbol && context.usedGitAi) {
-        try {
-          const callersResult = await this.runCommand(
-            gitAiBinary,
-            ['graph', 'callers', primarySymbol, '--depth', '1', '--output', 'json'],
-            workspacePath
-          );
-          context.callers = formatSearchOutput(JSON.parse(callersResult.stdout));
-        } catch {
-          context.callers = [];
-        }
-
-        try {
-          const calleesResult = await this.runCommand(
-            gitAiBinary,
-            ['graph', 'callees', primarySymbol, '--depth', '1', '--output', 'json'],
-            workspacePath
-          );
-          context.callees = formatSearchOutput(JSON.parse(calleesResult.stdout));
-        } catch {
-          context.callees = [];
-        }
+        context.relatedSnippets = collected.relatedSnippets;
+        context.impactReferences = collected.impactReferences;
+        context.relatedTests = collected.relatedTests;
+        context.contextEngineAvailable = collected.contextEngineAvailable;
+      } catch (error) {
+        logger.warn(`CodeContextEngine 上下文收集失败 ${file.path}: ${(error as Error).message}`);
       }
     }
 

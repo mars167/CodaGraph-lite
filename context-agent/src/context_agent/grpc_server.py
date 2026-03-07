@@ -4,7 +4,7 @@ Context Agent gRPC Server
 
 关键特性：
 - ReAct 循环（Reason-Act-Observe）用于智能上下文收集
-- 与 git-ai CLI 集成进行语义搜索
+- 与 Code Context Engine runtime 集成进行代码检索
 - 严格超时控制（默认 5 分钟）
 - 内存限制执行（300m）
 - 响应 SIGTERM/SIGKILL 信号
@@ -43,7 +43,7 @@ sys.path.insert(0, str(project_root))
 load_dotenv()
 
 GRPC_PORT = int(os.getenv('CONTEXT_AGENT_PORT', '50052'))
-GIT_AI_BIN = os.getenv('GIT_AI_BIN', '/usr/local/bin/git-ai')
+CODE_CONTEXT_ENGINE_ROOT = os.getenv('CODE_CONTEXT_ENGINE_ROOT', '../CodeContextEngine')
 PYTHON_MEMORY_LIMIT = os.getenv('PYTHON_MEMORY_LIMIT', '300m')
 
 
@@ -91,9 +91,9 @@ class ReActAgent:
     用于逐步收集代码上下文
     """
 
-    def __init__(self, repository_path: str, git_ai_path: str, max_iterations: int = 5):
+    def __init__(self, repository_path: str, retrieval_runtime_root: str, max_iterations: int = 5):
         self.repository_path = repository_path
-        self.git_ai_path = git_ai_path
+        self.retrieval_runtime_root = retrieval_runtime_root
         self.max_iterations = max_iterations
         self.steps_taken: List[str] = []
         self.symbols: List[dict] = []
@@ -160,10 +160,10 @@ class ReActAgent:
     async def _act_collect_symbols(self, files: List[str]):
         """行动阶段 - 收集符号信息"""
         self.steps_taken.append("  Act: 收集符号定义")
-        # 在实际实现中，这里会调用 git-ai 符号查询
+        # 在实际实现中，这里会调用 Code Context Engine runtime 做符号检索
         for file_path in files:
             # 模拟符号收集
-            # 实际实现会使用 git-ai CLI
+            # 实际实现会使用 Code Context Engine runtime
             pass
 
     async def _act_analyze_dependencies(self, files: List[str]):
@@ -265,7 +265,7 @@ class ContextAgentServicer(agent_pb2_grpc.ContextAgentServiceServicer):
             # 创建 ReAct 代理
             agent = ReActAgent(
                 repository_path=request.repository_path,
-                git_ai_path=request.git_ai_path,
+                retrieval_runtime_root=request.retrieval_runtime_root,
                 max_iterations=request.max_iterations
             )
 
@@ -337,7 +337,7 @@ async def serve() -> None:
     logger.info(f"🚀 Context Agent 服务启动")
     logger.info(f"📍 端口: {GRPC_PORT}")
     logger.info(f"🧠 内存限制: {PYTHON_MEMORY_LIMIT}")
-    logger.info(f"🔧 git-ai 路径: {GIT_AI_BIN}")
+    logger.info(f"🔧 Code Context Engine 路径: {CODE_CONTEXT_ENGINE_ROOT}")
     logger.info(f"⏱️  最大并发: 1")
     logger.info("=" * 50)
 

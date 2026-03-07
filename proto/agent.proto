@@ -54,7 +54,7 @@ message ContextRequest {
   PRInfo pr_info = 1;
   repeated FileChange files = 2;      // 需要分析的文件
   string repository_path = 3;          // 仓库本地路径
-  string git_ai_path = 4;             // git-ai CLI 路径
+  string retrieval_runtime_root = 4;   // 代码检索 runtime 根目录
   int32 max_iterations = 5;            // ReAct 最大迭代次数
 }
 

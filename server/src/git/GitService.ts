@@ -1,6 +1,6 @@
 /**
  * Git 操作服务
- * 用于 git-ai CLI 与代码审查管道的集成
+ * 用于代码审查管道中的仓库操作
  */
 
 import { spawn, ChildProcess } from 'child_process';
@@ -24,14 +24,9 @@ export interface GitDiffOptions {
  * Git 操作服务类
  */
 export class GitService {
-  private gitAiPath: string;
   private workspaceRoot: string;
 
-  constructor(
-    gitAiPath: string,
-    workspaceRoot: string
-  ) {
-    this.gitAiPath = gitAiPath;
+  constructor(workspaceRoot: string) {
     this.workspaceRoot = workspaceRoot;
   }
 
@@ -139,18 +134,6 @@ export class GitService {
   }
 
   /**
-   * 使用 git-ai 索引仓库
-   */
-  async indexRepository(repositoryPath: string): Promise<void> {
-    logger.info('索引仓库（git-ai）...');
-
-    const args = [this.gitAiPath, 'index'];
-    await this.executeGitCommand(args, 'git-ai index', repositoryPath);
-
-    logger.info('仓库索引完成');
-  }
-
-  /**
    * 获取文件差异
    */
   async getFileDiff(
@@ -182,14 +165,10 @@ export class GitService {
 let gitServiceInstance: GitService | null = null;
 
 export function getGitService(
-  gitAiPath?: string,
   workspaceRoot?: string
 ): GitService {
   if (!gitServiceInstance) {
-    gitServiceInstance = new GitService(
-      gitAiPath || process.env.GIT_AI_BIN || '/usr/local/bin/git-ai',
-      workspaceRoot || process.env.WORKSPACE_ROOT || '/tmp/repos'
-    );
+    gitServiceInstance = new GitService(workspaceRoot || process.env.WORKSPACE_ROOT || '/tmp/repos');
   }
   return gitServiceInstance;
 }

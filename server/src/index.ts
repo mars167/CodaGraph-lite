@@ -88,7 +88,7 @@ async function main() {
       contextAgentPort: config.agent.contextAgentPort,
       reviewAgentHost: config.agent.reviewAgentHost,
       reviewAgentPort: config.agent.reviewAgentPort,
-      workspaceRoot: config.gitAi.workspaceRoot,
+      workspaceRoot: config.codeContextRuntime.workspaceRoot,
       maxConcurrentJobs: config.jobQueue.workerCount,
     });
     await reviewWorker.start();

@@ -97,7 +97,7 @@ export const RESOURCE_CONFIG = {
   // 内存限制 (MB)
   nodeMemoryLimit: 512,              // Node.js 监控阈值
   pythonMemoryLimit: 512,             // Python 进程内存限制
-  gitAiMemoryLimit: 512,             // git-ai CLI 内存限制
+  codeContextRuntimeMemoryLimit: 512, // Code Context Engine runtime 内存预算
 
   // 超时 (ms)
   contextAgentTimeout: 300000,         // Context Agent 5 分钟

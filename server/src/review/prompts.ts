@@ -5,9 +5,9 @@ export interface FilePromptContext {
   semanticContext: {
     changedSymbols: string[];
     relatedSnippets: string[];
-    callers: string[];
-    callees: string[];
-    usedGitAi: boolean;
+    impactReferences: string[];
+    relatedTests: string[];
+    contextEngineAvailable: boolean;
   };
   fileContent?: string;
 }
@@ -54,19 +54,19 @@ function formatSemanticContext(context: FilePromptContext['semanticContext']): s
     sections.push(`Changed symbols: ${context.changedSymbols.join(', ')}`);
   }
 
-  if (context.callers.length > 0) {
-    sections.push(`Callers: ${context.callers.join(', ')}`);
+  if (context.impactReferences.length > 0) {
+    sections.push(`Impact references:\n${context.impactReferences.map((item) => `- ${item}`).join('\n')}`);
   }
 
-  if (context.callees.length > 0) {
-    sections.push(`Callees: ${context.callees.join(', ')}`);
+  if (context.relatedTests.length > 0) {
+    sections.push(`Related tests:\n${context.relatedTests.map((item) => `- ${item}`).join('\n')}`);
   }
 
   if (context.relatedSnippets.length > 0) {
     sections.push(`Related snippets:\n${context.relatedSnippets.map((item) => `- ${item}`).join('\n')}`);
   }
 
-  sections.push(`Semantic index available: ${context.usedGitAi ? 'yes' : 'no'}`);
+  sections.push(`Code retrieval runtime available: ${context.contextEngineAvailable ? 'yes' : 'no'}`);
 
   return sections.join('\n\n');
 }

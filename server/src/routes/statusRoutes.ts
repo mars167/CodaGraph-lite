@@ -237,7 +237,7 @@ router.get('/resources', (_req: Request, res: Response) => {
           nodeMemoryLimit: limits.nodeMemoryLimit,
           sqliteCacheSize: limits.sqliteCacheSize,
           pythonMemoryLimit: limits.pythonMemoryLimit,
-          gitAiMemoryLimit: limits.gitAiMemoryLimit,
+          codeContextRuntimeMemoryLimit: limits.codeContextRuntimeMemoryLimit,
           workerCount: limits.workerCount,
           enableConcurrentJobs: limits.enableConcurrentJobs,
         },
@@ -337,10 +337,10 @@ router.get('/config', (_req: Request, res: Response) => {
           reviewAgentTimeout: config.agent.reviewAgentTimeout,
           pythonMemoryLimit: config.agent.pythonMemoryLimit,
         },
-        gitAi: {
-          gitAiBin: config.gitAi.gitAiBin,
-          gitAiMaxMemory: config.gitAi.gitAiMaxMemory,
-          workspaceRoot: config.gitAi.workspaceRoot,
+        codeContextRuntime: {
+          engineRoot: config.codeContextRuntime.engineRoot,
+          maxMemory: config.codeContextRuntime.maxMemory,
+          workspaceRoot: config.codeContextRuntime.workspaceRoot,
         },
         monitoring: {
           enableSwapWarning: config.monitoring.enableSwapWarning,
@@ -404,10 +404,10 @@ router.get('/2u2g', (_req: Request, res: Response) => {
         current: limits.pythonMemoryLimit,
         passed: limits.pythonMemoryLimit <= 300,
       },
-      gitAiMemoryLimit: {
-        recommended: 256,
-        current: limits.gitAiMemoryLimit,
-        passed: limits.gitAiMemoryLimit <= 256,
+      codeContextRuntimeMemoryLimit: {
+        recommended: 512,
+        current: limits.codeContextRuntimeMemoryLimit,
+        passed: limits.codeContextRuntimeMemoryLimit <= 512,
       },
     };
 

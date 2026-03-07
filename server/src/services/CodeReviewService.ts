@@ -12,6 +12,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { logger } from '../utils/logger';
 import { getGitService, GitService } from '../git/GitService';
+import { CodeContextRuntime } from '../review/codeContextRuntime';
 import {
   getAgentProcessService,
   AgentProcessService,
@@ -108,6 +109,7 @@ function isSafeGitCommand(command: string): boolean {
  */
 export class CodeReviewService {
   private gitService: GitService;
+  private retrievalRuntime = new CodeContextRuntime();
   private agentProcessService = getAgentProcessService();
   private resourceAllocator = getResourceAllocator();
   private platformClients: Map<string, any> = new Map();
@@ -217,9 +219,9 @@ export class CodeReviewService {
       await this.cloneRepository(prDetails, workspacePath);
       await this.updateJobProgress(jobId, 'cloning', 30, '克隆仓库完成');
 
-      // 步骤 3: git-ai 索引
-      await this.indexRepository(workspacePath);
-      await this.updateJobProgress(jobId, 'indexing', 20, 'git-ai 索引完成');
+      // 步骤 3: 准备代码检索 runtime
+      await this.prepareRetrievalRuntime(workspacePath);
+      await this.updateJobProgress(jobId, 'indexing', 20, '代码检索 runtime 已就绪');
 
       // 步骤 4: 获取 PR 文件变更
       const fileChanges = await this.getFileChanges(prDetails, workspacePath);
@@ -382,16 +384,20 @@ export class CodeReviewService {
   }
 
   /**
-   * 索引仓库（git-ai）
+   * 准备代码检索 runtime
    */
-  private async indexRepository(workspacePath: string): Promise<void> {
-    logger.info('📊 索引仓库（git-ai）...');
+  private async prepareRetrievalRuntime(workspacePath: string): Promise<void> {
+    logger.info('📊 准备 Code Context Engine runtime...');
 
     try {
-      await this.gitService.indexRepository(workspacePath);
-      logger.info('✅ 仓库索引完成');
+      const prepared = await this.retrievalRuntime.prepare(workspacePath);
+      if (!prepared) {
+        logger.warn('⚠️ Code Context Engine runtime 不可用，将由调用方自行降级');
+        return;
+      }
+      logger.info('✅ Code Context Engine runtime 已就绪');
     } catch (error) {
-      throw new Error(`索引仓库失败: ${(error as Error).message}`);
+      throw new Error(`准备代码检索 runtime 失败: ${(error as Error).message}`);
     }
   }
 
