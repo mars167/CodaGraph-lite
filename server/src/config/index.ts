@@ -219,6 +219,19 @@ function getEnvArray(key: string, defaultValue?: string[]): string[] {
   return value.split(',').map(v => v.trim()).filter(Boolean);
 }
 
+function normalizeCorsMethods(methods: string[]): string[] {
+  const requiredMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
+  const normalized = methods.map((method) => method.toUpperCase());
+
+  for (const requiredMethod of requiredMethods) {
+    if (!normalized.includes(requiredMethod)) {
+      normalized.push(requiredMethod);
+    }
+  }
+
+  return normalized;
+}
+
 /**
  * 验证 2u2g 配置
  * CRITICAL: 拒绝无效的 2u2g 配置
@@ -351,7 +364,9 @@ export function loadConfig(): AppConfig {
 
     cors: {
       corsOrigins: getEnvArray('CORS_ORIGINS', ['http://localhost:3000']),
-      corsMethods: getEnvArray('CORS_METHODS', ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']),
+      corsMethods: normalizeCorsMethods(
+        getEnvArray('CORS_METHODS', ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
+      ),
     },
 
     llm: {
