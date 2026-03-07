@@ -91,3 +91,6 @@ dist/
 
 # 本地秘密文件
 secrets/
+
+# 本地 skills 安装目录
+skills/
