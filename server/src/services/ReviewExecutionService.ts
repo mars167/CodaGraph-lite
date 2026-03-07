@@ -2,6 +2,7 @@ import { getAnalysisModel } from '../models/Analysis';
 import { getAnalysisJobModel } from '../models/AnalysisJob';
 import { getJobLogModel } from '../models/JobLog';
 import { getOAuthInstallationModel } from '../models/OAuthInstallation';
+import { getReviewLockModel } from '../models/ReviewLock';
 import { getRepositoryModel } from '../models/Repository';
 import type { Analysis, JobPayload, Platform } from '../models/types';
 import { createPlatformClient } from '../platform/client';
@@ -259,6 +260,7 @@ export class ReviewExecutionService {
   private oauthInstallationService = getOAuthInstallationService();
   private jobLogModel = getJobLogModel();
   private queueService = getQueueService();
+  private reviewLockModel = getReviewLockModel();
   private reviewEngine = new AdvancedReviewEngine();
 
   private log(jobId: number, level: 'info' | 'warn' | 'error', message: string): void {
@@ -501,6 +503,7 @@ export class ReviewExecutionService {
     );
     this.analysisJobModel.markComplete(analysisJob.id, 1, 'Review 完成，报告已生成');
     this.repositoryModel.updateLastAnalyzed(repository.id, new Date());
+    this.reviewLockModel.releaseByAnalysisId(analysis.id);
     this.log(jobId, 'info', `review-agent 推理完成，风险等级=${riskLevel}`);
 
     const completedAnalysis = this.analysisModel.findById(analysis.id);
@@ -542,6 +545,7 @@ export class ReviewExecutionService {
         } else {
           this.analysisModel.markFailed(analysisId, reason);
         }
+        this.reviewLockModel.releaseByAnalysisId(analysisId);
       }
       if (!Number.isNaN(analysisJobId)) {
         this.analysisJobModel.markFailed(analysisJobId, reason);

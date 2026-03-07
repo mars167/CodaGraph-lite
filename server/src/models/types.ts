@@ -214,10 +214,12 @@ export interface Repository {
   webhook_secret?: string | null;
   webhook_url?: string | null;
   is_active: boolean;
+  watch_enabled?: boolean;
   created_at: Date | string;
   updated_at: Date | string;
   last_synced_at?: Date | string | null;
   last_analyzed_at?: Date | string | null;
+  watch_last_checked_at?: Date | string | null;
 }
 
 /**
@@ -241,6 +243,7 @@ export interface CreateRepositoryDTO {
   webhook_secret?: string | null;
   webhook_url?: string | null;
   is_active: boolean;
+  watch_enabled?: boolean;
 }
 
 /**
@@ -337,6 +340,22 @@ export interface Job {
   updated_at: Date | string;
 }
 
+export interface ReviewLock {
+  id: number;
+  platform: Platform;
+  owner: string;
+  repo_name: string;
+  pr_number: number;
+  head_commit: string;
+  source: 'manual' | 'watch' | 'webhook';
+  status: 'active' | 'released';
+  analysis_id?: number | null;
+  job_id?: number | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+  released_at?: Date | string | null;
+}
+
 export interface JobLog {
   id: number;
   job_id: number;
@@ -378,6 +397,8 @@ export interface JobPayload {
   repository_id?: string;
   analysis_id?: string;
   analysis_job_id?: string;
+  head_commit?: string;
+  trigger_source?: 'manual' | 'watch' | 'webhook';
 }
 
 /**

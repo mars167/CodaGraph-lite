@@ -87,6 +87,9 @@ export async function resetDatabase(): Promise<void> {
     db.execute('DROP TABLE IF EXISTS webhook_event');
     db.execute('DROP TABLE IF EXISTS usage_metric');
     db.execute('DROP TABLE IF EXISTS jobs');
+    db.execute('DROP TABLE IF EXISTS review_lock');
+    db.execute('DROP TABLE IF EXISTS job_log');
+    db.execute('DROP TABLE IF EXISTS migration_history');
 
     console.log('🧹 数据库已重置');
   } catch (error) {

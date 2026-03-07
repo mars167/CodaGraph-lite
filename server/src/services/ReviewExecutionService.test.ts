@@ -38,6 +38,10 @@ const queueServiceMock = {
   isCancellationRequested: jest.fn(() => false),
 };
 
+const reviewLockModelMock = {
+  releaseByAnalysisId: jest.fn(),
+};
+
 const platformApiClientMock = {
   getPullRequest: jest.fn(),
   getRepository: jest.fn(),
@@ -77,6 +81,10 @@ jest.mock('../models/JobLog', () => ({
 
 jest.mock('../jobs/QueueService', () => ({
   getQueueService: () => queueServiceMock,
+}));
+
+jest.mock('../models/ReviewLock', () => ({
+  getReviewLockModel: () => reviewLockModelMock,
 }));
 
 jest.mock('../platform/client', () => ({

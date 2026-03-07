@@ -79,13 +79,14 @@ function formatCount(value?: number) {
 }
 
 export default function RepositoriesPage() {
-  const { error } = useNotificationHelpers();
+  const { success, error } = useNotificationHelpers();
   const [isLoading, setIsLoading] = useState(true);
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [filter, setFilter] = useState<Platform>('github');
   const [searchKeyword, setSearchKeyword] = useState('');
+  const [updatingWatchId, setUpdatingWatchId] = useState<string | null>(null);
   const pageSize = 20;
 
   const loadRepositories = useCallback(async (currentPage = 1, platformFilter = filter) => {
@@ -128,6 +129,7 @@ export default function RepositoriesPage() {
     const visible = filteredRepositories.length;
     const privateCount = filteredRepositories.filter((repo) => repo.private).length;
     const connectedCount = filteredRepositories.filter((repo) => Boolean(repo.webhookUrl)).length;
+    const watchedCount = filteredRepositories.filter((repo) => Boolean(repo.watchEnabled)).length;
     const languageCount = new Set(
       filteredRepositories
         .map((repo) => repo.language)
@@ -138,12 +140,31 @@ export default function RepositoriesPage() {
       visible,
       privateCount,
       connectedCount,
+      watchedCount,
       languageCount,
     };
   }, [filteredRepositories]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const activeTheme = platformThemes[filter];
+
+  const handleToggleWatch = useCallback(async (repo: Repository) => {
+    try {
+      setUpdatingWatchId(repo.id);
+      const response = await apiClient.setRepositoryWatch(repo.id, !repo.watchEnabled);
+      setRepositories((current) => current.map((item) => (
+        item.id === repo.id ? response.data : item
+      )));
+      success(
+        response.data.watchEnabled ? 'Watch 已开启' : 'Watch 已关闭',
+        `${repo.fullName} ${response.data.watchEnabled ? '现在会每分钟检查 PR 更新' : '已停止自动检查 PR 更新'}`
+      );
+    } catch (err) {
+      error('更新失败', err instanceof Error ? err.message : '无法更新仓库 Watch 状态');
+    } finally {
+      setUpdatingWatchId(null);
+    }
+  }, [error, success]);
 
   return (
     <div className="space-y-6">
@@ -172,8 +193,8 @@ export default function RepositoriesPage() {
                   {[
                     { label: '平台仓库', value: total.toLocaleString('zh-CN'), tone: 'text-slate-950 dark:text-white' },
                     { label: '当前结果', value: repositoryInsights.visible.toLocaleString('zh-CN'), tone: activeTheme.link },
+                    { label: 'Watch 中', value: repositoryInsights.watchedCount.toLocaleString('zh-CN'), tone: 'text-violet-700 dark:text-violet-300' },
                     { label: 'Webhook 已连', value: repositoryInsights.connectedCount.toLocaleString('zh-CN'), tone: 'text-emerald-700 dark:text-emerald-300' },
-                    { label: '活跃语言', value: repositoryInsights.languageCount.toLocaleString('zh-CN'), tone: 'text-blue-700 dark:text-blue-300' },
                   ].map((item) => (
                     <div
                       key={item.label}
@@ -254,6 +275,9 @@ export default function RepositoriesPage() {
                   <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-gray-800">
                     私有仓库 {repositoryInsights.privateCount}
                   </span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-gray-800">
+                    活跃语言 {repositoryInsights.languageCount}
+                  </span>
                   {searchKeyword.trim() ? (
                     <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
                       搜索命中 {repositoryInsights.visible}
@@ -323,6 +347,9 @@ export default function RepositoriesPage() {
                               <Badge variant={repo.webhookUrl ? 'success' : 'warning'} size="sm">
                                 {repo.webhookUrl ? 'Webhook 已连接' : '待配置 Webhook'}
                               </Badge>
+                              <Badge variant={repo.watchEnabled ? 'info' : 'default'} size="sm">
+                                {repo.watchEnabled ? 'Watch 已开启' : 'Watch 未开启'}
+                              </Badge>
                               {typeof repo.active === 'boolean' ? (
                                 <Badge variant={repo.active ? 'success' : 'default'} size="sm">
                                   {repo.active ? '启用中' : '已停用'}
@@ -389,12 +416,42 @@ export default function RepositoriesPage() {
                                       {lastCommitText || '--'}
                                     </span>
                                   </div>
+                                  <div className="flex items-center justify-between gap-3">
+                                    <span>Watch 检查</span>
+                                    <span className="truncate font-medium text-slate-900 dark:text-gray-100">
+                                      {repo.watchLastCheckedAt ? formatDateTime(repo.watchLastCheckedAt) : '--'}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                             </div>
                           </div>
 
                           <div className="flex flex-row gap-2 xl:flex-col xl:items-end">
+                            <button
+                              type="button"
+                              onClick={() => void handleToggleWatch(repo)}
+                              disabled={updatingWatchId === repo.id}
+                              className={[
+                                'inline-flex items-center justify-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-all',
+                                repo.watchEnabled
+                                  ? 'border-violet-200 bg-violet-50 text-violet-700 hover:border-violet-300 hover:bg-violet-100 dark:border-violet-900/60 dark:bg-violet-950/40 dark:text-violet-200 dark:hover:border-violet-800 dark:hover:bg-violet-950/70'
+                                  : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-600 dark:hover:bg-gray-800',
+                                updatingWatchId === repo.id ? 'cursor-wait opacity-70' : '',
+                              ].join(' ')}
+                            >
+                              {updatingWatchId === repo.id ? (
+                                <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                                </svg>
+                              ) : (
+                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2m4-2a8 8 0 11-16 0 8 8 0 0116 0z" />
+                                </svg>
+                              )}
+                              {repo.watchEnabled ? '关闭 Watch' : '开启 Watch'}
+                            </button>
                             <Link
                               href={`/dashboard/repositories/${repo.id}`}
                               className="inline-flex items-center justify-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
@@ -434,7 +491,9 @@ export default function RepositoriesPage() {
                               Next Action
                             </p>
                             <p className="mt-1 text-sm text-slate-600 dark:text-gray-300">
-                              进入仓库详情后，可以继续查看 PR、报告和风险摘要。
+                              {repo.watchEnabled
+                                ? '已进入每分钟轮询。发现新 PR 或 head commit 更新时，会自动创建 review job。'
+                                : '进入仓库详情后，可以继续查看 PR、报告和风险摘要。'}
                             </p>
                           </div>
                           <Link

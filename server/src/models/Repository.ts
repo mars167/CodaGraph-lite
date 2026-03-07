@@ -139,8 +139,8 @@ export class RepositoryModel {
         platform, remote_id, owner, name, full_name, description,
         is_private, language, stars_count, forks_count, default_branch,
         html_url, installation_id, webhook_id, webhook_secret, webhook_url,
-        is_active, last_synced_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        is_active, watch_enabled, last_synced_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         dto.platform,
         toNullableText(dto.remote_id),
@@ -159,6 +159,7 @@ export class RepositoryModel {
         dto.webhook_secret || null,
         dto.webhook_url || null,
         dto.is_active ? 1 : 0,
+        dto.watch_enabled ? 1 : 0,
         toISOString(new Date()),
       ]
     );
@@ -197,6 +198,8 @@ export class RepositoryModel {
         | 'html_url'
         | 'installation_id'
         | 'last_synced_at'
+        | 'watch_enabled'
+        | 'watch_last_checked_at'
         | 'last_analyzed_at'
       >
     >
@@ -256,10 +259,20 @@ export class RepositoryModel {
       fields.push('is_active = ?');
       params.push(updates.is_active ? 1 : 0);
     }
+    if (updates.watch_enabled !== undefined) {
+      fields.push('watch_enabled = ?');
+      params.push(updates.watch_enabled ? 1 : 0);
+    }
     if (updates.last_synced_at !== undefined) {
       fields.push('last_synced_at = ?');
       params.push(
         updates.last_synced_at ? toISOString(updates.last_synced_at) : null
+      );
+    }
+    if (updates.watch_last_checked_at !== undefined) {
+      fields.push('watch_last_checked_at = ?');
+      params.push(
+        updates.watch_last_checked_at ? toISOString(updates.watch_last_checked_at) : null
       );
     }
     if (updates.last_analyzed_at !== undefined) {
@@ -337,6 +350,20 @@ export class RepositoryModel {
    */
   deactivate(id: number): boolean {
     return this.update(id, { is_active: false }) !== null;
+  }
+
+  findWatchedActive(): Repository[] {
+    return this.db.all<Repository>(
+      `SELECT *
+       FROM repository
+       WHERE is_active = 1 AND watch_enabled = 1
+       ORDER BY updated_at DESC`,
+      []
+    );
+  }
+
+  updateWatchCheck(id: number, checkedAt: Date): boolean {
+    return this.update(id, { watch_last_checked_at: checkedAt }) !== null;
   }
 
   /**

@@ -9,10 +9,10 @@ import { getRepositoryModel } from '../models/Repository';
 import { getOAuthInstallationModel } from '../models/OAuthInstallation';
 import { getAnalysisModel } from '../models/Analysis';
 import { getAnalysisJobModel } from '../models/AnalysisJob';
-import { getJobLogModel } from '../models/JobLog';
 import { getQueueService } from '../jobs/QueueService';
 import { createPlatformClient } from '../platform/client';
 import { getOAuthInstallationService } from '../services/OAuthInstallationService';
+import { getReviewTriggerService } from '../services/ReviewTriggerService';
 import type { Platform, CreateRepositoryDTO, Analysis, Job, ReviewReportSummary } from '../models/types';
 import type { Repository as PlatformRepository, PullRequest as PlatformPullRequest } from '../platform/client';
 
@@ -488,69 +488,19 @@ router.post('/:id/pull-requests/:prNumber/review', async (req: Request, res: Res
       return res.status(400).json({ error: '无效的参数' });
     }
 
-    const repositoryModel = getRepositoryModel();
-    const repository = repositoryModel.findById(id);
-    if (!repository) {
-      return res.status(404).json({ error: '仓库不存在' });
-    }
-
-    const installation = getOAuthInstallationModel().findById(repository.installation_id);
-    if (!installation || !installation.is_active) {
-      return res.status(400).json({ error: '仓库关联的 OAuth 安装不可用' });
-    }
-
-    const validInstallation = await getOAuthInstallationService().ensureValidAccessToken(installation);
-    const client = createPlatformClient(repository.platform, validInstallation.access_token);
-    const pullRequest = await client.getPullRequest(repository.owner, repository.name, prNumber);
-    const providerAuthor = (pullRequest as PlatformPullRequest & {
-      author?: { username?: string };
-    }).author?.username;
-    const analysisModel = getAnalysisModel();
-    const analysis = analysisModel.create({
-      platform: repository.platform,
-      owner: repository.owner,
-      repo_name: repository.name,
-      pr_number: prNumber,
-      pr_title: pullRequest.title,
-      pr_author: pullRequest.user?.login || providerAuthor || 'unknown',
-      base_commit: pullRequest.base?.sha || pullRequest.base?.ref || '',
-      head_commit: pullRequest.head?.sha || pullRequest.head?.ref || '',
+    const result = await getReviewTriggerService().triggerByRepositoryId(id, prNumber, {
+      source: 'manual',
+      priority: 2,
+      force: true,
     });
 
-    if (!analysis) {
-      throw new Error('创建审查分析记录失败');
-    }
-
-    const analysisJob = getAnalysisJobModel().create(analysis.id, 'cloning');
-    const queueResult = await getQueueService().createJob(
-      'pr_analysis',
-      {
-        platform: repository.platform,
-        repo_name: `${repository.owner}/${repository.name}`,
-        pr_number: String(prNumber),
-        repository_id: String(repository.id),
-        analysis_id: String(analysis.id),
-        analysis_job_id: String(analysisJob.id),
-      },
-      2
-    );
-
-    if (queueResult.error) {
-      return res.status(400).json({ error: queueResult.error });
-    }
-
-    getJobLogModel().create(
-      queueResult.id,
-      'info',
-      `手动触发 PR Review，关联分析 #${analysis.id}，仓库=${repository.full_name}，PR=#${prNumber}`
-    );
-
-    return res.status(201).json({
+    return res.status(result.created ? 201 : 200).json({
       success: true,
-      analysis,
-      analysisJob,
-      jobId: queueResult.id,
-      message: 'PR review 已加入队列',
+      created: result.created,
+      analysis: result.analysis,
+      analysisJob: result.analysisJob,
+      jobId: result.jobId,
+      message: result.message,
     });
   } catch (error) {
     console.error('创建手动 review 失败:', error);
@@ -558,6 +508,43 @@ router.post('/:id/pull-requests/:prNumber/review', async (req: Request, res: Res
     const statusCode = /重新授权|OAuth token|401 Unauthorized/.test(message) ? 401 : 500;
     return res.status(statusCode).json({
       error: statusCode === 401 ? 'OAuth 授权已失效，请重新授权 GitHub' : '内部服务器错误',
+      details: (error as Error).message,
+    });
+  }
+});
+
+router.patch('/:id/watch', async (req: Request, res: Response) => {
+  try {
+    const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const id = parseInt(idParam, 10);
+
+    if (isNaN(id)) {
+      return res.status(400).json({ error: '无效的 ID' });
+    }
+
+    const repositoryModel = getRepositoryModel();
+    const repository = repositoryModel.findById(id);
+    if (!repository) {
+      return res.status(404).json({ error: '仓库不存在' });
+    }
+
+    const requestedEnabled = typeof req.body?.enabled === 'boolean'
+      ? req.body.enabled
+      : !repository.watch_enabled;
+
+    const updated = repositoryModel.update(id, {
+      watch_enabled: requestedEnabled,
+    });
+
+    return res.json({
+      success: true,
+      repository: updated,
+      message: `仓库 Watch 已${requestedEnabled ? '开启' : '关闭'}`,
+    });
+  } catch (error) {
+    console.error('切换仓库 Watch 状态失败:', error);
+    return res.status(500).json({
+      error: '内部服务器错误',
       details: (error as Error).message,
     });
   }

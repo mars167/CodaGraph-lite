@@ -43,6 +43,7 @@ export default function RepositoryPullRequestsPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [reviewingPr, setReviewingPr] = useState<number | null>(null);
   const [stateFilter, setStateFilter] = useState<'open' | 'closed' | 'all'>('open');
+  const [isUpdatingWatch, setIsUpdatingWatch] = useState(false);
 
   const loadPullRequests = useCallback(async (silent = false) => {
     if (!repositoryId) {
@@ -103,7 +104,12 @@ export default function RepositoryPullRequestsPage() {
     try {
       setReviewingPr(pr.prNumber);
       const response = await apiClient.startRepositoryPullRequestReview(repositoryId, pr.prNumber);
-      success('已开始 Review', `PR #${pr.prNumber} 已进入队列，作业 #${response.data.jobId}`);
+      success(
+        response.data.created ? '已开始 Review' : '未重复触发',
+        response.data.jobId
+          ? `PR #${pr.prNumber} ${response.data.message}，作业 #${response.data.jobId}`
+          : `PR #${pr.prNumber} ${response.data.message}`
+      );
       await loadPullRequests(true);
     } catch (err) {
       error('启动失败', err instanceof Error ? err.message : '无法启动 PR Review');
@@ -123,6 +129,26 @@ export default function RepositoryPullRequestsPage() {
     }
 
     return date.toLocaleString('zh-CN', { hour12: false });
+  };
+
+  const handleToggleWatch = async () => {
+    if (!repository) {
+      return;
+    }
+
+    try {
+      setIsUpdatingWatch(true);
+      const response = await apiClient.setRepositoryWatch(repository.id, !repository.watchEnabled);
+      setRepository(response.data);
+      success(
+        response.data.watchEnabled ? 'Watch 已开启' : 'Watch 已关闭',
+        `${response.data.fullName} ${response.data.watchEnabled ? '现在会每分钟检查 PR 更新' : '已停止自动检查 PR 更新'}`
+      );
+    } catch (err) {
+      error('更新失败', err instanceof Error ? err.message : '无法更新仓库 Watch 状态');
+    } finally {
+      setIsUpdatingWatch(false);
+    }
   };
 
   if (isLoading && !repository) {
@@ -150,6 +176,23 @@ export default function RepositoryPullRequestsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {repository && (
+            <button
+              type="button"
+              onClick={() => void handleToggleWatch()}
+              disabled={isUpdatingWatch}
+              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                repository.watchEnabled
+                  ? 'border-violet-200 bg-violet-50 text-violet-700 hover:border-violet-300 hover:bg-violet-100 dark:border-violet-900/60 dark:bg-violet-950/40 dark:text-violet-200 dark:hover:border-violet-800 dark:hover:bg-violet-950/70'
+                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'
+              } ${isUpdatingWatch ? 'cursor-wait opacity-70' : ''}`}
+            >
+              <svg className={`h-4 w-4 ${isUpdatingWatch ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2m4-2a8 8 0 11-16 0 8 8 0 0116 0z" />
+              </svg>
+              {repository.watchEnabled ? '关闭 Watch' : '开启 Watch'}
+            </button>
+          )}
           <button
             onClick={() => void loadPullRequests(true)}
             className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
@@ -185,6 +228,9 @@ export default function RepositoryPullRequestsPage() {
                 <div className="flex flex-wrap gap-2">
                   {repository.private && <Badge variant="default">私有</Badge>}
                   {repository.language && <Badge variant="info">{repository.language}</Badge>}
+                  <Badge variant={repository.watchEnabled ? 'info' : 'default'}>
+                    {repository.watchEnabled ? 'Watch 已开启' : 'Watch 未开启'}
+                  </Badge>
                 </div>
               </div>
             </CardContent>
@@ -194,6 +240,7 @@ export default function RepositoryPullRequestsPage() {
               <p className="text-sm text-gray-500 dark:text-gray-400">Star / Fork</p>
               <p className="mt-3 text-2xl font-semibold text-gray-900 dark:text-white">{repository.stars ?? 0} / {repository.forks ?? 0}</p>
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">缓存更新时间：{formatDate(repository.lastSyncedAt)}</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Watch 检查：{formatDate(repository.watchLastCheckedAt)}</p>
             </CardContent>
           </Card>
           <Card>

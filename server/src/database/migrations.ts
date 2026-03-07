@@ -298,6 +298,38 @@ export async function runMigrations(): Promise<number> {
           CREATE INDEX IF NOT EXISTS idx_job_log_job_id ON job_log(job_id, created_at DESC);
         `
       },
+      {
+        version: 7,
+        name: 'add_repository_watch_and_review_lock',
+        sql: `
+          ALTER TABLE repository ADD COLUMN watch_enabled BOOLEAN DEFAULT 0;
+          ALTER TABLE repository ADD COLUMN watch_last_checked_at DATETIME;
+          CREATE INDEX IF NOT EXISTS idx_repository_watch_enabled ON repository(watch_enabled, is_active);
+
+          CREATE TABLE IF NOT EXISTS review_lock (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            platform TEXT NOT NULL CHECK(platform IN ('github', 'gitee', 'gitlab')),
+            owner TEXT NOT NULL,
+            repo_name TEXT NOT NULL,
+            pr_number INTEGER NOT NULL,
+            head_commit TEXT NOT NULL,
+            source TEXT NOT NULL CHECK(source IN ('manual', 'watch', 'webhook')),
+            status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'released')),
+            analysis_id INTEGER REFERENCES analysis(id) ON DELETE SET NULL,
+            job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            released_at DATETIME
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_review_lock_analysis ON review_lock(analysis_id);
+          CREATE INDEX IF NOT EXISTS idx_review_lock_job ON review_lock(job_id);
+          CREATE INDEX IF NOT EXISTS idx_review_lock_pr ON review_lock(platform, owner, repo_name, pr_number, created_at DESC);
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_review_lock_active
+          ON review_lock(platform, owner, repo_name, pr_number, head_commit)
+          WHERE status = 'active';
+        `
+      },
     ];
 
     // 应用未应用的迁移

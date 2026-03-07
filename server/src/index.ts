@@ -28,6 +28,7 @@ import cors, { type CorsOptions } from 'cors';
 import { getConfig, printConfigSummary, ConfigurationError } from './config';
 import { getMemoryMonitor } from './config/memory';
 import { getResourceAllocator } from './config/resource';
+import { RepositoryWatchService } from './services/RepositoryWatchService';
 
 // 加载环境变量
 const envCandidates = [
@@ -91,6 +92,12 @@ async function main() {
     });
     await reviewWorker.start();
     logger.info('✅ PR Review Worker 已启动');
+
+    const repositoryWatchService = new RepositoryWatchService({
+      intervalMs: 60_000,
+    });
+    await repositoryWatchService.start();
+    logger.info('✅ Repository Watcher 已启动');
 
     // ============================================
     // 4. 启动 Express 服务器
@@ -197,6 +204,7 @@ async function main() {
 
       // 停止后台 worker
       await reviewWorker.stop();
+      await repositoryWatchService.stop();
 
       // 停止作业队列
       const queueService = getQueueService();

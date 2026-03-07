@@ -63,6 +63,8 @@ export interface Repository {
   htmlUrl?: string;
   webhookUrl?: string;
   lastSyncedAt?: string;
+  watchEnabled?: boolean;
+  watchLastCheckedAt?: string;
   active?: boolean;
   stars?: number;
   forks?: number;

@@ -67,6 +67,17 @@ export class JobModel {
     );
   }
 
+  findLatestByAnalysisId(analysisId: number): Job | null {
+    const result = this.db.get<Job>(
+      `SELECT * FROM jobs
+       WHERE json_extract(payload, '$.analysis_id') = ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [String(analysisId)]
+    );
+    return result || null;
+  }
+
   /**
    * 获取正在处理的作业
    */
