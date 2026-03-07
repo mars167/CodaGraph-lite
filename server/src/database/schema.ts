@@ -250,7 +250,12 @@ CREATE TABLE IF NOT EXISTS usage_metric (
     'analysis_failed',
     'pr_analyzed',
     'comments_posted',
-    'files_reviewed'
+    'files_reviewed',
+    'llm_prompt_tokens',
+    'llm_completion_tokens',
+    'llm_total_tokens',
+    'llm_requests_total',
+    'llm_requests_failed'
   )),
   metric_value INTEGER NOT NULL,
   platform TEXT,
@@ -260,6 +265,16 @@ CREATE TABLE IF NOT EXISTS usage_metric (
 
 CREATE INDEX IF NOT EXISTS idx_usage_metric_type ON usage_metric(metric_type);
 CREATE INDEX IF NOT EXISTS idx_usage_metric_recorded ON usage_metric(recorded_at DESC);
+`;
+
+export const APP_SETTING_TABLE = `
+CREATE TABLE IF NOT EXISTS app_setting (
+  setting_key TEXT PRIMARY KEY,
+  setting_value TEXT NOT NULL,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_setting_updated_at ON app_setting(updated_at DESC);
 `;
 
 /**
@@ -290,6 +305,7 @@ export const ALL_TABLES = [
   { name: 'job_log', sql: JOB_LOG_TABLE },
   { name: 'webhook_event', sql: WEBHOOK_EVENT_TABLE },
   { name: 'usage_metric', sql: USAGE_METRIC_TABLE },
+  { name: 'app_setting', sql: APP_SETTING_TABLE },
 ];
 
 /**

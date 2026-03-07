@@ -14,12 +14,77 @@ import { getMemoryMonitor, MemoryPressure } from '../config/memory';
 import { getConfig, getResourceLimits } from '../config';
 import { getResourceAllocator } from '../config/resource';
 import { getQueueService } from '../jobs/QueueService';
+import { getConnection } from '../database/connection';
+import { getUsageMetricModel } from '../models/UsageMetric';
+import { getSystemSettingsService } from '../services/SystemSettingsService';
 import { logger } from '../utils/logger';
 
 const router = express.Router();
 
 const toError = (error: unknown): Error =>
   error instanceof Error ? error : new Error(String(error));
+
+router.get('/', (_req: Request, res: Response) => {
+  try {
+    const memoryMonitor = getMemoryMonitor();
+    const memoryStatus = memoryMonitor.getResourceStatus();
+    const queueService = getQueueService();
+    const queueStatus = queueService.getQueueStatus();
+    const dbConnection = getConnection();
+    let database: 'connected' | 'disconnected' = 'disconnected';
+
+    if (dbConnection.isReady()) {
+      try {
+        dbConnection.getDatabase().prepare('SELECT 1').get();
+        database = 'connected';
+      } catch (error) {
+        const err = toError(error);
+        logger.warn(`数据库连通性检查失败: ${err.message}`);
+      }
+    }
+
+    let worker: 'running' | 'stopped' | 'error' = 'running';
+    if (queueStatus.deadCount > 0) {
+      worker = 'error';
+    } else if (queueStatus.activeCount === 0 && queueStatus.pendingCount === 0) {
+      worker = 'running';
+    }
+
+    let status: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
+    if (database === 'disconnected') {
+      status = 'unhealthy';
+    } else if (!memoryMonitor.canStartJob().canStart || worker === 'error') {
+      status = 'degraded';
+    }
+
+    return res.json({
+      status,
+      database,
+      worker,
+      memoryUsage: {
+        total: memoryStatus.memory.totalMB * 1024 * 1024,
+        used: memoryStatus.memory.usedMB * 1024 * 1024,
+        available: memoryStatus.memory.freeMB * 1024 * 1024,
+        percentage: memoryStatus.memory.usedPercent,
+        swapTotal: memoryStatus.swap.totalMB * 1024 * 1024,
+        swapUsed: memoryStatus.swap.usedMB * 1024 * 1024,
+        swapPercentage: memoryStatus.swap.usedPercent,
+      },
+      uptime: Math.floor(process.uptime()),
+      version: process.env.npm_package_version || '1.0.0',
+    });
+  } catch (error) {
+    const err = toError(error);
+    logger.error('获取系统状态失败:', err);
+    return res.status(500).json({
+      status: 'unhealthy',
+      database: 'disconnected',
+      worker: 'error',
+      uptime: Math.floor(process.uptime()),
+      version: process.env.npm_package_version || '1.0.0',
+    });
+  }
+});
 
 /**
  * GET /api/status/health
@@ -123,6 +188,8 @@ router.get('/resources', (_req: Request, res: Response) => {
     const limits = getResourceLimits();
     const resourceAllocator = getResourceAllocator();
     const queueService = getQueueService();
+    const usageMetricModel = getUsageMetricModel();
+    const llmConfig = getSystemSettingsService().getLlmConfig();
 
     // 获取内存状态
     const memoryStatus = memoryMonitor.getResourceStatus();
@@ -133,6 +200,11 @@ router.get('/resources', (_req: Request, res: Response) => {
 
     // 获取队列状态
     const queueStatus = queueService.getQueueStatus();
+    const promptTokens = usageMetricModel.getTotal('llm_prompt_tokens');
+    const completionTokens = usageMetricModel.getTotal('llm_completion_tokens');
+    const totalTokens = usageMetricModel.getTotal('llm_total_tokens');
+    const requests = usageMetricModel.getTotal('llm_requests_total');
+    const failedRequests = usageMetricModel.getTotal('llm_requests_failed');
 
     return res.json({
       status: 'ok',
@@ -194,6 +266,27 @@ router.get('/resources', (_req: Request, res: Response) => {
         jobsProcessed: queueStatus.completedCount,
         jobsFailed: queueStatus.failedCount + queueStatus.deadCount,
         avgProcessingTime: queueStatus.avgProcessingTime / 1000, // 转换为秒
+        currentMemory: {
+          total: memoryStatus.memory.totalMB,
+          used: memoryStatus.memory.usedMB,
+          free: memoryStatus.memory.freeMB,
+          percentage: memoryStatus.memory.usedPercent,
+          swapTotal: memoryStatus.swap.totalMB,
+          swapUsed: memoryStatus.swap.usedMB,
+          swapPercentage: memoryStatus.swap.usedPercent,
+        },
+        peakMemory: memoryStatus.memory.usedMB,
+        llm: {
+          configured: llmConfig.apiKey.trim().length > 0,
+          provider: llmConfig.provider,
+          model: llmConfig.model,
+          baseUrl: llmConfig.baseUrl,
+          promptTokens,
+          completionTokens,
+          totalTokens,
+          requests,
+          failedRequests,
+        },
         // 建议
         recommendations: memoryStatus.recommendations,
         timestamp: new Date().toISOString(),

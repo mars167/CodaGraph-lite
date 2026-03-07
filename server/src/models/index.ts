@@ -17,6 +17,7 @@ export { JobModel, getJobModel } from './Job';
 export { ReviewLockModel, getReviewLockModel } from './ReviewLock';
 export { WebhookEventModel, getWebhookEventModel } from './WebhookEvent';
 export { UsageMetricModel, getUsageMetricModel } from './UsageMetric';
+export { AppSettingModel, getAppSettingModel } from './AppSetting';
 
 // OAuth 模型
 export { OAuthInstallationModel, getOAuthInstallationModel } from './OAuthInstallation';

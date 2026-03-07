@@ -138,6 +138,11 @@ export class UsageMetricModel {
       'pr_analyzed',
       'comments_posted',
       'files_reviewed',
+      'llm_prompt_tokens',
+      'llm_completion_tokens',
+      'llm_total_tokens',
+      'llm_requests_total',
+      'llm_requests_failed',
     ];
 
     for (const type of metricTypes) {
@@ -154,6 +159,24 @@ export class UsageMetricModel {
     }
 
     return stats;
+  }
+
+  getTotal(type: MetricType, options: { platform?: Platform; since?: Date | string } = {}): number {
+    let sql = 'SELECT SUM(metric_value) as total FROM usage_metric WHERE metric_type = ?';
+    const params: Array<string | Date> = [type];
+
+    if (options.platform) {
+      sql += ' AND platform = ?';
+      params.push(options.platform);
+    }
+
+    if (options.since) {
+      sql += ' AND recorded_at >= ?';
+      params.push(typeof options.since === 'string' ? options.since : options.since.toISOString());
+    }
+
+    const result = this.db.get<{ total: number }>(sql, params);
+    return result?.total ?? 0;
   }
 
   /**

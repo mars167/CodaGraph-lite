@@ -24,13 +24,13 @@ function GitHubAppCallbackContent() {
 
       if (errorParam) {
         error('授权失败', decodeURIComponent(errorParam));
-        router.replace('/dashboard/oauth');
+        router.replace('/dashboard/settings#oauth');
         return;
       }
 
       if (!installationId || !state) {
         error('授权失败', '缺少 installation_id 或 state 参数');
-        router.replace('/dashboard/oauth');
+        router.replace('/dashboard/settings#oauth');
         return;
       }
 
@@ -38,7 +38,7 @@ function GitHubAppCallbackContent() {
       if (typeof window !== 'undefined') {
         const existing = sessionStorage.getItem(requestKey);
         if (existing === 'done' || existing === 'pending') {
-          router.replace('/dashboard/oauth');
+          router.replace('/dashboard/settings#oauth');
           return;
         }
         sessionStorage.setItem(requestKey, 'pending');
@@ -75,7 +75,7 @@ function GitHubAppCallbackContent() {
         }
         error('授权失败', e instanceof Error ? e.message : '授权处理失败');
       } finally {
-        router.replace('/dashboard/oauth');
+        router.replace('/dashboard/settings#oauth');
       }
     };
 

@@ -8,6 +8,7 @@ import { Loading } from '@/components/ui/Loading';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { useNotificationHelpers } from '@/contexts/NotificationContext';
+import { rememberOAuthStatePlatform } from '@/lib/oauth-state';
 
 const platformIcons: Record<Platform, React.ReactNode> = {
   github: (
@@ -56,6 +57,7 @@ export default function OAuthPage() {
       setIsAuthorizing(platform);
       const authType = platform === 'github' ? 'github_app' : 'oauth';
       const response = await apiClient.getOAuthAuthorizationUrl(platform, authType);
+      rememberOAuthStatePlatform(response.data.authorizationUrl, platform);
       window.location.href = response.data.authorizationUrl;
     } catch (err) {
       error('授权失败', err instanceof Error ? err.message : '无法获取授权链接');

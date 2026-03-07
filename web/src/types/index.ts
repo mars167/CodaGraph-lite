@@ -322,6 +322,12 @@ export interface SystemSettings {
   autoBackupEnabled: boolean;
   backupSchedule: string;
   backupRetentionDays: number;
+  // LLM 配置
+  llmProvider: string;
+  llmApiKey: string;
+  llmApiBaseUrl: string;
+  llmModel: string;
+  llmMaxRetries: number;
 }
 
 export interface BackupInfo {
@@ -335,6 +341,32 @@ export interface ResourceStats {
   jobsProcessed: number;
   jobsFailed: number;
   avgProcessingTime: number;
-  currentMemory: MemoryInfo;
-  peakMemory: number;
+  currentMemory?: MemoryInfo;
+  peakMemory?: number;
+  llm?: {
+    configured: boolean;
+    provider: string;
+    model: string;
+    baseUrl?: string;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    requests: number;
+    failedRequests: number;
+  };
+}
+
+export interface LlmTestResult {
+  available: boolean;
+  latencyMs: number;
+  provider: string;
+  model: string;
+  availableModels: string[];
+  responsePreview?: string;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  message: string;
 }

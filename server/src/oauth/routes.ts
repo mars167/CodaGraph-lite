@@ -36,6 +36,16 @@ interface OAuthCallbackCacheEntry {
   result?: OAuthCallbackSuccessResponse;
 }
 
+class OAuthCallbackError extends Error {
+  statusCode: number;
+
+  constructor(message: string, statusCode = 400) {
+    super(message);
+    this.name = 'OAuthCallbackError';
+    this.statusCode = statusCode;
+  }
+}
+
 const oauthCallbackCache = new Map<string, OAuthCallbackCacheEntry>();
 const OAUTH_CALLBACK_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -156,7 +166,24 @@ async function getUserInfo(platform: Platform, accessToken: string) {
   });
 
   if (!response.ok) {
-    throw new Error(`获取用户信息失败: ${response.statusText}`);
+    let providerMessage: string | undefined;
+    try {
+      const errorPayload = await response.json() as Record<string, unknown>;
+      if (typeof errorPayload.error_description === 'string') {
+        providerMessage = errorPayload.error_description;
+      } else if (typeof errorPayload.message === 'string') {
+        providerMessage = errorPayload.message;
+      } else if (typeof errorPayload.error === 'string') {
+        providerMessage = errorPayload.error;
+      }
+    } catch {
+      providerMessage = undefined;
+    }
+
+    throw new OAuthCallbackError(
+      providerMessage || `获取用户信息失败: ${response.status} ${response.statusText}`,
+      response.status >= 500 ? 502 : 400
+    );
   }
 
   const userData = await response.json() as UserInfoResponse;
@@ -285,7 +312,7 @@ async function handleOAuthCallback(
         );
 
         if (tokenResponse.error) {
-          throw new Error(tokenResponse.error_description || tokenResponse.error);
+          throw new OAuthCallbackError(tokenResponse.error_description || tokenResponse.error, 400);
         }
 
         userInfo = await getUserInfo(platform, tokenResponse.access_token);
@@ -371,6 +398,11 @@ async function handleOAuthCallback(
     }
   } catch (error) {
     console.error('OAuth 回调处理错误:', error);
+    if (error instanceof OAuthCallbackError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+      });
+    }
     return res.status(500).json({
       error: '内部服务器错误',
       details: (error as Error).message,

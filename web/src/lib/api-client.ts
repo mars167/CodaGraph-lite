@@ -14,6 +14,7 @@ import type {
   ReviewReportDetail,
   ReviewReportSummary,
   ResourceStats,
+  LlmTestResult,
   SystemSettings,
   SystemStatus,
 } from '@/types';
@@ -897,8 +898,12 @@ class ApiClient {
   }
 
   // 保存系统设置
-  async saveSettings(settings: SystemSettings): Promise<void> {
-    return this.put<void>('/api/settings', settings);
+  async saveSettings(settings: SystemSettings): Promise<ApiResponse<SystemSettings>> {
+    return this.put<ApiResponse<SystemSettings>>('/api/settings', settings);
+  }
+
+  async testLlmSettings(settings: Partial<SystemSettings>): Promise<ApiResponse<LlmTestResult>> {
+    return this.post<ApiResponse<LlmTestResult>>('/api/settings/llm/test', settings);
   }
 
   // 创建数据库备份
