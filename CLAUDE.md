@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 CodaGraph-lite is a lightweight code review platform designed for individual developers or small teams deploying on resource-constrained servers (optimized for 2u2g - 2 core, 2GB RAM). It's a simplified version of CodaGraph, reducing from 5 services to 2 (Frontend + Backend) and replacing PostgreSQL/Redis with SQLite.
 
 **Core Features:**
-- Smart code review via git-ai integration
+- Smart code review via Code Context Engine integration
 - Multi-platform support: GitHub, Gitee, GitLab
 - OAuth 2.0 authentication
 - SQLite-based job queue (no Redis)
@@ -136,7 +136,7 @@ All components are optimized for 2GB RAM servers:
 | Frontend (Next.js) | 200MB | `NODE_OPTIONS=--max-old-space-size=200` |
 | Backend (Express) | 200MB | `NODE_OPTIONS=--max-old-space-size=200` |
 | Python Agents | 300MB | `PYTHON_MEMORY_LIMIT=300m` |
-| git-ai CLI | 256MB | `GIT_AI_MAX_MEMORY=256m` |
+| Code Context Engine runtime | 256MB | `CODE_CONTEXT_ENGINE_MAX_MEMORY=256m` |
 | SQLite Cache | 2MB | `SQLITE_CACHE_SIZE=-2000` |
 | Job Workers | 1 | `WORKER_COUNT=1`, `ENABLE_CONCURRENT_JOBS=false` |
 
@@ -173,9 +173,9 @@ AGENT_TIMEOUT_CONTEXT=300000  # 5 minutes
 AGENT_TIMEOUT_REVIEW=600000   # 10 minutes
 PYTHON_MEMORY_LIMIT=300m
 
-# git-ai
-GIT_AI_BIN=/usr/local/bin/git-ai
-GIT_AI_MAX_MEMORY=256m
+# Code Context Engine
+CODE_CONTEXT_ENGINE_ROOT=../CodeContextEngine
+CODE_CONTEXT_ENGINE_MAX_MEMORY=256m
 WORKSPACE_ROOT=/tmp/repos
 
 # Job Queue

@@ -53,7 +53,7 @@
 - Node.js 18+
 - Python 3.11+
 - npm 8+
-- git-ai CLI
+- Code Context Engine runtime
 
 ### 克隆仓库
 
@@ -229,7 +229,7 @@ CodaGraph-lite 针对低资源服务器（2u2g）进行了优化，贡献时请�
 
 - Node.js: `--max-old-space-size=200`
 - Python agents: `300m`
-- git-ai: `256m`
+- Code Context Engine: `256m`
 - SQLite cache: `-2000`
 
 ### 并发控制

@@ -135,24 +135,24 @@ The system SHALL enforce timeout limits for agent processes.
 - **THEN** the system logs the timeout event
 - **THEN** the system marks job as failed with timeout error
 
-### Requirement: git-ai Memory Optimization
-The system SHALL configure git-ai CLI to use minimal memory.
+### Requirement: Code Context Engine Runtime Memory Optimization
+The system SHALL configure Code Context Engine runtime to use minimal memory.
 
-#### Scenario: Configure git-ai memory limit
-- **WHEN** running git-ai commands
-- **THEN** the system sets GIT_AI_MAX_MEMORY=256m environment variable
-- **THEN** the system passes memory limit to git-ai process
-- **THEN** the system verifies git-ai respects the limit
+#### Scenario: Configure Code Context Engine runtime memory limit
+- **WHEN** preparing or executing Code Context Engine runtime tasks
+- **THEN** the system sets CODE_CONTEXT_ENGINE_MAX_MEMORY=256m environment variable
+- **THEN** the system passes memory limit to the runtime process
+- **THEN** the system verifies the runtime respects the limit
 
-#### Scenario: Optimize git-ai indexing
-- **WHEN** git-ai indexes a repository
+#### Scenario: Optimize Code Context Engine runtime warmup
+- **WHEN** Code Context Engine runtime prepares a repository workspace
 - **THEN** the system uses batch size limit to control memory
-- **THEN** the system monitors git-ai memory usage
+- **THEN** the system monitors Code Context Engine runtime memory usage
 - **THEN** the system logs indexing progress and memory
 
-#### Scenario: git-ai memory limit exceeded
-- **WHEN** git-ai process exceeds memory limit
-- **THEN** the system terminates git-ai process
+#### Scenario: Code Context Engine runtime memory limit exceeded
+- **WHEN** Code Context Engine runtime exceeds memory limit
+- **THEN** the system terminates the runtime process
 - **THEN** the system logs memory limit violation
 - **THEN** the system retries with reduced batch size
 

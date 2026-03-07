@@ -55,7 +55,7 @@ CodaGraph-lite 是 CodaGraph 的轻量级版本，专为个人开发者或小型
 ## 核心特性
 
 ### 智能代码审查
-- 集成 **git-ai** 进行语义代码分析
+- 集成 **Code Context Engine** 进行语义代码分析
 - 基于 LLM 的智能审查建议
 - 支持多平台：**GitHub、Gitee、GitLab**
 - 自动 Webhook 触发，无需手动操作
@@ -105,7 +105,7 @@ CodaGraph-lite 是 CodaGraph 的轻量级版本，专为个人开发者或小型
 ### AI 服务
 - **Context Agent**: Python 3.11+ (gRPC)
 - **Review Agent**: Python 3.11+ (gRPC)
-- **代码分析**: git-ai CLI
+- **代码分析**: Code Context Engine runtime
 - **LLM 支持**: OpenAI, Anthropic, DeepSeek 等
 
 ### 部署
@@ -129,7 +129,7 @@ CodaGraph-lite 专为 2 核 2GB 内存的服务器优化，确保在资源受限
 | SQLite 数据库 | 50-100MB | `cache_size=-2000` (2MB) |
 | Python Context Agent | 200-300MB | `PYTHON_MEMORY_LIMIT=300m` |
 | Python Review Agent | 200-300MB | `PYTHON_MEMORY_LIMIT=300m` |
-| git-ai CLI | 100-200MB | `GIT_AI_MAX_MEMORY=256m` |
+| Code Context Engine runtime | 100-200MB | `CODE_CONTEXT_ENGINE_MAX_MEMORY=256m` |
 | **峰值总计** | ~1350MB | < 2GB (含 swap) |
 
 ### 关键配置项（2u2g 必选）
@@ -147,8 +147,8 @@ ENABLE_CONCURRENT_JOBS=false
 # Python 进程内存限制
 PYTHON_MEMORY_LIMIT=300m
 
-# git-ai 内存限制
-GIT_AI_MAX_MEMORY=256m
+# Code Context Engine 内存限制
+CODE_CONTEXT_ENGINE_MAX_MEMORY=256m
 
 # SQLite 缓存限制（2MB）
 SQLITE_CACHE_SIZE=-2000
@@ -227,16 +227,18 @@ nano .env
 - `ADMIN_PASSWORD` - 管理员密码
 - `LLM_PROVIDER` - LLM 提供商
 - `LLM_API_KEY` - LLM API 密钥
-- `GIT_AI_BIN` - git-ai CLI 路径
+- `CODE_CONTEXT_ENGINE_ROOT` - Code Context Engine runtime 路径
 
-### 4. 安装 git-ai CLI
+### 4. 安装 Code Context Engine runtime
 
 ```bash
-# 从官方仓库安装 git-ai
-npm install -g git-ai-cli
+# 推荐：将 CodeContextEngine runtime 放到项目同级目录
+git clone <your-code-context-engine-repo> ../CodeContextEngine
+npm --prefix ../CodeContextEngine install
+npm --prefix ../CodeContextEngine run build
 
-# 或使用预编译二进制文件
-# 参考: https://github.com/git-ai/git-ai/releases
+# 可选：安装 CLI 便于本地调试
+npm install -g code-context-engine
 ```
 
 ### 5. 启动服务
@@ -311,8 +313,8 @@ node --version  # 18.0.0 或更高
 # Python 版本
 python --version  # 3.11 或更高
 
-# git-ai CLI
-git-ai --version  # 最新版本
+# Code Context Engine runtime（CLI 仅用于调试）
+code-context-engine --version
 ```
 
 ### 推荐配置
@@ -388,7 +390,7 @@ codagraph-lite/
 2. Webhook 触发 CodaGraph-lite 后端
 3. 作业入队等待处理
 4. Worker 克隆仓库到工作区
-5. 调用 git-ai 索引代码
+5. 初始化 Code Context Engine runtime 并收集检索上下文
 6. 启动 Context Agent 收集上下文
 7. 启动 Review Agent 执行审查
 8. 格式化审查评论
@@ -428,7 +430,7 @@ codagraph-lite/
 | `WORKER_COUNT` | `1` | 作业 Worker 数量（2u2g 必须为 1） |
 | `LLM_PROVIDER` | `openai` | LLM 提供商 |
 | `LLM_API_KEY` | - | LLM API 密钥 |
-| `GIT_AI_BIN` | `/usr/local/bin/git-ai` | git-ai CLI 路径 |
+| `CODE_CONTEXT_ENGINE_ROOT` | `../CodeContextEngine` | Code Context Engine runtime 路径 |
 
 ---
 
@@ -553,7 +555,7 @@ bash deploy/monitor.sh --continuous --interval=5
 │         │                   │                     │
 │         └─────────┬─────────┘                    │
 │                   ▼                             │
-│            git-ai CLI (索引)                    │
+│            Code Context Engine runtime (索引)                    │
 └────────────────────────────────────────────────────────┘
 
            外部平台

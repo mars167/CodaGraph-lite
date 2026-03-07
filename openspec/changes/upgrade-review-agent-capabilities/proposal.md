@@ -34,5 +34,5 @@ The active `CodeReviewWorker -> ReviewExecutionService` path in CodaGraph-lite s
 - Review output stored in `analysis.analysis_result` becomes richer and closer to the original CodaGraph agent contract.
 
 **Dependencies / configuration:**
-- Reuses existing `git`, `git-ai`, and platform OAuth credentials.
+- Reuses existing `git`, `Code Context Engine`, and platform OAuth credentials.
 - Reuses existing `LLM_*` environment variables, while keeping a deterministic rule-only fallback when no LLM configuration is available.

@@ -64,7 +64,7 @@ CodaGraph-lite 采用简化的双服务架构，专为 2u2g 服务器优化。
 │              ┌──────────────▼────────────┐               │
 │              │   外部集成层              │               │
 │  ┌───────┬────┴──────┬────────┐               │
-│  │git-ai │ Context   │Review   │               │
+│  │Code Context Engine │ Context   │Review   │               │
 │  │ CLI    │ Agent     │ Agent   │               │
 │  └─────────┴────────────┴─────────┘               │
 └────────────────────────────────────────────────────────────────┘
@@ -540,9 +540,9 @@ const verifyGitHubWebhook = (
                      │
                      ▼
          ┌──────────────────────────────┐
-         │  5. git-ai 索引    │
-         │  - git-ai index repo  │
-         │  - 生成语义图       │
+         │  5. Code Context Engine runtime │
+         │  - 加载 / 构建 runtime      │
+         │  - 生成检索上下文       │
          └──────────┬──────────┘
                      │
                      ▼
@@ -716,7 +716,7 @@ class AgentManager {
 | SQLite 数据库 | 50MB | `cache_size` | VACUUM 定期清理 |
 | Context Agent | 300MB | `PYTHON_MEMORY_LIMIT` | 超时终止 |
 | Review Agent | 300MB | `PYTHON_MEMORY_LIMIT` | 超时终止 |
-| git-ai CLI | 256MB | `GIT_AI_MAX_MEMORY` | 索引分批处理 |
+| Code Context Engine runtime | 256MB | `CODE_CONTEXT_ENGINE_MAX_MEMORY` | 索引分批处理 |
 | **总计** | ~1706MB | <2000MB + Swap | 系统监控 API |
 
 ### 串行处理保证
@@ -850,7 +850,7 @@ sequenceDiagram
     Queue->>Queue: Worker 获取作业
     Queue->>Backend: 更新状态 (processing)
     Backend->>Backend: 克隆仓库到 workspace
-    Backend->>Backend: git-ai 索引
+    Backend->>Backend: 初始化 Code Context Engine runtime
     Backend->>Agent: 启动 Context Agent
     Agent->>LLM: 调用 LLM (上下文)
     LLM-->>Agent: 返回上下文
@@ -946,7 +946,7 @@ sequenceDiagram
     │  │  共享数据卷            │          │
     │  │  - SQLite 数据库文件                │          │
     │  │  - 日志文件                       │          │
-    │  │  - git-ai 索引（临时）            │          │
+    │  │  - Code Context Engine runtime 构建产物（可选） │          │
     │  └──────────────────────────────────────┘          │
     └──────────────────────────────────────────────────────────┘
 ```

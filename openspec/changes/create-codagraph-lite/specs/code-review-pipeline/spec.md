@@ -14,7 +14,7 @@ The system SHALL use SQLite-based job queue for PR review processing.
 - **WHEN** worker picks up PR review job
 - **THEN** the system updates job status to "processing"
 - **THEN** the system clones repository to workspace
-- **THEN** the system indexes repository with git-ai
+- **THEN** the system indexes repository with Code Context Engine
 - **THEN** the system calls context agent for context gathering
 - **THEN** the system calls review agent for code analysis
 
@@ -47,8 +47,8 @@ The system SHALL use in-memory caching to reduce database queries.
 - **THEN** the system implements LRU (Least Recently Used) eviction
 - **THEN** the system logs cache eviction events
 
-### Requirement: Repository Cloning and Indexing
-The system SHALL clone repositories and index with git-ai for analysis.
+### Requirement: Repository Cloning and Retrieval Runtime Preparation
+The system SHALL clone repositories and prepare Code Context Engine runtime context for analysis.
 
 #### Scenario: Clone repository
 - **WHEN** job starts processing
@@ -57,17 +57,16 @@ The system SHALL clone repositories and index with git-ai for analysis.
 - **THEN** the system uses OAuth token for authentication
 - **THEN** the system verifies clone success
 
-#### Scenario: Index repository with git-ai
+#### Scenario: Prepare repository with Code Context Engine runtime
 - **WHEN** repository clone completes
-- **THEN** the system runs git-ai index command
-- **THEN** the system waits for indexing to complete
-- **THEN** the system verifies index creation in `.git-ai/` directory
-- **THEN** the system logs indexing success or failure
+- **THEN** the system initializes Code Context Engine runtime for the workspace
+- **THEN** the system ensures runtime artifacts are available
+- **THEN** the system logs runtime readiness or failure
 
-#### Scenario: Handle indexing failure
-- **WHEN** git-ai indexing fails
+#### Scenario: Handle runtime preparation failure
+- **WHEN** Code Context Engine runtime preparation fails
 - **THEN** the system logs error details
-- **THEN** the system retries indexing with exponential backoff
+- **THEN** the system retries runtime preparation with exponential backoff
 - **THEN** the system marks job as failed after max retries
 - **THEN** the system cleans up workspace directory
 
@@ -84,7 +83,7 @@ The system SHALL integrate with context agent for intelligent context gathering.
 #### Scenario: Context agent uses ReAct loop
 - **WHEN** context agent is processing
 - **THEN** the agent uses ReAct pattern (Reason-Act-Observe)
-- **THEN** the agent queries git-ai for semantic understanding
+- **THEN** the agent queries Code Context Engine for semantic understanding
 - **THEN** the agent iterates up to max_iterations (default 5)
 - **THEN** the agent collects relevant context for PR review
 
@@ -217,7 +216,7 @@ The system SHALL manage isolated workspace directories for each job.
 - **WHEN** a job completes (success or failure)
 - **THEN** the system cleans up workspace directory
 - **THEN** the system removes all cloned repository files
-- **THEN** the system removes `.git-ai/` index directory
+- **THEN** the system removes workspace-local retrieval artifacts if present
 - **THEN** the system logs workspace cleanup
 
 #### Scenario: Workspace cleanup failure

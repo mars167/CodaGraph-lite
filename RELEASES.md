@@ -78,7 +78,7 @@ CodaGraph-lite 首个稳定版本，针对 2u2g 低资源服务器优化设计�
 ##### 内存限制
 - Node.js: `--max-old-space-size=200`
 - Python agents: `300m`
-- git-ai CLI: `256m`
+- Code Context Engine runtime: `256m`
 - SQLite cache: `2MB`
 - 峰值内存: `<1.5GB`
 

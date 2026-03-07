@@ -13,7 +13,7 @@
 - [内存不足问题](#内存不足问题)
 - [Webhook 问题](#webhook-问题)
 - [LLM API 问题](#llm-api-问题)
-- [git-ai CLI 问题](#git-ai-cli-问题)
+- [Code Context Engine runtime 问题](#code-context-engine-runtime-问题)
 - [性能问题](#性能问题)
 
 ---
@@ -571,14 +571,14 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 
 ```bash
 # 检查关键配置项
-grep -E "NODE_OPTIONS|WORKER_COUNT|PYTHON_MEMORY_LIMIT|GIT_AI_MAX_MEMORY" .env
+grep -E "NODE_OPTIONS|WORKER_COUNT|PYTHON_MEMORY_LIMIT|CODE_CONTEXT_ENGINE_MAX_MEMORY" .env
 
 # 必须确保：
 # NODE_OPTIONS=--max-old-space-size=200
 # WORKER_COUNT=1
 # ENABLE_CONCURRENT_JOBS=false
 # PYTHON_MEMORY_LIMIT=300m
-# GIT_AI_MAX_MEMORY=256m
+# CODE_CONTEXT_ENGINE_MAX_MEMORY=256m
 ```
 
 #### 3. 监控内存使用
@@ -737,31 +737,33 @@ LLM_MODEL=gpt-4-turbo
 
 ---
 
-## git-ai CLI 问题
+## Code Context Engine runtime 问题
 
-### 问题：git-ai 未找到
+### 问题：Code Context Engine 未找到
 
 **症状**：
-- 作业失败，错误为 "git-ai not found"
-- 索引无法执行
+- 作业失败，错误为 "Code Context Engine runtime not available"
+- 无法初始化代码检索 runtime
 
 **解决方案**：
 
 ```bash
-# 检查 git-ai 安装
-which git-ai
+# 检查 runtime 根目录是否存在
+echo "$CODE_CONTEXT_ENGINE_ROOT"
+ls -la "$CODE_CONTEXT_ENGINE_ROOT"
 
-# 如果未安装，安装 git-ai
-npm install -g git-ai-cli
+# 构建 runtime
+npm --prefix "$CODE_CONTEXT_ENGINE_ROOT" install
+npm --prefix "$CODE_CONTEXT_ENGINE_ROOT" run build
 
-# 或从源码安装
-# 参考: https://github.com/git-ai/git-ai
+# 可选：检查调试 CLI
+which code-context-engine
 ```
 
-### 问题：git-ai 索引失败
+### 问题：Code Context Engine runtime 准备失败
 
 **症状**：
-- 日志显示 "git-ai index failed"
+- 日志显示 runtime preparation failed
 - 分析结果不完整
 
 **诊断和解决方案**：
@@ -773,31 +775,29 @@ ls -la /tmp/repos/
 # 2. 检查工作空间权限
 ls -ld /tmp/repos/
 
-# 3. 手动测试 git-ai
-cd /tmp/repos/platform/owner/repo
-git-ai status
+# 3. 重新构建 runtime
+npm --prefix "$CODE_CONTEXT_ENGINE_ROOT" run build
 
-# 解决方案：清理缓存重新索引
-rm -rf .git-ai
-git-ai index
+# 4. 可选：在目标仓库里做调试检查
+cd /tmp/repos/platform/owner/repo
+code-context-engine ai status --json
 ```
 
-### 问题：git-ai 内存溢出
+### 问题：Code Context Engine 内存溢出
 
 **症状**：
-- git-ai 进程被 OOM killer 终止
+- Code Context Engine 进程被 OOM killer 终止
 
 **解决方案**：
 
 ```bash
 # 检查内存限制配置
-grep GIT_AI_MAX_MEMORY .env
+grep CODE_CONTEXT_ENGINE_MAX_MEMORY .env
 
 # 减少内存限制（如果当前值过高）
-GIT_AI_MAX_MEMORY=128m
+CODE_CONTEXT_ENGINE_MAX_MEMORY=128m
 
-# 或限制索引的文件数量
-# 在 git-ai 配置中设置
+# 或缩小仓库工作空间 / 分批处理目标文件
 ```
 
 ---
