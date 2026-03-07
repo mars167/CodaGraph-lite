@@ -86,21 +86,31 @@ export class RepositoryWatchService {
       const pullRequests = await this.listOpenPullRequests(client, repository.owner, repository.name);
 
       let queuedCount = 0;
+      let failedCount = 0;
       for (const pullRequest of pullRequests) {
-        const result = await this.reviewTriggerService.triggerForRepository(repository, pullRequest.number, {
-          source: 'watch',
-          priority: 3,
-          force: false,
-          pullRequest,
-        });
+        try {
+          const result = await this.reviewTriggerService.triggerForRepository(repository, pullRequest.number, {
+            source: 'watch',
+            priority: 3,
+            force: false,
+            pullRequest,
+          });
 
-        if (result.created) {
-          queuedCount += 1;
+          if (result.created) {
+            queuedCount += 1;
+          }
+        } catch (error) {
+          failedCount += 1;
+          logger.warn(
+            `⚠️ Watch 触发 ${repository.full_name}#${pullRequest.number} 失败: ${(error as Error).message}`
+          );
         }
       }
 
       this.repositoryModel.updateWatchCheck(repository.id, new Date());
-      logger.info(`👀 Watch 检查完成 ${repository.full_name}，open PR=${pullRequests.length}，新入队=${queuedCount}`);
+      logger.info(
+        `👀 Watch 检查完成 ${repository.full_name}，open PR=${pullRequests.length}，新入队=${queuedCount}，失败=${failedCount}`
+      );
     } catch (error) {
       logger.warn(`⚠️ Watch 检查 ${repository.full_name} 失败: ${(error as Error).message}`);
     }

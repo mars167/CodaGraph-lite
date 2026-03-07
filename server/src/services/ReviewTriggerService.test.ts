@@ -83,7 +83,7 @@ jest.mock('../platform/client', () => ({
   createPlatformClient: jest.fn(),
 }));
 
-import { ReviewTriggerService } from './ReviewTriggerService';
+import { ReviewTriggerService, ReviewTriggerError } from './ReviewTriggerService';
 
 describe('ReviewTriggerService', () => {
   const repository = {
@@ -198,5 +198,36 @@ describe('ReviewTriggerService', () => {
       }),
       2
     );
+  });
+
+  it('throws a 404 ReviewTriggerError when the repository does not exist', async () => {
+    repositoryModelMock.findById.mockReturnValue(null);
+
+    const service = new ReviewTriggerService();
+
+    await expect(service.triggerByRepositoryId(999, 42, {
+      source: 'manual',
+      force: true,
+    } as any)).rejects.toMatchObject<Partial<ReviewTriggerError>>({
+      name: 'ReviewTriggerError',
+      message: '仓库不存在',
+      statusCode: 404,
+    });
+  });
+
+  it('throws a 400 ReviewTriggerError when the repository installation is unavailable', async () => {
+    repositoryModelMock.findById.mockReturnValue(repository);
+    oauthInstallationModelMock.findById.mockReturnValue(null);
+
+    const service = new ReviewTriggerService();
+
+    await expect(service.triggerByRepositoryId(7, 42, {
+      source: 'manual',
+      force: true,
+    } as any)).rejects.toMatchObject<Partial<ReviewTriggerError>>({
+      name: 'ReviewTriggerError',
+      message: '仓库关联的 OAuth 安装不可用',
+      statusCode: 400,
+    });
   });
 });

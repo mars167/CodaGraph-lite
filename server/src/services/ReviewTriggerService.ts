@@ -13,6 +13,16 @@ import { getOAuthInstallationService } from './OAuthInstallationService';
 
 export type ReviewTriggerSource = 'manual' | 'watch' | 'webhook';
 
+export class ReviewTriggerError extends Error {
+  readonly statusCode: number;
+
+  constructor(message: string, statusCode: number) {
+    super(message);
+    this.name = 'ReviewTriggerError';
+    this.statusCode = statusCode;
+  }
+}
+
 interface TriggerReviewOptions {
   source: ReviewTriggerSource;
   priority?: number;
@@ -50,7 +60,7 @@ export class ReviewTriggerService {
   ): Promise<TriggerReviewResult> {
     const repository = this.repositoryModel.findById(repositoryId);
     if (!repository) {
-      throw new Error('仓库不存在');
+      throw new ReviewTriggerError('仓库不存在', 404);
     }
 
     return this.triggerForRepository(repository, prNumber, options);
@@ -196,7 +206,7 @@ export class ReviewTriggerService {
   ): Promise<PlatformPullRequest> {
     const installation = this.oauthInstallationModel.findById(repository.installation_id);
     if (!installation || !installation.is_active) {
-      throw new Error('仓库关联的 OAuth 安装不可用');
+      throw new ReviewTriggerError('仓库关联的 OAuth 安装不可用', 400);
     }
 
     const validInstallation = await this.oauthInstallationService.ensureValidAccessToken(installation);

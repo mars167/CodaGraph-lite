@@ -13,6 +13,7 @@ import { getQueueService } from '../jobs/QueueService';
 import { createPlatformClient } from '../platform/client';
 import { getOAuthInstallationService } from '../services/OAuthInstallationService';
 import { getReviewTriggerService } from '../services/ReviewTriggerService';
+import { resolveReviewRouteError } from './reviewRouteErrors';
 import type { Platform, CreateRepositoryDTO, Analysis, Job, ReviewReportSummary } from '../models/types';
 import type { Repository as PlatformRepository, PullRequest as PlatformPullRequest } from '../platform/client';
 
@@ -510,12 +511,8 @@ router.post('/:id/pull-requests/:prNumber/review', async (req: Request, res: Res
     });
   } catch (error) {
     console.error('创建手动 review 失败:', error);
-    const message = (error as Error).message;
-    const statusCode = /重新授权|OAuth token|401 Unauthorized/.test(message) ? 401 : 500;
-    return res.status(statusCode).json({
-      error: statusCode === 401 ? 'OAuth 授权已失效，请重新授权 GitHub' : '内部服务器错误',
-      details: (error as Error).message,
-    });
+    const response = resolveReviewRouteError(error);
+    return res.status(response.statusCode).json(response);
   }
 });
 
