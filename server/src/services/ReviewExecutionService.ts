@@ -336,7 +336,10 @@ export class ReviewExecutionService {
     this.log(jobId, 'info', 'review-agent 推理开始，已进入实时日志模式');
 
     const validInstallation = await this.oauthInstallationService.ensureValidAccessToken(installation);
-    const platformClient = createPlatformClient(repository.platform, validInstallation.access_token);
+    const platformClient = createPlatformClient(repository.platform, validInstallation.access_token, {
+      authType: validInstallation.auth_type || 'oauth',
+      githubAppInstallationId: validInstallation.github_app_installation_id || null,
+    });
     const commentClient = createCommentClient(repository.platform, validInstallation.access_token);
 
     this.ensureNotCancelled(jobId);

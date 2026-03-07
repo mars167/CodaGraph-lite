@@ -114,7 +114,10 @@ router.post('/test/:id', async (req: Request, res: Response) => {
     }
 
     // 创建客户端并测试连接
-    const client = createPlatformClient(installation.platform, installation.access_token);
+    const client = createPlatformClient(installation.platform, installation.access_token, {
+      authType: installation.auth_type || 'oauth',
+      githubAppInstallationId: installation.github_app_installation_id || null,
+    });
 
     try {
       const isValid = await client.verifyToken();

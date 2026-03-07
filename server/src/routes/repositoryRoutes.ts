@@ -243,7 +243,10 @@ async function hydrateRepositoryCache(platform?: Platform) {
   const syncedRepositories = await Promise.allSettled(
     installations.map(async (installation) => {
       const validInstallation = await getOAuthInstallationService().ensureValidAccessToken(installation);
-      const client = createPlatformClient(validInstallation.platform, validInstallation.access_token);
+      const client = createPlatformClient(validInstallation.platform, validInstallation.access_token, {
+        authType: validInstallation.auth_type || 'oauth',
+        githubAppInstallationId: validInstallation.github_app_installation_id || null,
+      });
       const remoteRepositories = await client.getRepositories({ per_page: 100 });
       const activeFullNames = remoteRepositories.map((repository) => repository.full_name);
 
@@ -380,7 +383,10 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
       }
 
       const validInstallation = await getOAuthInstallationService().ensureValidAccessToken(installation);
-      const client = createPlatformClient(repository.platform, validInstallation.access_token);
+      const client = createPlatformClient(repository.platform, validInstallation.access_token, {
+        authType: validInstallation.auth_type || 'oauth',
+        githubAppInstallationId: validInstallation.github_app_installation_id || null,
+      });
       const remotePullRequests = await client.listPullRequests(
         repository.owner,
         repository.name,
@@ -762,7 +768,10 @@ router.delete('/:id', async (req: Request, res: Response) => {
         const installation = installationModel.findById(existing.installation_id);
 
         if (installation) {
-          const client = createPlatformClient(existing.platform, installation.access_token);
+          const client = createPlatformClient(existing.platform, installation.access_token, {
+            authType: installation.auth_type || 'oauth',
+            githubAppInstallationId: installation.github_app_installation_id || null,
+          });
           await client.deleteWebhook(existing.owner, existing.name, existing.webhook_id);
           console.log(`🪝 删除 Webhook: ${existing.full_name}`);
         }
@@ -912,7 +921,10 @@ router.post('/:id/webhook', async (req: Request, res: Response) => {
     }
 
     // 创建 Webhook
-    const client = createPlatformClient(repository.platform, installation.access_token);
+    const client = createPlatformClient(repository.platform, installation.access_token, {
+      authType: installation.auth_type || 'oauth',
+      githubAppInstallationId: installation.github_app_installation_id || null,
+    });
     const webhookResponse = await client.createWebhook(
       repository.owner,
       repository.name,
@@ -983,7 +995,10 @@ router.delete('/:id/webhook', async (req: Request, res: Response) => {
     }
 
     // 删除 Webhook
-    const client = createPlatformClient(repository.platform, installation.access_token);
+    const client = createPlatformClient(repository.platform, installation.access_token, {
+      authType: installation.auth_type || 'oauth',
+      githubAppInstallationId: installation.github_app_installation_id || null,
+    });
     await client.deleteWebhook(
       repository.owner,
       repository.name,

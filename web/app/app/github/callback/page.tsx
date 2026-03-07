@@ -6,8 +6,8 @@ import { Card, CardContent } from '@/components/ui/Card';
 import { Loading } from '@/components/ui/Loading';
 import { useNotificationHelpers } from '@/contexts/NotificationContext';
 
-function getCallbackRequestKey(code: string, state: string): string {
-  return `oauth-callback:github_app:${code}:${state}`;
+function getCallbackRequestKey(installationId: string, state: string): string {
+  return `oauth-callback:github_app:${installationId}:${state}`;
 }
 
 function GitHubAppCallbackContent() {
@@ -17,7 +17,6 @@ function GitHubAppCallbackContent() {
 
   useEffect(() => {
     const run = async () => {
-      const code = searchParams.get('code');
       const state = searchParams.get('state');
       const installationId = searchParams.get('installation_id');
       const setupAction = searchParams.get('setup_action');
@@ -29,13 +28,13 @@ function GitHubAppCallbackContent() {
         return;
       }
 
-      if (!code || !state) {
-        error('授权失败', '缺少 code 或 state 参数');
+      if (!installationId || !state) {
+        error('授权失败', '缺少 installation_id 或 state 参数');
         router.replace('/dashboard/oauth');
         return;
       }
 
-      const requestKey = getCallbackRequestKey(code, state);
+      const requestKey = getCallbackRequestKey(installationId, state);
       if (typeof window !== 'undefined') {
         const existing = sessionStorage.getItem(requestKey);
         if (existing === 'done' || existing === 'pending') {
@@ -54,10 +53,9 @@ function GitHubAppCallbackContent() {
           },
           credentials: 'include',
           body: JSON.stringify({
-            code,
             state,
             authType: 'github_app',
-            installation_id: installationId || undefined,
+            installation_id: installationId,
             setup_action: setupAction || undefined,
           }),
         });

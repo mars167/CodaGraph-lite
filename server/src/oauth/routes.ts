@@ -16,6 +16,8 @@ import {
   type OAuthAuthType,
 } from './handlers';
 import { createOAuthSession } from './session';
+import { getGitHubAppService } from '../services/GitHubAppService';
+import { getOAuthInstallationService } from '../services/OAuthInstallationService';
 
 const router = express.Router();
 
@@ -98,8 +100,11 @@ function validateState(state: string, provider: string): boolean {
   }
 }
 
-function getOAuthCallbackCacheKey(platform: Platform, code: string, state: string): string {
-  return `${platform}:${code}:${state}`;
+function getOAuthCallbackCacheKey(
+  platform: Platform,
+  payload: Pick<OAuthCallbackPayload, 'code' | 'state' | 'installation_id'>
+): string {
+  return `${platform}:${payload.code || 'no-code'}:${payload.state || 'no-state'}:${payload.installation_id || 'no-install'}`;
 }
 
 function setOAuthSessionCookie(res: Response, sessionId: string): void {
@@ -177,6 +182,33 @@ async function getUserInfo(platform: Platform, accessToken: string) {
   };
 }
 
+function mapGitHubAppInstallationUser(installation: {
+  id: number;
+  account?: { id?: number; login?: string; type?: string };
+  permissions?: Record<string, string>;
+}) {
+  return {
+    id: installation.account?.id || installation.id,
+    account_id: String(installation.account?.id || installation.id),
+    login: installation.account?.login || `installation-${installation.id}`,
+    name: installation.account?.login || `installation-${installation.id}`,
+    avatar_url: undefined,
+    email: null,
+    bio: null,
+    location: null,
+    html_url: installation.account?.login ? `https://github.com/${installation.account.login}` : undefined,
+    blog: null,
+    company: null,
+    type: installation.account?.type || 'Bot',
+    public_repos: undefined,
+    followers: undefined,
+    following: undefined,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    permissions: installation.permissions || null,
+  };
+}
+
 interface OAuthCallbackPayload {
   code?: string;
   state?: string;
@@ -197,17 +229,16 @@ async function handleOAuthCallback(
 
     console.log(`📥 OAuth 回调: ${platform}`);
 
-    if (!code || !state) {
-      return res.status(400).json({ error: '缺少 code/state 参数' });
+    if (!state || (authType !== 'github_app' && !code)) {
+      return res.status(400).json({ error: authType === 'github_app' ? '缺少 state 参数' : '缺少 code/state 参数' });
     }
 
-    // 验证 state
-    if (!state || !validateState(state, platform)) {
+    if (!validateState(state, platform)) {
       return res.status(400).json({ error: '无效的 state 参数' });
     }
 
     cleanupOAuthCallbackCache();
-    const callbackCacheKey = getOAuthCallbackCacheKey(platform, code, state);
+    const callbackCacheKey = getOAuthCallbackCacheKey(platform, payload);
     const cached = oauthCallbackCache.get(callbackCacheKey);
     if (cached) {
       const cachedResponse = cached.result || await cached.promise;
@@ -226,46 +257,75 @@ async function handleOAuthCallback(
     authorizeModel.delete(existingAuth.id);
 
     const processingPromise = (async (): Promise<OAuthCallbackSuccessResponse> => {
-      const tokenResponse = await exchangeCodeForToken(
-        platform,
-        code,
-        authType === 'github_app' ? storedAuthType : authType
-      );
+      const installationModel = getOAuthInstallationModel();
+      let userInfo: Awaited<ReturnType<typeof getUserInfo>> | ReturnType<typeof mapGitHubAppInstallationUser>;
+      let accessToken: string;
+      let refreshToken: string | null = null;
+      let expiresAt: Date | string | null;
+      let resolvedGitHubAppInstallationId: string | null = null;
 
-      if (tokenResponse.error) {
-        throw new Error(tokenResponse.error_description || tokenResponse.error);
+      if (authType === 'github_app' && platform === 'github') {
+        if (!installation_id) {
+          throw new Error('缺少 installation_id，无法完成 GitHub App 安装');
+        }
+
+        const gitHubAppService = getGitHubAppService();
+        const appInstallation = await gitHubAppService.getInstallation(installation_id);
+        const installationToken = await gitHubAppService.getInstallationAccessToken(installation_id);
+
+        userInfo = mapGitHubAppInstallationUser(appInstallation);
+        accessToken = installationToken.token;
+        expiresAt = installationToken.expires_at;
+        resolvedGitHubAppInstallationId = installation_id;
+      } else {
+        const tokenResponse = await exchangeCodeForToken(
+          platform,
+          code!,
+          storedAuthType
+        );
+
+        if (tokenResponse.error) {
+          throw new Error(tokenResponse.error_description || tokenResponse.error);
+        }
+
+        userInfo = await getUserInfo(platform, tokenResponse.access_token);
+        accessToken = tokenResponse.access_token;
+        refreshToken = tokenResponse.refresh_token || null;
+        expiresAt = new Date(Date.now() + (tokenResponse.expires_in || 7200) * 1000);
       }
 
-      const userInfo = await getUserInfo(platform, tokenResponse.access_token);
-      const installationModel = getOAuthInstallationModel();
-      const existing = installationModel.findByPlatformAndAccount(
-        platform,
-        userInfo.account_id
-      );
+      const existing = installationModel.findByPlatformAndAccount(platform, userInfo.account_id);
 
       let installationId: number;
 
       if (existing) {
         installationModel.update(existing.id, {
-          access_token: tokenResponse.access_token,
-          refresh_token: tokenResponse.refresh_token || null,
-          token_expires_at: new Date(Date.now() + (tokenResponse.expires_in || 7200) * 1000),
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          token_expires_at: expiresAt,
           auth_type: authType,
           github_app_installation_id: authType === 'github_app'
-            ? (installation_id || existing.github_app_installation_id || null)
+            ? (resolvedGitHubAppInstallationId || existing.github_app_installation_id || null)
             : null,
+          account_name: userInfo.login || userInfo.name,
+          permissions: 'permissions' in userInfo && userInfo.permissions
+            ? JSON.stringify(userInfo.permissions)
+            : existing.permissions || null,
         });
         installationId = existing.id;
       } else {
         const createDto: CreateInstallationDTO = {
           platform,
           auth_type: authType,
-          github_app_installation_id: authType === 'github_app' ? (installation_id || null) : null,
+          github_app_installation_id: authType === 'github_app' ? (resolvedGitHubAppInstallationId || null) : null,
           account_id: userInfo.account_id,
           account_name: userInfo.login || userInfo.name,
-          access_token: tokenResponse.access_token,
-          refresh_token: tokenResponse.refresh_token || null,
-          token_expires_at: new Date(Date.now() + (tokenResponse.expires_in || 7200) * 1000),
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          token_expires_at: expiresAt,
+          permissions: 'permissions' in userInfo && userInfo.permissions
+            ? JSON.stringify(userInfo.permissions)
+            : null,
         };
 
         const created = installationModel.create(createDto);
@@ -419,9 +479,11 @@ router.post('/installations/:id/refresh', async (req: Request, res: Response) =>
       return res.status(404).json({ error: '安装不存在' });
     }
 
+    const refreshed = await getOAuthInstallationService().ensureValidAccessToken(installation, true);
+
     return res.json({
       success: true,
-      message: 'Token 刷新请求已受理',
+      message: refreshed.auth_type === 'github_app' ? 'GitHub App installation token 已刷新' : 'OAuth Token 已刷新',
     });
   } catch (error) {
     return res.status(500).json({

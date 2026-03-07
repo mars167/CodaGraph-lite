@@ -79,7 +79,10 @@ export class RepositoryWatchService {
       }
 
       const validInstallation = await this.oauthInstallationService.ensureValidAccessToken(installation);
-      const client = createPlatformClient(repository.platform, validInstallation.access_token);
+      const client = createPlatformClient(repository.platform, validInstallation.access_token, {
+        authType: validInstallation.auth_type || 'oauth',
+        githubAppInstallationId: validInstallation.github_app_installation_id || null,
+      });
       const pullRequests = await this.listOpenPullRequests(client, repository.owner, repository.name);
 
       let queuedCount = 0;

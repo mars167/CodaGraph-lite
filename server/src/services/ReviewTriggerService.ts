@@ -200,7 +200,10 @@ export class ReviewTriggerService {
     }
 
     const validInstallation = await this.oauthInstallationService.ensureValidAccessToken(installation);
-    const client = createPlatformClient(repository.platform, validInstallation.access_token);
+    const client = createPlatformClient(repository.platform, validInstallation.access_token, {
+      authType: validInstallation.auth_type || 'oauth',
+      githubAppInstallationId: validInstallation.github_app_installation_id || null,
+    });
     return client.getPullRequest(repository.owner, repository.name, prNumber);
   }
 
