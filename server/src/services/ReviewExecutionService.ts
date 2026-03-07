@@ -252,6 +252,15 @@ function buildSummaryCommentBody(
   return lines.join('\n');
 }
 
+function dedupeFindings(findings: ReviewFinding[]): ReviewFinding[] {
+  return [...new Map(
+    findings.map((finding) => [
+      `${finding.filePath}:${finding.lineNumber ?? 0}:${finding.title.toLowerCase()}`,
+      finding,
+    ])
+  ).values()];
+}
+
 export class ReviewExecutionService {
   private analysisModel = getAnalysisModel();
   private analysisJobModel = getAnalysisJobModel();
@@ -379,7 +388,7 @@ export class ReviewExecutionService {
     const findings = advancedReview.allFindings;
     const riskLevel = advancedReview.riskLevel;
     const summary = advancedReview.summary || summarizeFindings(findings, advancedReview.fileReviews.length);
-    let fallbackFindings = [...advancedReview.fallbackFindings];
+    let fallbackFindings = dedupeFindings([...advancedReview.fallbackFindings]);
 
     this.analysisJobModel.updateProgress(analysisJob.id, 0.8, '正在发布 PR 评论');
     let postedCommentCount = 0;
@@ -391,63 +400,104 @@ export class ReviewExecutionService {
       prNumber: String(prNumber),
     };
 
-    for (const inlineComment of advancedReview.inlineComments) {
+    const canSubmitBatchReview = repository.platform === 'github'
+      && typeof commentClient.submitReview === 'function'
+      && advancedReview.inlineComments.length > 0;
+
+    if (canSubmitBatchReview) {
       this.ensureNotCancelled(jobId);
       try {
+        const batchSummaryCommentBody = buildSummaryCommentBody(
+          pullRequest,
+          analysis.id,
+          riskLevel,
+          summary,
+          advancedReview.inlineComments.length,
+          fallbackFindings
+        );
         this.logTool(
           jobId,
-          'platform.postReviewComment',
-          `repo=${repository.full_name},pr=${prNumber},file=${inlineComment.finding.filePath},line=${inlineComment.position.line}`,
-          `severity=${inlineComment.finding.severity}`
+          'platform.submitReview',
+          `repo=${repository.full_name},pr=${prNumber},comments=${advancedReview.inlineComments.length}`,
+          `fallback=${fallbackFindings.length}`
         );
-        await commentClient.postReviewComment(
-          prInfo,
-          {
+        await commentClient.submitReview!(prInfo, {
+          body: batchSummaryCommentBody,
+          commitId: pullRequest.head.sha,
+          comments: advancedReview.inlineComments.map((inlineComment) => ({
             body: formatFindingBody(inlineComment.finding),
-            filePath: inlineComment.finding.filePath,
-            lineNumber: inlineComment.position.line,
-            commitId: pullRequest.head.sha,
-          },
-          {
-            path: inlineComment.finding.filePath,
-            line: inlineComment.position.line,
-          }
-        );
-        postedCommentCount += 1;
-        inlineCommentCount += 1;
+            position: {
+              path: inlineComment.finding.filePath,
+              line: inlineComment.position.line,
+            },
+          })),
+        });
+        inlineCommentCount = advancedReview.inlineComments.length;
+        postedCommentCount = inlineCommentCount + 1;
       } catch (error) {
         this.log(
           jobId,
           'warn',
-          `行级评论发布失败，将回退到摘要评论: ${(error as Error).message}`
+          `批量 review 发布失败，将回退到单条评论模式: ${(error as Error).message}`
         );
-        fallbackFindings.push(inlineComment.finding);
       }
     }
 
-    fallbackFindings = [...new Map(
-      fallbackFindings.map((finding) => [
-        `${finding.filePath}:${finding.lineNumber ?? 0}:${finding.title.toLowerCase()}`,
-        finding,
-      ])
-    ).values()];
+    if (postedCommentCount === 0) {
+      for (const inlineComment of advancedReview.inlineComments) {
+        this.ensureNotCancelled(jobId);
+        try {
+          this.logTool(
+            jobId,
+            'platform.postReviewComment',
+            `repo=${repository.full_name},pr=${prNumber},file=${inlineComment.finding.filePath},line=${inlineComment.position.line}`,
+            `severity=${inlineComment.finding.severity}`
+          );
+          await commentClient.postReviewComment(
+            prInfo,
+            {
+              body: formatFindingBody(inlineComment.finding),
+              filePath: inlineComment.finding.filePath,
+              lineNumber: inlineComment.position.line,
+              commitId: pullRequest.head.sha,
+            },
+            {
+              path: inlineComment.finding.filePath,
+              line: inlineComment.position.line,
+            }
+          );
+          postedCommentCount += 1;
+          inlineCommentCount += 1;
+        } catch (error) {
+          this.log(
+            jobId,
+            'warn',
+            `行级评论发布失败，将回退到摘要评论: ${(error as Error).message}`
+          );
+          fallbackFindings.push(inlineComment.finding);
+        }
+      }
 
-    const summaryCommentBody = buildSummaryCommentBody(
-      pullRequest,
-      analysis.id,
-      riskLevel,
-      summary,
-      inlineCommentCount,
-      fallbackFindings
-    );
-    this.logTool(
-      jobId,
-      'platform.postComment',
-      `repo=${repository.full_name},pr=${prNumber}`,
-      `comment_length=${summaryCommentBody.length}`
-    );
-    await commentClient.postComment(prInfo, { body: summaryCommentBody });
-    postedCommentCount += 1;
+      const fallbackSummaryCommentBody = buildSummaryCommentBody(
+        pullRequest,
+        analysis.id,
+        riskLevel,
+        summary,
+        inlineCommentCount,
+        fallbackFindings
+      );
+
+      this.logTool(
+        jobId,
+        'platform.postComment',
+        `repo=${repository.full_name},pr=${prNumber}`,
+        `comment_length=${fallbackSummaryCommentBody.length}`
+      );
+      await commentClient.postComment(prInfo, { body: fallbackSummaryCommentBody });
+      postedCommentCount += 1;
+    }
+
+    fallbackFindings = dedupeFindings(fallbackFindings);
 
     const reportMarkdown = buildMarkdownReport(pullRequest, findings, riskLevel, summary, {
       mode: advancedReview.mode,
