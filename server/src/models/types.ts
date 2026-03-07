@@ -394,6 +394,8 @@ export interface JobPayload {
   platform: string;
   repo_name: string;
   pr_number: string;
+  pr_title?: string;
+  pr_author?: string;
   repository_id?: string;
   analysis_id?: string;
   analysis_job_id?: string;

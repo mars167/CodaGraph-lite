@@ -152,6 +152,8 @@ export class ReviewTriggerService {
           platform: repository.platform,
           repo_name: `${repository.owner}/${repository.name}`,
           pr_number: String(prNumber),
+          pr_title: pullRequest.title,
+          pr_author: pullRequest.user?.login || 'unknown',
           repository_id: String(repository.id),
           analysis_id: String(analysis.id),
           analysis_job_id: String(analysisJob.id),

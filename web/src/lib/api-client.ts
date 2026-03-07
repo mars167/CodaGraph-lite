@@ -191,6 +191,10 @@ interface JobApiItem {
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'dead';
   priority: number;
   payload: string;
+  repo_name?: string | null;
+  pr_number?: number | null;
+  pr_title?: string | null;
+  trigger_source?: 'manual' | 'watch' | 'webhook' | null;
   attempts: number;
   max_attempts: number;
   error_message?: string | null;
@@ -337,6 +341,10 @@ function mapJob(item: JobApiItem): AnalysisJob {
         return {};
       }
     })(),
+    repoName: item.repo_name || undefined,
+    prNumber: typeof item.pr_number === 'number' ? item.pr_number : undefined,
+    prTitle: item.pr_title || undefined,
+    triggerSource: item.trigger_source || undefined,
     attempts: item.attempts,
     maxAttempts: item.max_attempts,
     errorMessage: item.error_message || undefined,

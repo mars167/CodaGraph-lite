@@ -7,11 +7,72 @@ import { getQueueService } from '../jobs/QueueService';
 import { getJobLogModel } from '../models/JobLog';
 import { getAnalysisModel } from '../models/Analysis';
 import { getAnalysisJobModel } from '../models/AnalysisJob';
-import type { JobType, QueueJobStatus } from '../models/types';
+import type { Job, JobType, QueueJobStatus } from '../models/types';
 
 type SortOrder = 'ASC' | 'DESC';
 
 const router = express.Router();
+
+type ParsedJobPayload = {
+  analysis_id?: string | number;
+  platform?: string;
+  repo_name?: string;
+  pr_number?: string | number;
+  pr_title?: string;
+  trigger_source?: string;
+};
+
+function parseJobPayload(rawPayload: string): ParsedJobPayload {
+  try {
+    return JSON.parse(rawPayload) as ParsedJobPayload;
+  } catch {
+    return {};
+  }
+}
+
+function resolveJobAnalysis(payload: ParsedJobPayload) {
+  if (payload.analysis_id) {
+    return getAnalysisModel().findById(Number(payload.analysis_id));
+  }
+
+  if (payload.platform && payload.repo_name && payload.pr_number) {
+    const [owner, repoName] = payload.repo_name.includes('/')
+      ? payload.repo_name.split('/', 2)
+      : ['', payload.repo_name];
+
+    if (owner && repoName) {
+      return getAnalysisModel().findByPR(
+        payload.platform as any,
+        owner,
+        repoName,
+        Number(payload.pr_number)
+      );
+    }
+  }
+
+  return null;
+}
+
+function enrichJob(job: Job) {
+  const payload = parseJobPayload(job.payload);
+  const analysis = resolveJobAnalysis(payload);
+
+  return {
+    ...job,
+    repo_name: typeof payload.repo_name === 'string'
+      ? payload.repo_name
+      : analysis
+        ? `${analysis.owner}/${analysis.repo_name}`
+        : null,
+    pr_number: payload.pr_number !== undefined
+      ? Number(payload.pr_number)
+      : analysis?.pr_number ?? null,
+    pr_title: typeof payload.pr_title === 'string'
+      ? payload.pr_title
+      : analysis?.pr_title || null,
+    trigger_source: typeof payload.trigger_source === 'string' ? payload.trigger_source : null,
+  };
+}
 
 router.post('/', async (req: Request, res: Response) => {
   try {
@@ -87,7 +148,7 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     return res.json({
-      jobs,
+      jobs: jobs.map((job) => enrichJob(job)),
       count: total,
       page: pageNum,
       limit: limitNum,
@@ -206,23 +267,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 
     let analysis = null;
     try {
-      const payload = JSON.parse(job.payload) as { analysis_id?: string | number; platform?: string; repo_name?: string; pr_number?: string | number };
-      if (payload.analysis_id) {
-        analysis = getAnalysisModel().findById(Number(payload.analysis_id));
-      } else if (payload.platform && payload.repo_name && payload.pr_number) {
-        const [owner, repoName] = payload.repo_name.includes('/')
-          ? payload.repo_name.split('/', 2)
-          : ['', payload.repo_name];
-
-        if (owner && repoName) {
-          analysis = getAnalysisModel().findByPR(
-            payload.platform as any,
-            owner,
-            repoName,
-            Number(payload.pr_number)
-          );
-        }
-      }
+      analysis = resolveJobAnalysis(parseJobPayload(job.payload));
     } catch {
       analysis = null;
     }

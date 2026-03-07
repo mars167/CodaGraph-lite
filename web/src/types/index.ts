@@ -176,6 +176,10 @@ export interface AnalysisJob {
   status: JobStatus;
   priority: number;
   payload: Record<string, unknown>;
+  repoName?: string;
+  prNumber?: number;
+  prTitle?: string;
+  triggerSource?: 'manual' | 'watch' | 'webhook';
   attempts: number;
   maxAttempts: number;
   errorMessage?: string;
