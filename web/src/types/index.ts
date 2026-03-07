@@ -122,7 +122,32 @@ export interface ReviewFinding {
   severity: 'critical' | 'high' | 'medium' | 'low';
   category: 'security' | 'bug' | 'performance' | 'maintainability';
   lineNumber?: number;
+  resolvedLineNumber?: number;
   suggestion?: string;
+  source?: 'rule' | 'llm' | 'summary';
+  codeSnippet?: string;
+}
+
+export interface ReviewReportCodeLine {
+  type: 'add' | 'delete' | 'context' | 'omitted';
+  oldLineNumber?: number | null;
+  newLineNumber?: number | null;
+  content: string;
+  findings: ReviewFinding[];
+}
+
+export interface ReviewReportFileContext {
+  filePath: string;
+  status?: string;
+  language?: string;
+  fileSummary?: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  patchAvailable: boolean;
+  totalFindings: number;
+  generalFindings: ReviewFinding[];
+  lines: ReviewReportCodeLine[];
 }
 
 export interface ReviewReportDetail {
@@ -131,6 +156,7 @@ export interface ReviewReportDetail {
   riskLevel: 'low' | 'medium' | 'high' | 'critical' | 'unknown';
   reportMarkdown?: string;
   findings: ReviewFinding[];
+  fileContexts: ReviewReportFileContext[];
   fileCount: number;
   commentCount: number;
   issueCount: number;

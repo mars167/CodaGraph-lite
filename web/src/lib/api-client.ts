@@ -169,6 +169,7 @@ interface ReviewReportDetailResponse {
     riskLevel?: ReviewReportDetail['riskLevel'];
     reportMarkdown?: string;
     findings?: ReviewReportDetail['findings'];
+    fileContexts?: ReviewReportDetail['fileContexts'];
     postedCommentCount?: number;
     jobId?: string | number;
     generatedAt?: string;
@@ -859,6 +860,7 @@ class ApiClient {
         riskLevel: response.report?.riskLevel || 'unknown',
         reportMarkdown: response.report?.reportMarkdown,
         findings: response.report?.findings || [],
+        fileContexts: response.report?.fileContexts || [],
         fileCount: analysis.fileAnalysisCount,
         commentCount: analysis.reviewCommentCount,
         issueCount: response.report?.findings?.length || 0,
