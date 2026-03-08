@@ -268,7 +268,7 @@ show_swap_summary() {
     log_info "  - 总内存 (RAM + Swap): $(free -m | awk '/^Mem:/ {print $2+$2}')MB"
     log_info "  - Node.js: --max-old-space-size=200"
     log_info "  - Python: 300m"
-    log_info "  - git-ai: 256m"
+    log_info "  - Code Context Engine runtime: 512m"
 }
 
 # ============================================

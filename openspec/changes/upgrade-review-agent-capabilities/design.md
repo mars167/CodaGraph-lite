@@ -18,7 +18,7 @@ Only the shipped worker path is executed for queued jobs today, but it performs 
 **Non-Goals:**
 - Fully port the original multi-module Python review agent.
 - Make the unfinished `CodeReviewService` / gRPC path production-ready in this change.
-- Replace `git-ai` with a different semantic indexer.
+- Replace `Code Context Engine` with a different semantic indexer.
 
 ## Decisions
 
@@ -63,7 +63,7 @@ Alternatives considered:
 
 - [LLM latency or failure] -> Keep a deterministic rule-only fallback and treat LLM enhancement as optional.
 - [Workspace checkout failures for uncommon PR shapes] -> Fetch both base and head SHAs explicitly and degrade to diff-only review if file content cannot be loaded.
-- [git-ai unavailable on the host] -> Fall back to regex-based symbol extraction and repository text search without failing the job.
+- [Code Context Engine unavailable on the host] -> Fall back to regex-based symbol extraction and repository text search without failing the job.
 - [Too many inline comments] -> Cap published inline findings and move overflow into the summary comment to avoid spam.
 - [Bigger analysis payloads in SQLite] -> Persist a compact structured JSON report instead of raw full-file context.
 

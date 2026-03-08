@@ -13,7 +13,7 @@
 | 资源 | 总量 | 分配 |
 |------|------|------|
 | CPU | 2 vCPU | Node.js + Agent 交互 |
-| RAM | 2GB | Node.js: 200m<br>Context Agent: 300m<br>Review Agent: 300m<br>git-ai: 256m |
+| RAM | 2GB | Node.js: 200m<br>Context Agent: 300m<br>Review Agent: 300m<br>Code Context Engine: 256m |
 | 剩余 | ~640MB | 系统开销 + 缓冲 |
 
 ### 1.2 内存分配策略
@@ -30,7 +30,7 @@
 │   └── Review Agent
 │       └── 300m (活动时)
 │
-├── git-ai CLI
+├── Code Context Engine runtime
 │   └── 256m (活动时)
 │
 └── 系统开销 + 缓冲
@@ -42,7 +42,7 @@
 | 变量 | 默认值 | 说明 |
 |------|----------|------|
 | `PYTHON_MEMORY_LIMIT` | 300m | Python 进程内存限制 |
-| `GIT_AI_MAX_MEMORY` | 256m | git-ai CLI 内存限制 |
+| `CODE_CONTEXT_ENGINE_MAX_MEMORY` | 256m | Code Context Engine runtime 内存限制 |
 | `NODE_MEMORY_LIMIT` | 200m | Node.js 监控阈值 |
 | `CONTEXT_AGENT_TIMEOUT` | 300000 | Context Agent 超时（5分钟）|
 | `REVIEW_AGENT_TIMEOUT` | 600000 | Review Agent 超时（10分钟）|
@@ -270,7 +270,7 @@ class ResourceMonitor {
 # server/.env
 WORKER_COUNT=1                    # 单并发
 PYTHON_MEMORY_LIMIT=300m           # Python 内存限制
-GIT_AI_MAX_MEMORY=256m            # git-ai 内存限制
+CODE_CONTEXT_ENGINE_MAX_MEMORY=256m            # Code Context Engine 内存限制
 CONTEXT_AGENT_TIMEOUT=300000         # Context Agent 5 分钟
 REVIEW_AGENT_TIMEOUT=600000         # Review Agent 10 分钟
 NODE_MEMORY_LIMIT=200m             # Node.js 监控阈值
@@ -291,7 +291,7 @@ export const RESOURCE_CONFIG = {
   // 内存限制 (MB)
   nodeMemoryLimit: 200,
   pythonMemoryLimit: 300,
-  gitAiMemoryLimit: 256,
+  codeContextRuntimeMemoryLimit: 256,
 
   // 超时 (ms)
   contextAgentTimeout: 300000,        // 5 分钟

@@ -1,16 +1,16 @@
-# git-ai 与 Agents 交互架构设计
+# Code Context Engine runtime 与 Agents 交互架构设计
 
 ## 1. 架构概述
 
 ### 1.1 设计目标
 
-设计 Python agents（Context Agent 和 Review Agent）如何通过 git-ai CLI 进行交互，实现智能的代码上下文收集和代码审查功能。
+设计 Python agents（Context Agent 和 Review Agent）如何通过 Code Context Engine runtime 进行交互，实现智能的代码上下文收集和代码审查功能。
 
 ### 1.2 关键约束
 
 - **2u2g 资源限制**：
   - Python 进程内存限制：300m
-  - git-ai 内存限制：256m
+  - Code Context Engine runtime 内存限制：256m
   - 任何时候只有一个 agent 进程运行
 
 - **临时进程模式**：
@@ -40,9 +40,9 @@
 │  仓库克隆     │  ┌─────────────┐ │
 │                 ↓                  │  └──────────────┘ │
 │         ↓                  │         │  │  ┌─────────────┐
-│  git-ai 索引  │  │ Context Agent │ │ Review Agent │ │
+│  Code Context Engine runtime │  │ Context Agent │ │ Review Agent │ │
 │         ↓                  │  ←────────┘ │     ↓            │  ↓      │  │
-│         ↓                  │   git-ai CLI     │   gRPC     │  gRPC   │ │   ↓      │
+│         ↓                  │   runtime API / CLI │   gRPC     │  gRPC   │ │   ↓      │
 │         ↓                  │             │          │         │  │         ↓      │
 │     上下文收集    │             │          │         │   审查结果  │   平台 API    │
 │  ↓                  │             │          │         │   ↓      │    ─┘     │
@@ -134,7 +134,7 @@ interface ReviewAgentClient {
 
 **职责**：
 - 仓库克隆
-- git-ai 索引
+- Code Context Engine runtime 预热
 - 文件差异获取
 - 工作区清理
 
@@ -164,7 +164,7 @@ interface DiffOptions {
 ```
 
 **内存控制**：
-- git-ai 内存限制：256m（通过环境变量 `GIT_AI_MAX_MEMORY`）
+- Code Context Engine 内存限制：256m（通过环境变量 `CODE_CONTEXT_ENGINE_MAX_MEMORY`）
 
 ### 3.4 Platform Client
 
@@ -236,7 +236,7 @@ interface PRInfo {
 │ │ ──────────────────────────────────────────┘ │ │ │ │ │ │ │ │
 │ │ 克隆仓库                              │ │ │ │ │ │ │ │ │ │
 │ │ ↓                                      │ │ │ │ │ │ │ │
-│ │ git-ai 索引                          │ │ │ │ │ │ │ │ │ │
+│ │ Code Context Engine runtime                      │ │ │ │ │ │ │ │ │ │
 │ │ ↓                                      │ │ │ │ │ │ │ │ │
 │ │ Context Agent (gRPC)                  │ │ │ │ │ │ │ │ │ │ │
 │ │ ↓                                      │ │ │ │ │ │ │ │ │ │
@@ -279,7 +279,7 @@ interface PRInfo {
 │  Context Agent               │ Review Agent     │
 └─────────────────────────────────────────────────┘
            ↓                              ↓
-       git-ai CLI 请求 ─────────────┼→
+       Code Context Engine runtime 请求 ─────────────┼→
            ↓                              ───────────→┘
        符号定义查询                         │ 符号关系查询
        文件摘要查询                         │ 调用图查询
@@ -311,62 +311,42 @@ Review Agent 处理：
 
 ## 6. 命令封装
 
-### 6.1 git-ai 命令列表
+### 6.1 Code Context Engine 调试命令
 
 ```bash
-# 仓库索引
-git-ai index
+# 检查索引/运行状态
+code-context-engine ai status --json
 
-# 符号查询（语义搜索）
-git-ai find <symbol_name>
+# 生成仓库地图
+code-context-engine ai repo-map --max-files 20
 
-# 调用图查询
-git-ai graph <symbol_name>
+# 强制重建索引（仅调试时使用）
+code-context-engine ai index --overwrite
 
-# 文件摘要
-git-ai summarize <file_path>
-
-# Git 差异
-git-ai diff <base_ref> -- <head_ref>
-
-# 符号定义详情
-git-ai symbol <symbol_name>
-
-# 关系查询
-git-ai relations <file_path>
+# 启动调试服务
+code-context-engine ai serve
 ```
 
 ### 6.2 Node.js 命令封装
 
 ```typescript
-class GitAiCommand {
-  private gitAiPath: string;
+class CodeContextRuntimeAdapter {
+  private engineRoot: string;
 
-  constructor(gitAiPath: string) {
-    this.gitAiPath = gitAiPath;
+  constructor(engineRoot: string) {
+    this.engineRoot = engineRoot;
   }
 
-  async index(workspacePath: string): Promise<void> {
-    return this.execute(['index'], { cwd: workspacePath });
+  async prepare(workspacePath: string): Promise<void> {
+    // 加载 runtime；如 dist 不存在则先执行 build
   }
 
-  async findSymbol(symbol: string): Promise<any> {
-    return this.execute(['find', symbol]);
+  async reviewContextForDiff(diffText: string): Promise<any> {
+    // 调用 runtime.tasks.reviewContextForDiff()
   }
 
-  async getGraph(symbol: string): Promise<any> {
-    return this.execute(['graph', symbol]);
-  }
-
-  async getFileDiff(baseBranch: string, headBranch: string): Promise<string> {
-    return this.execute(['diff', baseBranch, '--', headBranch]);
-  }
-
-  private execute(
-    args: string[],
-    options?: { cwd?: string; env?: NodeJS.ProcessEnv }
-  ): Promise<string> {
-    // 执行 git-ai 命令并返回结果
+  async collectImplementationContext(symbol: string): Promise<any> {
+    // 调用 runtime.tasks.implementationContext()
   }
 }
 ```
@@ -374,11 +354,11 @@ class GitAiCommand {
 ### 6.3 错误处理
 
 ```typescript
-class GitAiError extends Error {
-  constructor(message: string, command?: string) {
+class CodeContextRuntimeError extends Error {
+  constructor(message: string, operation?: string) {
     super(message);
-    this.name = 'GitAiError';
-    this.command = command;
+    this.name = 'CodeContextRuntimeError';
+    this.operation = operation;
   }
 }
 ```

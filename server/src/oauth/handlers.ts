@@ -50,10 +50,10 @@ export const GITHUB_APP_CONFIG: OAuthConfig = {
 export const GITEE_CONFIG: OAuthConfig = {
   clientId: process.env.GITEE_CLIENT_ID || '',
   clientSecret: process.env.GITEE_CLIENT_SECRET || '',
-  redirectUri: process.env.GITEE_CALLBACK_URL || process.env.GITEE_REDIRECT_URI || 'http://localhost:7900/api/oauth/callback/gitee',
+  redirectUri: process.env.GITEE_CALLBACK_URL || process.env.GITEE_REDIRECT_URI || 'http://localhost:7900/api/oauth/gitee/callback',
   scope: ['user_info', 'projects', 'pull_requests'],
-  authorizationUrl: 'https://gitee.com/oauth2/authorize',
-  tokenUrl: 'https://gitee.com/oauth2/token',
+  authorizationUrl: 'https://gitee.com/oauth/authorize',
+  tokenUrl: 'https://gitee.com/oauth/token',
   userInfoUrl: 'https://gitee.com/api/v5/user',
 };
 
@@ -211,6 +211,7 @@ export async function exchangeCodeForToken(
     params.append('client_secret', config.clientSecret);
     params.append('code', code);
     params.append('grant_type', 'authorization_code');
+    params.append('redirect_uri', config.redirectUri);
 
     const response = await fetch(`${config.tokenUrl}`, {
       method: 'POST',

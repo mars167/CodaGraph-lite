@@ -21,7 +21,7 @@ Stakeholders:
 - Reduce service count from 5 to 2 (Frontend + Backend)
 - Replace PostgreSQL with SQLite for all data persistence
 - Replace Redis/Bull Queue with SQLite-based job queue
-- Maintain core code review functionality (git-ai, semantic analysis, PR review)
+- Maintain core code review functionality (Code Context Engine, semantic analysis, PR review)
 - Keep OAuth integration for GitHub/Gitee/GitLab (simplified for single admin)
 - Simplify deployment process (no Docker Compose required)
 - Reduce deployment time and operational complexity
@@ -178,7 +178,7 @@ Stakeholders:
 | SQLite 数据库 | 50-100MB | cache_size=-2000 (2MB) |
 | Python Context Agent | 200-300MB | Process limit |
 | Python Review Agent | 200-300MB | Process limit |
-| git-ai CLI 索引 | 100-200MB | GIT_AI_MAX_MEMORY=256m |
+| Code Context Engine runtime 索引 | 100-200MB | CODE_CONTEXT_ENGINE_MAX_MEMORY=256m |
 | **Total (峰值)** | ~1350MB | < 2GB with swap |
 
 **Configuration Requirements:**
@@ -188,7 +188,7 @@ Stakeholders:
 NODE_OPTIONS=--max-old-space-size=200
 WORKER_COUNT=1                    # 限制同时只处理1个任务
 ENABLE_CONCURRENT_JOBS=false       # 禁用并发任务
-GIT_AI_MAX_MEMORY=256m            # git-ai 内存限制
+CODE_CONTEXT_ENGINE_MAX_MEMORY=256m            # Code Context Engine 内存限制
 SQLITE_CACHE_SIZE=-2000           # SQLite 缓存 2MB
 PYTHON_MEMORY_LIMIT=300m           # Python 进程内存限制
 ENABLE_SWAP_WARNING=true           # 启用 swap 警告

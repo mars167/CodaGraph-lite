@@ -32,7 +32,7 @@ The system SHALL continue producing a review result when repository-aware analys
 - **THEN** the job is not failed solely because one file could not be hydrated
 
 #### Scenario: Semantic index is unavailable
-- **WHEN** `git-ai` is not installed or indexing fails
+- **WHEN** `Code Context Engine runtime` is not installed or runtime preparation fails
 - **THEN** the system continues review using changed symbol extraction and repository text search fallback
 - **THEN** the system records that semantic indexing was unavailable
 - **THEN** the job result remains valid and publishable

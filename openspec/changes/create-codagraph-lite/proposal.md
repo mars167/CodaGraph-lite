@@ -10,9 +10,9 @@ CodaGraph is currently designed for multi-tenant SaaS deployment with heavy infr
 - **BREAKING**: Remove Bull Queue, implement SQLite-based job queue or similar mechanism
 - **BREAKING**: Remove multi-user management system, implement single admin account model
 - **BREAKING**: Consolidate Python agent services (Context Agent, Review Agent) into backend or maintain as separate lightweight modules
-- Reduce from 5 services (web, server, context-agent, review-agent, git-ai-cli) to 2 services: Frontend and Backend
+- Reduce from 5 services (web, server, context-agent, review-agent, code-context-engine) to 2 services: Frontend and Backend
 - Keep GitHub/Gitee/GitLab OAuth account association logic unchanged
-- Keep core code review functionality (git-ai CLI, semantic analysis, PR review)
+- Keep core code review functionality (Code Context Engine runtime, semantic analysis, PR review)
 - Keep agent services integration (simplified deployment model)
 
 ## Capabilities
@@ -43,7 +43,7 @@ CodaGraph is currently designed for multi-tenant SaaS deployment with heavy infr
 **Affected Dependencies:**
 - Remove: `pg`, `bull`, `bull-board`, `ioredis`, `@prisma/client` (PostgreSQL)
 - Add: `better-sqlite3` or similar SQLite driver
-- Keep: Next.js, Express, git-ai CLI, Python agent services
+- Keep: Next.js, Express, Code Context Engine runtime, Python agent services
 
 **Affected Systems:**
 - Infrastructure: No PostgreSQL/Redis containers required

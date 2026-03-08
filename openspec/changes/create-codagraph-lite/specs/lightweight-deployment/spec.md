@@ -86,7 +86,7 @@ The system SHALL have minimal system requirements for deployment.
 - **WHEN** deploying CodaGraph-lite
 - **THEN** the system requires Node.js 18 or higher
 - **THEN** the system requires Python 3.11 or higher
-- **THEN** the system requires git-ai CLI installed
+- **THEN** the system requires Code Context Engine runtime installed
 - **THEN** the system optionally requires SQLite command-line tool
 
 ### Requirement: Zero-Dependency Deployment
@@ -215,7 +215,7 @@ The system SHALL include deployment verification tools.
 - **WHEN** admin runs verification script
 - **THEN** the script checks Node.js version
 - **THEN** the script checks Python version
-- **THEN** the script checks git-ai CLI installation
+- **THEN** the script checks Code Context Engine runtime installation
 - **THEN** the script checks environment configuration
 - **THEN** the script tests database connectivity
 - **THEN** the script reports any issues found

@@ -1280,7 +1280,7 @@ POST /webhook/gitlab
 | `EXTERNAL_API_ERROR` | 500 | 外部 API 错误 |
 | `AGENT_TIMEOUT` | 500 | Agent 超时 |
 | `LLM_API_ERROR` | 500 | LLM API 错误 |
-| `GIT_AI_ERROR` | 500 | git-ai 错误 |
+| `CODE_CONTEXT_ENGINE_ERROR` | 500 | Code Context Engine runtime 错误 |
 
 ---
 

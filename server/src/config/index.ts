@@ -30,8 +30,8 @@ export interface ResourceLimits {
   sqliteCacheSize: number;
   /** Python 内存限制 (MB) */
   pythonMemoryLimit: number;
-  /** git-ai 内存限制 (MB) */
-  gitAiMemoryLimit: number;
+  /** Code Context Engine runtime 内存预算 (MB) */
+  codeContextRuntimeMemoryLimit: number;
   /** 工作进程数量 */
   workerCount: number;
   /** 是否允许并发作业 */
@@ -90,11 +90,11 @@ export interface AgentConfig {
 }
 
 /**
- * Git-AI 配置
+ * Code Context Engine runtime 配置
  */
-export interface GitAiConfig {
-  gitAiBin: string;
-  gitAiMaxMemory: string;
+export interface CodeContextRuntimeConfig {
+  engineRoot: string;
+  maxMemory: string;
   workspaceRoot: string;
 }
 
@@ -166,7 +166,7 @@ export interface AppConfig {
   jobQueue: JobQueueConfig;
   auth: AuthConfig;
   agent: AgentConfig;
-  gitAi: GitAiConfig;
+  codeContextRuntime: CodeContextRuntimeConfig;
   monitoring: MonitoringConfig;
   logging: LogConfig;
   security: SecurityConfig;
@@ -334,9 +334,9 @@ export function loadConfig(): AppConfig {
       killGracePeriod: 5000,
     },
 
-    gitAi: {
-      gitAiBin: getEnv('GIT_AI_BIN', '/usr/local/bin/git-ai'),
-      gitAiMaxMemory: getEnv('GIT_AI_MAX_MEMORY', '256m'),
+    codeContextRuntime: {
+      engineRoot: getEnv('CODE_CONTEXT_ENGINE_ROOT', '../CodeContextEngine'),
+      maxMemory: getEnv('CODE_CONTEXT_ENGINE_MAX_MEMORY', '512m'),
       workspaceRoot: getEnv('WORKSPACE_ROOT', '/tmp/repos'),
     },
 
@@ -429,7 +429,7 @@ export function getResourceLimits(): ResourceLimits {
     nodeMemoryLimit: 512,
     sqliteCacheSize: config.database.sqliteCacheSize,
     pythonMemoryLimit: parseInt(config.agent.pythonMemoryLimit, 10),
-    gitAiMemoryLimit: parseInt(config.gitAi.gitAiMaxMemory, 10),
+    codeContextRuntimeMemoryLimit: parseInt(config.codeContextRuntime.maxMemory, 10),
     workerCount: config.jobQueue.workerCount,
     enableConcurrentJobs: config.jobQueue.enableConcurrentJobs,
   };

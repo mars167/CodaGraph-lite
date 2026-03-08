@@ -198,9 +198,9 @@ describe('ReviewExecutionService', () => {
           semanticContext: {
             changedSymbols: ['run'],
             relatedSnippets: [],
-            callers: [],
-            callees: [],
-            usedGitAi: false,
+            impactReferences: [],
+            relatedTests: [],
+            contextEngineAvailable: false,
           },
           patch: '@@ -1,2 +1,3 @@\n export const run = () => {\n+  console.log("debug")\n }\n',
           usedFallback: true,
@@ -244,7 +244,7 @@ describe('ReviewExecutionService', () => {
       metadata: {
         llmEnabled: false,
         llmUsed: false,
-        gitAiAvailable: false,
+        contextEngineAvailable: false,
         reviewedFiles: 1,
         inlineCommentLimit: 8,
       },
@@ -342,9 +342,9 @@ describe('ReviewExecutionService', () => {
           semanticContext: {
             changedSymbols: ['run'],
             relatedSnippets: [],
-            callers: [],
-            callees: [],
-            usedGitAi: false,
+            impactReferences: [],
+            relatedTests: [],
+            contextEngineAvailable: false,
           },
           patch: '@@ -1,2 +1,2 @@\n export const run = () => {\n }\n',
           usedFallback: true,
@@ -360,7 +360,7 @@ describe('ReviewExecutionService', () => {
       metadata: {
         llmEnabled: false,
         llmUsed: false,
-        gitAiAvailable: false,
+        contextEngineAvailable: false,
         reviewedFiles: 1,
         inlineCommentLimit: 8,
       },

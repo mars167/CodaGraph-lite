@@ -122,8 +122,8 @@ init_variable_definitions() {
     OPTIONAL_VARS[LLM_API_KEY]="LLM API 密钥"
     OPTIONAL_VARS[LLM_MODEL]="LLM 模型名称"
 
-    OPTIONAL_VARS[GIT_AI_BIN]="git-ai CLI 路径"
-    OPTIONAL_VARS[GIT_AI_MAX_MEMORY]="git-ai 内存限制，2u2g 建议为 256m"
+    OPTIONAL_VARS[CODE_CONTEXT_ENGINE_ROOT]="Code Context Engine runtime 根目录"
+    OPTIONAL_VARS[CODE_CONTEXT_ENGINE_MAX_MEMORY]="Code Context Engine runtime 内存预算，建议为 512m"
 
     OPTIONAL_VARS[PYTHON_MEMORY_LIMIT]="Python 内存限制，2u2g 建议为 300m"
 
@@ -181,7 +181,7 @@ check_2u2g_critical_config() {
     local node_options=$(grep "^NODE_OPTIONS=" "$ENV_FILE" | cut -d'=' -f2)
     local sqlite_cache=$(grep "^SQLITE_CACHE_SIZE=" "$ENV_FILE" | cut -d'=' -f2)
     local python_memory=$(grep "^PYTHON_MEMORY_LIMIT=" "$ENV_FILE" | cut -d'=' -f2)
-    local git_ai_memory=$(grep "^GIT_AI_MAX_MEMORY=" "$ENV_FILE" | cut -d'=' -f2)
+    local code_context_runtime_memory=$(grep "^CODE_CONTEXT_ENGINE_MAX_MEMORY=" "$ENV_FILE" | cut -d'=' -f2)
 
     # 检查 WORKER_COUNT
     if [ "$worker_count" != "1" ]; then
@@ -240,8 +240,8 @@ check_2u2g_critical_config() {
         log_warning "PYTHON_MEMORY_LIMIT 建议 300m（当前: $python_memory）"
     fi
 
-    if [ -n "$git_ai_memory" ] && [ "$git_ai_memory" != "256m" ]; then
-        log_warning "GIT_AI_MAX_MEMORY 建议 256m（当前: $git_ai_memory）"
+    if [ -n "$code_context_runtime_memory" ] && [ "$code_context_runtime_memory" != "512m" ]; then
+        log_warning "CODE_CONTEXT_ENGINE_MAX_MEMORY 建议 512m（当前: $code_context_runtime_memory）"
     fi
 
     echo

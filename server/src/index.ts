@@ -23,6 +23,7 @@ import statusRoutes from './routes/statusRoutes';
 import oauthRoutes from './oauth/routes';
 import repositoryRoutes from './routes/repositoryRoutes';
 import analysisRoutes from './routes/analysisRoutes';
+import settingsRoutes from './routes/settingsRoutes';
 import cookieParser from 'cookie-parser';
 import cors, { type CorsOptions } from 'cors';
 import { getConfig, printConfigSummary, ConfigurationError } from './config';
@@ -87,7 +88,7 @@ async function main() {
       contextAgentPort: config.agent.contextAgentPort,
       reviewAgentHost: config.agent.reviewAgentHost,
       reviewAgentPort: config.agent.reviewAgentPort,
-      workspaceRoot: config.gitAi.workspaceRoot,
+      workspaceRoot: config.codeContextRuntime.workspaceRoot,
       maxConcurrentJobs: config.jobQueue.workerCount,
     });
     await reviewWorker.start();
@@ -164,6 +165,9 @@ async function main() {
 
     // 分析路由
     app.use('/api/analyses', analysisRoutes);
+
+    // 系统设置路由
+    app.use('/api/settings', settingsRoutes);
 
     // Webhook 路由
     app.use('/webhook', webhookRoutes);

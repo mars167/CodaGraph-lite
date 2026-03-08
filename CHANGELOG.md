@@ -41,7 +41,7 @@
 - 禁用并发任务：`ENABLE_CONCURRENT_JOBS=false`
 - SQLite 缓存优化：`SQLITE_CACHE_SIZE=-2000`
 - Python 内存限制：`PYTHON_MEMORY_LIMIT=300m`
-- git-ai 内存限制：`GIT_AI_MAX_MEMORY=256m`
+- Code Context Engine 内存限制：`CODE_CONTEXT_ENGINE_MAX_MEMORY=256m`
 - Swap 设置脚本（2GB）
 - 系统监控脚本
 

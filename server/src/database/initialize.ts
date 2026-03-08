@@ -86,6 +86,7 @@ export async function resetDatabase(): Promise<void> {
     db.execute('DROP TABLE IF EXISTS analysis_job');
     db.execute('DROP TABLE IF EXISTS webhook_event');
     db.execute('DROP TABLE IF EXISTS usage_metric');
+    db.execute('DROP TABLE IF EXISTS app_setting');
     db.execute('DROP TABLE IF EXISTS jobs');
     db.execute('DROP TABLE IF EXISTS review_lock');
     db.execute('DROP TABLE IF EXISTS job_log');

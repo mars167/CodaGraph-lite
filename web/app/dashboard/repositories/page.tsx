@@ -552,13 +552,13 @@ export default function RepositoriesPage() {
             <p className="mt-2 text-sm text-slate-500 dark:text-gray-400">
               {searchKeyword.trim()
                 ? '换一个 owner/repo 关键词试试，或者先切换到其他平台。'
-                : '请先在 OAuth 管理页面连接平台，仓库列表会在读取时自动刷新。'}
+                : '请先在系统设置中连接平台，仓库列表会在读取时自动刷新。'}
             </p>
             <Link
-              href="/dashboard/oauth"
+              href="/dashboard/settings#oauth"
               className="mt-6 inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
             >
-              前往 OAuth 管理
+              前往系统设置
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>

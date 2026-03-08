@@ -330,6 +330,19 @@ export async function runMigrations(): Promise<number> {
           WHERE status = 'active';
         `
       },
+      {
+        version: 8,
+        name: 'add_app_setting_table',
+        sql: `
+          CREATE TABLE IF NOT EXISTS app_setting (
+            setting_key TEXT PRIMARY KEY,
+            setting_value TEXT NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_app_setting_updated_at ON app_setting(updated_at DESC);
+        `
+      },
     ];
 
     // 应用未应用的迁移

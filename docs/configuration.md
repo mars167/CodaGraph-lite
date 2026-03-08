@@ -11,7 +11,7 @@
 - [认证配置](#认证配置)
 - [OAuth 集成配置](#oauth-集成配置)
 - [Python Agent 配置](#python-agent-配置)
-- [git-ai 配置](#git-ai-配置)
+- [Code Context Engine 配置](#code-context-engine-配置)
 - [LLM 配置](#llm-配置)
 - [资源监控配置](#资源监控配置)
 - [日志配置](#日志配置)
@@ -35,7 +35,7 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=your_secure_password
 LLM_PROVIDER=openai
 LLM_API_KEY=your_api_key
-GIT_AI_BIN=/usr/local/bin/git-ai
+CODE_CONTEXT_ENGINE_ROOT=../CodeContextEngine
 ```
 
 ### 配置步骤
@@ -342,33 +342,33 @@ PYTHON_MEMORY_LIMIT=300m
 
 ---
 
-## git-ai 配置
+## Code Context Engine 配置
 
-### git-ai CLI 路径
+### Code Context Engine runtime 路径
 
 | 环境变量 | 默认值 | 说明 |
 |-----------|---------|------|
-| `GIT_AI_BIN` | `/usr/local/bin/git-ai` | git-ai CLI 可执行文件路径 |
+| `CODE_CONTEXT_ENGINE_ROOT` | `../CodeContextEngine` | Code Context Engine runtime 根目录（需包含 `dist/src/index.js`） |
 
 **配置示例**：
 ```bash
-# git-ai CLI 路径
-GIT_AI_BIN=/usr/local/bin/git-ai
+# Code Context Engine runtime 路径
+CODE_CONTEXT_ENGINE_ROOT=../CodeContextEngine
 
 # 或使用自定义安装路径
-GIT_AI_BIN=/opt/git-ai/bin/git-ai
+CODE_CONTEXT_ENGINE_ROOT=/opt/CodeContextEngine
 ```
 
-### git-ai 内存限制
+### Code Context Engine 内存限制
 
 | 环境变量 | 默认值 | 说明 |
 |-----------|---------|------|
-| `GIT_AI_MAX_MEMORY` | `256m` | git-ai 进程内存限制 |
+| `CODE_CONTEXT_ENGINE_MAX_MEMORY` | `256m` | Code Context Engine 进程内存限制 |
 
 **配置示例**：
 ```bash
-# git-ai 内存限制（256MB）
-GIT_AI_MAX_MEMORY=256m
+# Code Context Engine 内存限制（256MB）
+CODE_CONTEXT_ENGINE_MAX_MEMORY=256m
 ```
 
 **2u2g 服务器要求**：
@@ -379,7 +379,7 @@ GIT_AI_MAX_MEMORY=256m
 
 | 环境变量 | 默认值 | 说明 |
 |-----------|---------|------|
-| `WORKSPACE_ROOT` | `/tmp/repos` | 仓库克隆和索引工作区 |
+| `WORKSPACE_ROOT` | `/tmp/repos` | 仓库克隆和上下文检索工作区 |
 
 **配置示例**：
 ```bash
@@ -650,7 +650,7 @@ CORS_METHODS=GET,POST,PUT,DELETE,OPTIONS
 | `WORKER_COUNT` | `1` | 单 Worker 串行处理 |
 | `ENABLE_CONCURRENT_JOBS` | `false` | 禁用并发作业 |
 | `PYTHON_MEMORY_LIMIT` | `300m` | 限制 Python 进程内存为 300MB |
-| `GIT_AI_MAX_MEMORY` | `256m` | 限制 git-ai 内存为 256MB |
+| `CODE_CONTEXT_ENGINE_MAX_MEMORY` | `256m` | 限制 Code Context Engine 内存为 256MB |
 | `SQLITE_CACHE_SIZE` | `-2000` | 限制 SQLite 缓存为 2MB |
 | `ENABLE_SWAP_WARNING` | `true` | 启用 Swap 警告 |
 
@@ -671,8 +671,8 @@ ENABLE_CONCURRENT_JOBS=false
 # Python Agent 内存限制
 PYTHON_MEMORY_LIMIT=300m
 
-# git-ai 内存限制
-GIT_AI_MAX_MEMORY=256m
+# Code Context Engine 内存限制
+CODE_CONTEXT_ENGINE_MAX_MEMORY=256m
 
 # SQLite 缓存
 SQLITE_CACHE_SIZE=-2000
@@ -695,8 +695,8 @@ LLM_PROVIDER=openai
 LLM_API_KEY=sk-your-api-key
 LLM_MODEL=gpt-4
 
-# git-ai 路径
-GIT_AI_BIN=/usr/local/bin/git-ai
+# Code Context Engine 路径
+CODE_CONTEXT_ENGINE_ROOT=../CodeContextEngine
 ```
 
 ### 配置验证
@@ -711,7 +711,7 @@ npm start
 # ✓ Node.js 内存限制: 200MB
 # ✓ Worker 数量: 1 (串行处理)
 # ✓ Python 内存限制: 300m
-# ✓ git-ai 内存限制: 256m
+# ✓ Code Context Engine 内存限制: 256m
 # ✓ SQLite 缓存: 2MB
 # ✓ Swap 警告: 启用
 ```
@@ -729,7 +729,7 @@ npm start
 1. **必需配置检查**
    - 管理员用户名和密码
    - LLM 提供商和 API 密钥
-   - git-ai CLI 路径
+   - Code Context Engine runtime 路径
 
 2. **2u2g 配置验证**
    - 内存限制配置
@@ -744,17 +744,17 @@ npm start
 ### 配置测试命令
 
 ```bash
-# 测试数据库连接
-npm run test:db
+# 校验后端配置类型
+npm --prefix server run typecheck
 
-# 测试 LLM 连接
-npm run test:llm
+# 校验后端构建
+npm --prefix server run build
 
-# 测试 git-ai 安装
-npm run test:gitai
+# 校验前端构建
+npm --prefix web run build
 
-# 验证完整配置
-npm run validate:config
+# 校验 Code Context Engine runtime 已构建
+npm --prefix ../CodeContextEngine run build
 ```
 
 ### 配置修复建议
@@ -765,7 +765,7 @@ npm run validate:config
 |------|-----------|
 | `ADMIN_PASSWORD` 使用默认值 | 修改为强密码 |
 | `SESSION_SECRET` 使用默认值 | 生成随机密钥 |
-| `GIT_AI_BIN` 路径不存在 | 安装 git-ai CLI |
+| `CODE_CONTEXT_ENGINE_ROOT` 路径不存在 | 安装 Code Context Engine runtime |
 | `LLM_API_KEY` 缺失 | 配置有效的 API 密钥 |
 | 端口被占用 | 修改 `FRONTEND_PORT` 或 `BACKEND_PORT` |
 
@@ -793,9 +793,9 @@ npm run validate:config
 | Agent | `PYTHON_MEMORY_LIMIT` | `300m` | ✅ |
 | Agent | `AGENT_TIMEOUT_CONTEXT` | `300000` | - |
 | Agent | `AGENT_TIMEOUT_REVIEW` | `600000` | - |
-| git-ai | `GIT_AI_BIN` | `/usr/local/bin/git-ai` | - |
-| git-ai | `GIT_AI_MAX_MEMORY` | `256m` | ✅ |
-| git-ai | `WORKSPACE_ROOT` | `/tmp/repos` | - |
+| Code Context Engine | `CODE_CONTEXT_ENGINE_ROOT` | `../CodeContextEngine` | - |
+| Code Context Engine | `CODE_CONTEXT_ENGINE_MAX_MEMORY` | `256m` | ✅ |
+| Code Context Engine | `WORKSPACE_ROOT` | `/tmp/repos` | - |
 | LLM | `LLM_PROVIDER` | `openai` | - |
 | LLM | `LLM_API_KEY` | - | - |
 | LLM | `LLM_MODEL` | `gpt-4` | - |

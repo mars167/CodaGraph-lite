@@ -12,7 +12,7 @@
 
 | 组件 | 语言 | 端口 | 职责 |
 |------|--------|------|--------|
-| Context Agent | Python 3.11+ | 50052 | 使用 git-ai 收集代码上下文 |
+| Context Agent | Python 3.11+ | 50052 | 使用 Code Context Engine 收集代码上下文 |
 | Review Agent | Python 3.11+ | 50051 | 使用 LLM 进行代码审查 |
 | Agent Manager | TypeScript (Node.js) | - | 管理子进程生命周期 |
 | Agent Client | TypeScript (Node.js) | - | gRPC 客户端通信 |
@@ -247,7 +247,7 @@ console.log(`总日志文件: ${summary.totalFiles}, 总大小: ${summary.totalS
 |------|------|------|
 | Context Agent | 300m | `PYTHON_MEMORY_LIMIT` 环境变量 |
 | Review Agent | 300m | `PYTHON_MEMORY_LIMIT` 环境变量 |
-| git-ai | 256m | `GIT_AI_MAX_MEMORY` 环境变量 |
+| Code Context Engine | 256m | `CODE_CONTEXT_ENGINE_MAX_MEMORY` 环境变量 |
 | Node.js | 200m | 代码监控 |
 
 ### 6.2 并发控制
@@ -455,7 +455,7 @@ npm run test:integration
 | 变量 | 默认值 | 描述 |
 |------|----------|------|
 | `PYTHON_MEMORY_LIMIT` | 300m | Python 进程内存限制 |
-| `GIT_AI_MAX_MEMORY` | 256m | git-ai CLI 内存限制 |
+| `CODE_CONTEXT_ENGINE_MAX_MEMORY` | 256m | Code Context Engine runtime 内存限制 |
 | `CONTEXT_AGENT_PORT` | 50052 | Context Agent gRPC 端口 |
 | `REVIEW_AGENT_PORT` | 50051 | Review Agent gRPC 端口 |
 | `WORKSPACE_ROOT` | /tmp/repos | Git 工作区根目录 |

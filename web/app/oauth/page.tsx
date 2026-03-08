@@ -6,6 +6,7 @@ import type { Platform } from '@/types';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useNotificationHelpers } from '@/contexts/NotificationContext';
+import { rememberOAuthStatePlatform } from '@/lib/oauth-state';
 import { useState } from 'react';
 
 const platformConfigs: Record<Platform, {
@@ -57,6 +58,7 @@ export default function OAuthPage() {
       setIsAuthorizing(platform);
       const response = await apiClient.getOAuthAuthorizationUrl(platform);
       if (response.success && response.data?.authorizationUrl) {
+        rememberOAuthStatePlatform(response.data.authorizationUrl, platform);
         window.location.href = response.data.authorizationUrl;
       } else {
         throw new Error('未获取到授权 URL');
@@ -153,7 +155,7 @@ export default function OAuthPage() {
                 <svg className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2h12a2 2 0 002-2z" />
                 </svg>
-                <span>授权成功后，可以在 OAuth 管理页面管理已连接的账户</span>
+                <span>授权成功后，可以在系统设置页面管理已连接的账户</span>
               </li>
             </ul>
           </CardContent>

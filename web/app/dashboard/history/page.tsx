@@ -336,10 +336,10 @@ export default function AnalysisHistoryPage() {
               提交 Pull Request 后，分析将自动开始
             </p>
             <a
-              href="/dashboard/oauth"
+              href="/dashboard/settings#oauth"
               className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 dark:text-blue-400 mt-4"
             >
-              前往 OAuth 管理
+              前往系统设置
             </a>
           </CardContent>
         </Card>

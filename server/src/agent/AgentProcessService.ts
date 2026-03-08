@@ -69,7 +69,6 @@ export interface AgentProcessConfig {
   pythonPath: string;
   pythonMemoryLimit: number; // MB
   workspaceRoot: string;
-  gitAiPath: string;
 }
 
 /**
@@ -86,7 +85,6 @@ export const DEFAULT_AGENT_PROCESS_CONFIG: AgentProcessConfig = {
   pythonPath: process.env.PYTHON_PATH || 'python3',
   pythonMemoryLimit: parseInt(process.env.PYTHON_MEMORY_LIMIT || '300', 10),
   workspaceRoot: process.env.WORKSPACE_ROOT || '/tmp/repos',
-  gitAiPath: process.env.GIT_AI_BIN || '/usr/local/bin/git-ai',
 };
 
 /**

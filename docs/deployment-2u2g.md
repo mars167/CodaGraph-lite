@@ -92,7 +92,7 @@ export NODE_OPTIONS="--max-old-space-size=200"
 - Node.js Backend: 200MB
 - Python Context Agent: 300MB
 - Python Review Agent: 300MB
-- git-ai CLI: 256MB
+- Code Context Engine runtime: 256MB
 - 系统 + 其他: ~500MB
 - 剩余内存作为缓冲
 
@@ -125,8 +125,8 @@ sudo apt-get install -y nodejs
 # 安装 Python 3.10+
 sudo apt-get install -y python3 python3-pip python3-venv
 
-# 安装 git-ai CLI (如果有)
-# 参考 git-ai 官方文档
+# 安装 Code Context Engine runtime (如果有)
+# 参考 Code Context Engine 官方文档
 ```
 
 ### 2. 克隆项目

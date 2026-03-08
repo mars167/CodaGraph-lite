@@ -307,7 +307,18 @@ export interface WebhookEvent {
 /**
  * 使用指标类型
  */
-export type MetricType = 'analysis_total' | 'analysis_completed' | 'analysis_failed' | 'pr_analyzed' | 'comments_posted' | 'files_reviewed';
+export type MetricType =
+  | 'analysis_total'
+  | 'analysis_completed'
+  | 'analysis_failed'
+  | 'pr_analyzed'
+  | 'comments_posted'
+  | 'files_reviewed'
+  | 'llm_prompt_tokens'
+  | 'llm_completion_tokens'
+  | 'llm_total_tokens'
+  | 'llm_requests_total'
+  | 'llm_requests_failed';
 
 /**
  * 使用指标

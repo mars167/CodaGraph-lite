@@ -70,7 +70,7 @@
 - [x] 6.1 Create webhook endpoints for PR events (GitHub, Gitee, GitLab)
 - [x] 6.2 Implement PR review job submission to queue
 - [x] 6.3 Add repository cloning to workspace
-- [x] 6.4 Integrate git-ai CLI for repository indexing
+- [x] 6.4 Integrate Code Context Engine runtime for repository indexing
 - [x] 6.5 Spawn context-agent subprocess via gRPC
 - [x] 6.6 Implement context agent ReAct loop integration
 - [x] 6.7 Spawn review-agent subprocess via gRPC
@@ -156,7 +156,7 @@
 
 - [x] 11.5.1 **CRITICAL**: Implement Node.js memory limit (NODE_OPTIONS=--max-old-space-size=200)
 - [x] 11.5.2 **CRITICAL**: Implement SQLite cache limit (2MB)
-- [x] 11.5.3 **CRITICAL**: Implement git-ai memory limit (256m)
+- [x] 11.5.3 **CRITICAL**: Implement Code Context Engine memory limit (256m)
 - [x] 11.5.4 **CRITICAL**: Implement single concurrent job enforcement (WORKER_COUNT=1)
 - [x] 11.5.5 **CRITICAL**: Add memory monitoring endpoint `/api/status/memory`
 - [x] 11.5.6 **CRITICAL**: Add swap detection and warning system

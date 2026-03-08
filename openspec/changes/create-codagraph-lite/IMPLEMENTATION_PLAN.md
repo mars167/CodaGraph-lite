@@ -77,7 +77,7 @@
 1. 创建 PR 事件的 webhook 端点
 2. 实现 PR 审查作业提交到队列
 3. 添加仓库克隆到工作区
-4. 集成 git-ai CLI 进行仓库索引
+4. 集成 Code Context Engine runtime 进行仓库索引
 5. 通过 gRPC 启动 context-agent 子进程
 6. 实现 context agent ReAct 循环集成
 7. 通过 gRPC 启动 review-agent 子进程
@@ -169,7 +169,7 @@
 
 1. **CRITICAL:** 实现 Node.js 内存限制 (NODE_OPTIONS=--max-old-space-size=200)
 2. **CRITICAL:** 实现 SQLite 缓存限制 (2MB)
-3. **CRITICAL:** 实现 git-ai 内存限制 (256m)
+3. **CRITICAL:** 实现 Code Context Engine 内存限制 (256m)
 4. **CRITICAL:** 实现单并发作业强制 (WORKER_COUNT=1)
 5. **CRITICAL:** 添加内存监控端点 `/api/status/memory`
 6. **CRITICAL:** 添加 swap 检测和警告系统
@@ -301,7 +301,7 @@ CodaGraph-lite Implementation Team
 - [x] NODE_OPTIONS=--max-old-space-size=200
 - [x] WORKER_COUNT=1
 - [x] ENABLE_CONCURRENT_JOBS=false
-- [x] GIT_AI_MAX_MEMORY=256m
+- [x] CODE_CONTEXT_ENGINE_MAX_MEMORY=256m
 - [x] SQLITE_CACHE_SIZE=-2000
 - [x] PYTHON_MEMORY_LIMIT=300m
 - [ ] 内存监控端点工作

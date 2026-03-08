@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Loading } from '@/components/ui/Loading';
 import { useNotificationHelpers } from '@/contexts/NotificationContext';
+import { clearOAuthStatePlatform, resolveOAuthPlatform } from '@/lib/oauth-state';
 
 const platformNames: Record<string, string> = {
   github: 'GitHub',
@@ -25,13 +26,14 @@ function OAuthCallbackContent() {
   useEffect(() => {
     const handleCallback = async () => {
       const code = searchParams.get('code');
-      const platform = searchParams.get('platform') as string;
       const errorParam = searchParams.get('error');
       const state = searchParams.get('state');
+      const platform = resolveOAuthPlatform(searchParams.get('platform'), state);
+      const platformLabel = platform ? platformNames[platform] : '平台';
 
       if (errorParam) {
         const errorMsg = decodeURIComponent(errorParam);
-        error('授权失败', `${platformNames[platform] || '平台'} 授权失败: ${errorMsg}`);
+        error('授权失败', `${platformLabel} 授权失败: ${errorMsg}`);
         setIsProcessing(false);
         setTimeout(() => {
           router.push('/oauth');
@@ -40,7 +42,7 @@ function OAuthCallbackContent() {
       }
 
       if (!code || !platform) {
-        error('无效回调', '缺少必要参数');
+        error('无效回调', '缺少必要参数或无法识别授权平台');
         setIsProcessing(false);
         setTimeout(() => {
           router.push('/oauth');
@@ -53,7 +55,7 @@ function OAuthCallbackContent() {
         if (typeof window !== 'undefined') {
           const existing = sessionStorage.getItem(requestKey);
           if (existing === 'done' || existing === 'pending') {
-            router.push('/dashboard/oauth');
+            router.push('/dashboard/settings#oauth');
             return;
           }
           sessionStorage.setItem(requestKey, 'pending');
@@ -73,18 +75,19 @@ function OAuthCallbackContent() {
             authType: 'oauth',
           }),
         });
-        const response = await raw.json();
+        const response = await raw.json().catch(() => null);
 
-        if (raw.ok && response.success) {
+        if (raw.ok && response?.success) {
           if (typeof window !== 'undefined') {
             sessionStorage.setItem(requestKey, 'done');
           }
-          success('授权成功', `已成功连接到 ${platformNames[platform]}`);
+          clearOAuthStatePlatform(state);
+          success('授权成功', `已成功连接到 ${platformLabel}`);
           setTimeout(() => {
-            router.push('/dashboard/oauth');
+            router.push('/dashboard/settings#oauth');
           }, 1500);
         } else {
-          throw new Error(response.message || '授权处理失败');
+          throw new Error(response?.error || response?.details || response?.message || '授权处理失败');
         }
       } catch (err) {
         if (code && platform && typeof window !== 'undefined') {
@@ -161,7 +164,7 @@ function OAuthCallbackContent() {
             授权成功
           </h2>
           <p className="text-gray-700 dark:text-gray-300 mb-6">
-            正在跳转到 OAuth 管理页面...
+            正在跳转到系统设置页面...
           </p>
           <Loading size="sm" text="跳转中..." />
         </CardContent>

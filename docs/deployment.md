@@ -148,7 +148,7 @@ nano .env
 - `ADMIN_PASSWORD` - 设置强密码
 - `LLM_PROVIDER` - 选择 LLM 提供商
 - `LLM_API_KEY` - 设置 API 密钥
-- `GIT_AI_BIN` - 设置 git-ai 路径
+- `CODE_CONTEXT_ENGINE_ROOT` - 设置 Code Context Engine 路径
 - `FRONTEND_PORT`/`BACKEND_PORT` - 如需修改默认端口
 
 ### 4. 构建前端
@@ -592,12 +592,12 @@ NODE_OPTIONS=--max-old-space-size=200
 PYTHON_MEMORY_LIMIT=300m
 ```
 
-#### git-ai 内存限制
+#### Code Context Engine 内存限制
 
 在 `.env` 中：
 ```bash
-# 限制 git-ai 进程 256MB
-GIT_AI_MAX_MEMORY=256m
+# 限制 Code Context Engine 进程 256MB
+CODE_CONTEXT_ENGINE_MAX_MEMORY=256m
 ```
 
 ### SQLite 缓存优化
@@ -844,7 +844,7 @@ curl -X POST http://localhost:7900/api/restore \
 - [ ] 管理员可以登录
 - [ ] OAuth 集成可以授权
 - [ ] LLM 提供商连接正常
-- [ ] git-ai CLI 可用
+- [ ] Code Context Engine runtime 可用
 - [ ] 内存使用在限制内（<1.5GB）
 - [ ] Swap 配置并检测到
 
