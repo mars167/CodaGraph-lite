@@ -12,6 +12,17 @@ import type { AnalysisStatus, Platform } from '../models/types';
 import { createPlatformClient } from '../platform/client';
 import type { ReviewFinding } from '../review/reviewEngine';
 import {
+  buildPullRequestJobSummary,
+  buildPullRequestUrl,
+  buildReportSummary,
+  compareDateDesc,
+  computeReviewProgress,
+  deriveRiskLevel,
+  getReviewStatus,
+  matchesPullRequestJob,
+  pickMostRecentDate,
+} from '../review/pullRequestSummaries';
+import {
   buildReviewReportFileContexts,
   type ReviewReportPatchFile,
   type ReviewReportFileContext,
@@ -43,6 +54,142 @@ interface PlatformPullRequestFile {
   previous_filename?: string;
   patch?: string;
 }
+
+router.get('/pull-requests', async (req: Request, res: Response) => {
+  try {
+    const {
+      status,
+      platform,
+      page = '1',
+      limit = '20',
+    } = req.query as {
+      status?: AnalysisStatus;
+      platform?: Platform;
+      page?: string;
+      limit?: string;
+    };
+
+    const analysisModel = getAnalysisModel();
+    const repositoryModel = getRepositoryModel();
+    const jobModel = getQueueService().getJobModel();
+    const analyses = analysisModel.findAll({
+      limit: 1000,
+      sortBy: 'updated_at',
+      sortOrder: 'DESC',
+    });
+    const recentJobs = jobModel.findByType('pr_analysis', 1000);
+    const repositories = repositoryModel.findAll({
+      limit: 1000,
+      sortBy: 'updated_at',
+      sortOrder: 'DESC',
+    });
+
+    const analysisById = new Map(analyses.map((analysis) => [analysis.id, analysis]));
+    const repositoryByKey = new Map(
+      repositories.map((repository) => [
+        `${repository.platform}:${repository.owner}/${repository.name}`,
+        repository,
+      ])
+    );
+    const analysesByPr = new Map<string, typeof analyses>();
+
+    for (const analysis of analyses) {
+      const key = `${analysis.platform}:${analysis.owner}/${analysis.repo_name}#${analysis.pr_number}`;
+      const existing = analysesByPr.get(key) || [];
+      existing.push(analysis);
+      analysesByPr.set(key, existing);
+    }
+
+    const groups = Array.from(analysesByPr.entries()).map(([key, prAnalyses]) => {
+      const latestAnalysis = prAnalyses[0] || null;
+      const [repoKey, prNumberToken] = key.split('#');
+      const [platformName, repoNameToken] = repoKey.split(':');
+      const [owner, repoName] = repoNameToken.split('/');
+      const prNumber = Number(prNumberToken);
+      const repository = repositoryByKey.get(repoKey) || null;
+      const jobs = recentJobs
+        .filter((job) => matchesPullRequestJob(job, {
+          platform: platformName as Platform,
+          owner,
+          repoName,
+          prNumber,
+        }, analysisById))
+        .map((job) => buildPullRequestJobSummary(job, analysisById))
+        .sort((left, right) => compareDateDesc(left.updatedAt, right.updatedAt));
+      const latestJob = jobs[0] || null;
+      const risk = deriveRiskLevel(latestAnalysis);
+      const reports = prAnalyses
+        .filter((analysis) => analysis.status === 'completed' || analysis.status === 'failed' || analysis.status === 'cancelled')
+        .slice(0, 5)
+        .map(buildReportSummary);
+      const lastActivityAt = pickMostRecentDate([
+        latestJob?.updatedAt,
+        latestAnalysis?.updated_at ? String(latestAnalysis.updated_at) : null,
+        latestAnalysis?.completed_at ? String(latestAnalysis.completed_at) : null,
+        reports[0]?.completedAt ? String(reports[0].completedAt) : null,
+        reports[0]?.createdAt ? String(reports[0].createdAt) : null,
+      ]) || new Date(0).toISOString();
+
+      return {
+        repositoryId: repository?.id || null,
+        repositoryFullName: repository?.full_name || `${owner}/${repoName}`,
+        repositoryUrl: repository?.html_url || null,
+        repositoryWatchEnabled: Boolean(repository?.watch_enabled),
+        platform: platformName as Platform,
+        owner,
+        repoName,
+        prNumber,
+        title: latestAnalysis?.pr_title || `PR #${prNumber}`,
+        author: latestAnalysis?.pr_author || 'unknown',
+        url: buildPullRequestUrl(platformName as Platform, owner, repoName, prNumber),
+        reviewStatus: getReviewStatus(latestAnalysis, latestJob),
+        reviewProgress: computeReviewProgress(latestAnalysis, latestJob, null),
+        latestAnalysisId: latestAnalysis?.id || null,
+        latestReviewJobId: latestJob?.id || null,
+        latestReviewJobStatus: latestJob?.status || null,
+        latestReviewJobCreatedAt: latestJob?.createdAt || null,
+        lastReviewedAt: latestAnalysis?.completed_at ? String(latestAnalysis.completed_at) : latestAnalysis?.updated_at ? String(latestAnalysis.updated_at) : null,
+        latestRiskLevel: risk.level,
+        latestRiskSummary: risk.summary,
+        commentCount: latestAnalysis?.comment_count || 0,
+        issueCount: latestAnalysis?.issue_count || 0,
+        fileCount: latestAnalysis?.file_count || 0,
+        latestHeadCommit: latestJob?.headCommit || latestAnalysis?.head_commit || null,
+        lastActivityAt,
+        jobCount: jobs.length,
+        jobs,
+        reports,
+      };
+    });
+
+    const filtered = groups
+      .filter((group) => (platform ? group.platform === platform : true))
+      .filter((group) => (status ? group.reviewStatus === status : true))
+      .sort((left, right) => compareDateDesc(left.lastActivityAt, right.lastActivityAt));
+
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+    const safePage = Number.isNaN(pageNum) || pageNum < 1 ? 1 : pageNum;
+    const safeLimit = Number.isNaN(limitNum) || limitNum < 1 ? 20 : limitNum;
+    const offset = (safePage - 1) * safeLimit;
+
+    return res.json({
+      pullRequests: filtered.slice(offset, offset + safeLimit),
+      pagination: {
+        page: safePage,
+        limit: safeLimit,
+        total: filtered.length,
+        totalPages: Math.ceil(filtered.length / safeLimit),
+      },
+    });
+  } catch (error) {
+    console.error('获取 PR 维度分析历史失败:', error);
+    return res.status(500).json({
+      error: '内部服务器错误',
+      details: (error as Error).message,
+    });
+  }
+});
 
 function parseReportPayload(raw: string): StoredReviewReportPayload | null {
   try {

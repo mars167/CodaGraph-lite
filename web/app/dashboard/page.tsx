@@ -8,6 +8,20 @@ import { Loading } from '@/components/ui/Loading';
 import { useNotificationHelpers } from '@/contexts/NotificationContext';
 import type { ResourceStats, SystemStatus } from '@/types';
 
+type ThroughputMetricKey =
+  | 'jobsProcessed'
+  | 'jobsFailed'
+  | 'avgProcessingTime'
+  | 'workerConfigured'
+  | 'workerRunningJobs'
+  | 'workerPendingJobs';
+
+type LlmMetricKey =
+  | 'llmPromptTokens'
+  | 'llmCompletionTokens'
+  | 'llmTotalTokens'
+  | 'llmFailedRequests';
+
 function formatMemory(bytes: number) {
   const mb = bytes / (1024 * 1024);
   return `${mb.toFixed(1)} MB`;
@@ -29,6 +43,21 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [resourceStats, setResourceStats] = useState<ResourceStats | null>(null);
+  const [activeTrendMetric, setActiveTrendMetric] = useState<ThroughputMetricKey>('jobsProcessed');
+  const [activeLlmTrendMetric, setActiveLlmTrendMetric] = useState<LlmMetricKey>('llmTotalTokens');
+  const [trendHistory, setTrendHistory] = useState<Array<{
+    timestamp: number;
+    jobsProcessed: number;
+    jobsFailed: number;
+    avgProcessingTime: number;
+    workerConfigured: number;
+    workerRunningJobs: number;
+    workerPendingJobs: number;
+    llmPromptTokens: number;
+    llmCompletionTokens: number;
+    llmTotalTokens: number;
+    llmFailedRequests: number;
+  }>>([]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -43,7 +72,29 @@ export default function DashboardPage() {
           setSystemStatus(statusRes.value);
         }
         if (statsRes.status === 'fulfilled') {
-          setResourceStats(statsRes.value?.data || null);
+          const statsData = statsRes.value?.data || null;
+          setResourceStats(statsData);
+          if (statsData) {
+            setTrendHistory((prev) => {
+              const next = [
+                ...prev,
+                {
+                  timestamp: Date.now(),
+                  jobsProcessed: statsData.jobsProcessed || 0,
+                  jobsFailed: statsData.jobsFailed || 0,
+                  avgProcessingTime: statsData.avgProcessingTime || 0,
+                  workerConfigured: statsData.limits?.workerCount || 0,
+                  workerRunningJobs: statsData.queue?.activeCount || 0,
+                  workerPendingJobs: statsData.queue?.pendingCount || 0,
+                  llmPromptTokens: statsData.llm?.promptTokens || 0,
+                  llmCompletionTokens: statsData.llm?.completionTokens || 0,
+                  llmTotalTokens: statsData.llm?.totalTokens || 0,
+                  llmFailedRequests: statsData.llm?.failedRequests || 0,
+                },
+              ];
+              return next.slice(-24);
+            });
+          }
         }
       } catch {
         error('加载失败', '无法获取系统状态');
@@ -94,6 +145,136 @@ export default function DashboardPage() {
   const completionShare = llmStats && llmStats.totalTokens > 0
     ? (llmStats.completionTokens / llmStats.totalTokens) * 100
     : 0;
+  const throughputMetrics: Array<{
+    key: ThroughputMetricKey;
+    label: string;
+    value: number;
+    unit?: string;
+    valueColor: string;
+    panelClass: string;
+    labelClass: string;
+  }> = [
+    {
+      key: 'jobsProcessed',
+      label: '已处理作业',
+      value: resourceStats?.jobsProcessed || 0,
+      valueColor: 'text-slate-950 dark:text-white',
+      panelClass: 'bg-slate-50 dark:bg-slate-900',
+      labelClass: 'text-gray-600 dark:text-gray-400',
+    },
+    {
+      key: 'jobsFailed',
+      label: '失败作业',
+      value: resourceStats?.jobsFailed || 0,
+      valueColor: 'text-rose-700 dark:text-rose-300',
+      panelClass: 'bg-rose-50 dark:bg-rose-950/20',
+      labelClass: 'text-rose-700 dark:text-rose-300',
+    },
+    {
+      key: 'avgProcessingTime',
+      label: '平均处理时间',
+      value: resourceStats?.avgProcessingTime || 0,
+      unit: 's',
+      valueColor: 'text-cyan-700 dark:text-cyan-300',
+      panelClass: 'bg-cyan-50 dark:bg-cyan-950/20',
+      labelClass: 'text-cyan-700 dark:text-cyan-300',
+    },
+    {
+      key: 'workerConfigured',
+      label: 'Worker 配置数',
+      value: resourceStats?.limits?.workerCount || 0,
+      valueColor: 'text-violet-700 dark:text-violet-300',
+      panelClass: 'bg-violet-50 dark:bg-violet-950/20',
+      labelClass: 'text-violet-700 dark:text-violet-300',
+    },
+    {
+      key: 'workerRunningJobs',
+      label: '运行中作业',
+      value: resourceStats?.queue?.activeCount || 0,
+      valueColor: 'text-emerald-700 dark:text-emerald-300',
+      panelClass: 'bg-emerald-50 dark:bg-emerald-950/20',
+      labelClass: 'text-emerald-700 dark:text-emerald-300',
+    },
+    {
+      key: 'workerPendingJobs',
+      label: '等待中作业',
+      value: resourceStats?.queue?.pendingCount || 0,
+      valueColor: 'text-amber-700 dark:text-amber-300',
+      panelClass: 'bg-amber-50 dark:bg-amber-950/20',
+      labelClass: 'text-amber-700 dark:text-amber-300',
+    },
+  ];
+  const activeMetricMeta = throughputMetrics.find(item => item.key === activeTrendMetric) || throughputMetrics[0];
+  const trendValues = trendHistory.map(item => item[activeTrendMetric]);
+  const hasTrend = trendValues.length > 1;
+  const minTrend = hasTrend ? Math.min(...trendValues) : 0;
+  const maxTrend = hasTrend ? Math.max(...trendValues) : 1;
+  const trendRange = maxTrend - minTrend || 1;
+  const trendPadding = 4;
+  const trendPoints = trendValues.map((value, index) => {
+    const normalized = (value - minTrend) / trendRange;
+    const x = trendPadding + (index / Math.max(trendValues.length - 1, 1)) * (100 - trendPadding * 2);
+    const y = (100 - trendPadding) - normalized * (100 - trendPadding * 2);
+    return `${x},${y}`;
+  }).join(' ');
+  const trendLatestValue = trendValues[trendValues.length - 1] ?? 0;
+  const trendLatestTime = trendHistory.length > 0
+    ? new Date(trendHistory[trendHistory.length - 1].timestamp).toLocaleTimeString('zh-CN', { hour12: false })
+    : '--:--:--';
+  const llmMetrics: Array<{
+    key: LlmMetricKey;
+    label: string;
+    value: number;
+    valueClass: string;
+    panelClass: string;
+    labelClass: string;
+  }> = [
+    {
+      key: 'llmPromptTokens',
+      label: 'Prompt',
+      value: llmStats?.promptTokens || 0,
+      valueClass: 'text-cyan-700 dark:text-cyan-300',
+      panelClass: 'bg-cyan-50 dark:bg-cyan-950/20',
+      labelClass: 'text-cyan-700 dark:text-cyan-300',
+    },
+    {
+      key: 'llmCompletionTokens',
+      label: 'Completion',
+      value: llmStats?.completionTokens || 0,
+      valueClass: 'text-emerald-700 dark:text-emerald-300',
+      panelClass: 'bg-emerald-50 dark:bg-emerald-950/20',
+      labelClass: 'text-emerald-700 dark:text-emerald-300',
+    },
+    {
+      key: 'llmTotalTokens',
+      label: '总 Token',
+      value: llmStats?.totalTokens || 0,
+      valueClass: 'text-indigo-700 dark:text-indigo-300',
+      panelClass: 'bg-indigo-50 dark:bg-indigo-950/20',
+      labelClass: 'text-indigo-700 dark:text-indigo-300',
+    },
+    {
+      key: 'llmFailedRequests',
+      label: '失败请求',
+      value: llmStats?.failedRequests || 0,
+      valueClass: 'text-rose-700 dark:text-rose-300',
+      panelClass: 'bg-rose-50 dark:bg-rose-950/20',
+      labelClass: 'text-rose-700 dark:text-rose-300',
+    },
+  ];
+  const activeLlmMetricMeta = llmMetrics.find(item => item.key === activeLlmTrendMetric) || llmMetrics[0];
+  const llmTrendValues = trendHistory.map(item => item[activeLlmTrendMetric]);
+  const hasLlmTrend = llmTrendValues.length > 1;
+  const llmMinTrend = hasLlmTrend ? Math.min(...llmTrendValues) : 0;
+  const llmMaxTrend = hasLlmTrend ? Math.max(...llmTrendValues) : 1;
+  const llmTrendRange = llmMaxTrend - llmMinTrend || 1;
+  const llmTrendPoints = llmTrendValues.map((value, index) => {
+    const normalized = (value - llmMinTrend) / llmTrendRange;
+    const x = trendPadding + (index / Math.max(llmTrendValues.length - 1, 1)) * (100 - trendPadding * 2);
+    const y = (100 - trendPadding) - normalized * (100 - trendPadding * 2);
+    return `${x},${y}`;
+  }).join(' ');
+  const llmLatestValue = llmTrendValues[llmTrendValues.length - 1] ?? 0;
 
   return (
     <div className="space-y-6">
@@ -256,24 +437,61 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle>作业吞吐</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-3">
-            <div className="rounded-2xl bg-slate-50 px-4 py-4 dark:bg-slate-900">
-              <p className="text-sm text-gray-600 dark:text-gray-400">已处理作业</p>
-              <p className="mt-3 text-2xl font-semibold text-slate-950 dark:text-white">
-                {resourceStats?.jobsProcessed || 0}
-              </p>
+          <CardContent className="space-y-5">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {throughputMetrics.map(metric => (
+                <button
+                  key={metric.key}
+                  type="button"
+                  onClick={() => setActiveTrendMetric(metric.key)}
+                  className={`rounded-2xl px-4 py-4 text-left transition-all ${metric.panelClass} ${
+                    activeTrendMetric === metric.key
+                      ? 'ring-2 ring-cyan-500 shadow-sm'
+                      : 'ring-1 ring-transparent hover:ring-cyan-300 dark:hover:ring-cyan-700'
+                  }`}
+                >
+                  <p className={`text-sm ${metric.labelClass}`}>{metric.label}</p>
+                  <p className={`mt-3 text-2xl font-semibold ${metric.valueColor}`}>
+                    {metric.key === 'avgProcessingTime' ? metric.value.toFixed(1) : metric.value}
+                    {metric.unit || ''}
+                  </p>
+                </button>
+              ))}
             </div>
-            <div className="rounded-2xl bg-rose-50 px-4 py-4 dark:bg-rose-950/20">
-              <p className="text-sm text-rose-700 dark:text-rose-300">失败作业</p>
-              <p className="mt-3 text-2xl font-semibold text-rose-700 dark:text-rose-300">
-                {resourceStats?.jobsFailed || 0}
-              </p>
-            </div>
-            <div className="rounded-2xl bg-cyan-50 px-4 py-4 dark:bg-cyan-950/20">
-              <p className="text-sm text-cyan-700 dark:text-cyan-300">平均处理时间</p>
-              <p className="mt-3 text-2xl font-semibold text-cyan-700 dark:text-cyan-300">
-                {(resourceStats?.avgProcessingTime || 0).toFixed(1)}s
-              </p>
+            <div className="overflow-hidden rounded-3xl border border-gray-200/80 bg-white/80 p-4 dark:border-gray-800 dark:bg-gray-950/60">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                  {activeMetricMeta.label} 趋势（最近 {trendHistory.length} 次刷新）
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  最新值 {activeTrendMetric === 'avgProcessingTime' ? trendLatestValue.toFixed(1) : trendLatestValue}{activeMetricMeta.unit || ''} · {trendLatestTime}
+                </p>
+              </div>
+              {hasTrend ? (
+                <div className="h-52 overflow-hidden">
+                  <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="block h-full w-full">
+                    <polyline
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.4"
+                      className="text-cyan-500"
+                      points={trendPoints}
+                    />
+                  </svg>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
+                    <span className="min-w-0 truncate">
+                      最小值 {activeTrendMetric === 'avgProcessingTime' ? minTrend.toFixed(1) : minTrend}{activeMetricMeta.unit || ''}
+                    </span>
+                    <span className="min-w-0 truncate text-right">
+                      最大值 {activeTrendMetric === 'avgProcessingTime' ? maxTrend.toFixed(1) : maxTrend}{activeMetricMeta.unit || ''}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex h-52 items-center justify-center rounded-2xl bg-gray-50 text-sm text-gray-500 dark:bg-gray-900/60 dark:text-gray-400">
+                  至少完成两次刷新后显示折线图
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -283,25 +501,55 @@ export default function DashboardPage() {
             <CardTitle>LLM Token 统计</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="rounded-2xl border border-gray-200/80 px-4 py-4 dark:border-gray-800">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Prompt</p>
-                <p className="mt-3 text-2xl font-semibold text-slate-950 dark:text-white">
-                  {formatTokenCount(llmStats?.promptTokens)}
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {llmMetrics.map(metric => (
+                <button
+                  key={metric.key}
+                  type="button"
+                  onClick={() => setActiveLlmTrendMetric(metric.key)}
+                  className={`rounded-2xl px-4 py-4 text-left transition-all ${metric.panelClass} ${
+                    activeLlmTrendMetric === metric.key
+                      ? 'ring-2 ring-violet-500 shadow-sm'
+                      : 'ring-1 ring-transparent hover:ring-violet-300 dark:hover:ring-violet-700'
+                  }`}
+                >
+                  <p className={`text-sm ${metric.labelClass}`}>{metric.label}</p>
+                  <p className={`mt-3 text-2xl font-semibold ${metric.valueClass}`}>
+                    {formatTokenCount(metric.value)}
+                  </p>
+                </button>
+              ))}
+            </div>
+            <div className="overflow-hidden rounded-3xl border border-gray-200/80 bg-white/80 p-4 dark:border-gray-800 dark:bg-gray-950/60">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                  {activeLlmMetricMeta.label} 趋势（最近 {trendHistory.length} 次刷新）
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  最新值 {formatTokenCount(llmLatestValue)} · {trendLatestTime}
                 </p>
               </div>
-              <div className="rounded-2xl border border-gray-200/80 px-4 py-4 dark:border-gray-800">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Completion</p>
-                <p className="mt-3 text-2xl font-semibold text-slate-950 dark:text-white">
-                  {formatTokenCount(llmStats?.completionTokens)}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-gray-200/80 px-4 py-4 dark:border-gray-800">
-                <p className="text-sm text-gray-500 dark:text-gray-400">失败请求</p>
-                <p className="mt-3 text-2xl font-semibold text-slate-950 dark:text-white">
-                  {formatTokenCount(llmStats?.failedRequests)}
-                </p>
-              </div>
+              {hasLlmTrend ? (
+                <div className="h-52 overflow-hidden">
+                  <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="block h-full w-full">
+                    <polyline
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.4"
+                      className="text-violet-500"
+                      points={llmTrendPoints}
+                    />
+                  </svg>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
+                    <span className="min-w-0 truncate">最小值 {formatTokenCount(llmMinTrend)}</span>
+                    <span className="min-w-0 truncate text-right">最大值 {formatTokenCount(llmMaxTrend)}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex h-52 items-center justify-center rounded-2xl bg-gray-50 text-sm text-gray-500 dark:bg-gray-900/60 dark:text-gray-400">
+                  至少完成两次刷新后显示折线图
+                </div>
+              )}
             </div>
 
             <div className="rounded-3xl bg-slate-950 px-5 py-5 text-slate-100 dark:bg-slate-900">

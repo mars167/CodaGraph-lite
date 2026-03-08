@@ -23,11 +23,11 @@ const platformThemes: Record<Platform, {
   link: string;
 }> = {
   github: {
-    pill: 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900',
-    accent: 'bg-slate-900 dark:bg-slate-100',
-    soft: 'from-slate-50 via-white to-slate-100 dark:from-gray-900 dark:via-gray-900 dark:to-slate-950',
-    button: 'border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-600 dark:hover:bg-gray-800',
-    link: 'text-slate-700 hover:text-slate-950 dark:text-slate-200 dark:hover:text-white',
+    pill: 'bg-emerald-600 text-white dark:bg-emerald-500 dark:text-white',
+    accent: 'bg-emerald-600 dark:bg-emerald-400',
+    soft: 'from-emerald-50 via-white to-green-50 dark:from-gray-900 dark:via-gray-900 dark:to-emerald-950/30',
+    button: 'border-emerald-200 bg-white text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 dark:border-emerald-900/60 dark:bg-gray-900 dark:text-emerald-300 dark:hover:border-emerald-800 dark:hover:bg-emerald-950/30',
+    link: 'text-emerald-700 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200',
   },
   gitee: {
     pill: 'bg-rose-600 text-white dark:bg-rose-500 dark:text-white',
@@ -316,13 +316,11 @@ export default function RepositoriesPage() {
             {filteredRepositories.map((repo) => {
               const theme = platformThemes[repo.platform];
               const lastCommitText = formatDateTime(repo.lastCommitAt);
-              const lastSyncedText = formatDateTime(repo.lastSyncedAt);
 
               const metrics = [
                 { label: 'Stars', value: formatCount(repo.stars) },
                 { label: 'Forks', value: formatCount(repo.forks) },
                 { label: 'PR 数', value: formatCount(repo.pullRequests) },
-                { label: '最近同步', value: formatShortDate(repo.lastSyncedAt) },
               ];
 
               return (
@@ -452,18 +450,6 @@ export default function RepositoriesPage() {
                               )}
                               {repo.watchEnabled ? '关闭 Watch' : '开启 Watch'}
                             </button>
-                            <Link
-                              href={`/dashboard/repositories/${repo.id}`}
-                              className="inline-flex items-center justify-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
-                            >
-                              查看 PR 列表
-                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
-                            </Link>
-                            <div className="rounded-full border border-slate-200 bg-white/80 px-3 py-2 text-xs text-slate-500 shadow-sm dark:border-gray-800 dark:bg-gray-950/70 dark:text-gray-400">
-                              {lastSyncedText ? `上次同步 ${lastSyncedText}` : '尚未记录同步时间'}
-                            </div>
                           </div>
                         </div>
                       </div>

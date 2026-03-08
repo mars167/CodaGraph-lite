@@ -29,6 +29,13 @@ export class RepositoryWatchService {
     };
   }
 
+  private isAuthenticationFailure(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return /(^|[^0-9])401([^0-9]|$)/.test(message)
+      || /bad credentials/i.test(message)
+      || /unauthorized/i.test(message);
+  }
+
   async start(): Promise<void> {
     if (this.isRunning) {
       return;
@@ -78,12 +85,30 @@ export class RepositoryWatchService {
         return;
       }
 
-      const validInstallation = await this.oauthInstallationService.ensureValidAccessToken(installation);
-      const client = createPlatformClient(repository.platform, validInstallation.access_token, {
-        authType: validInstallation.auth_type || 'oauth',
-        githubAppInstallationId: validInstallation.github_app_installation_id || null,
+      let activeInstallation = await this.oauthInstallationService.ensureValidAccessToken(installation);
+      let client = createPlatformClient(repository.platform, activeInstallation.access_token, {
+        authType: activeInstallation.auth_type || 'oauth',
+        githubAppInstallationId: activeInstallation.github_app_installation_id || null,
       });
-      const pullRequests = await this.listOpenPullRequests(client, repository.owner, repository.name);
+
+      let pullRequests: PlatformPullRequest[];
+      try {
+        pullRequests = await this.listOpenPullRequests(client, repository.owner, repository.name);
+      } catch (error) {
+        if (!this.isAuthenticationFailure(error)) {
+          throw error;
+        }
+
+        logger.warn(
+          `⚠️ Watch 读取 ${repository.full_name} PR 列表时鉴权失败，正在强制刷新 token 并重试: ${(error as Error).message}`
+        );
+        activeInstallation = await this.oauthInstallationService.ensureValidAccessToken(activeInstallation, true);
+        client = createPlatformClient(repository.platform, activeInstallation.access_token, {
+          authType: activeInstallation.auth_type || 'oauth',
+          githubAppInstallationId: activeInstallation.github_app_installation_id || null,
+        });
+        pullRequests = await this.listOpenPullRequests(client, repository.owner, repository.name);
+      }
 
       let queuedCount = 0;
       let failedCount = 0;

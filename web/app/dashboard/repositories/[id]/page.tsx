@@ -33,6 +33,22 @@ const prStateConfig: Record<RepositoryPullRequest['state'], { label: string; cla
   merged: { label: 'Merged', className: 'bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-900/20 dark:text-violet-300 dark:ring-violet-900/50' },
 };
 
+const jobStatusConfig: Record<RepositoryPullRequest['jobs'][number]['status'], { label: string; variant: 'default' | 'info' | 'warning' | 'success' | 'error' }> = {
+  pending: { label: '等待', variant: 'warning' },
+  processing: { label: '进行中', variant: 'info' },
+  completed: { label: '完成', variant: 'success' },
+  failed: { label: '失败', variant: 'error' },
+  cancelled: { label: '取消', variant: 'default' },
+  dead: { label: '死信', variant: 'error' },
+};
+
+const triggerSourceLabel: Record<NonNullable<RepositoryPullRequest['jobs'][number]['triggerSource']>, string> = {
+  manual: '手动',
+  watch: 'Watch',
+  webhook: 'Webhook',
+  unknown: '未知',
+};
+
 export default function RepositoryPullRequestsPage() {
   const params = useParams<{ id: string }>();
   const repositoryId = params?.id;
@@ -129,6 +145,13 @@ export default function RepositoryPullRequestsPage() {
     }
 
     return date.toLocaleString('zh-CN', { hour12: false });
+  };
+
+  const formatCommit = (value?: string) => {
+    if (!value) {
+      return '未记录';
+    }
+    return value.length > 8 ? value.slice(0, 8) : value;
   };
 
   const handleToggleWatch = async () => {
@@ -333,21 +356,80 @@ export default function RepositoryPullRequestsPage() {
                             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">最近完成：{formatDate(pr.lastReviewedAt)}</p>
                           </div>
                         </div>
-                        <div className="mt-5 rounded-2xl border border-gray-200/80 bg-gray-50/80 p-4 dark:border-gray-800 dark:bg-gray-900/40">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-gray-900 dark:text-white">Review 报告</p>
-                              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">每次完成的 review 都会生成独立报告，可回看历史结论。</p>
+                        <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+                          <div className="rounded-2xl border border-gray-200/80 bg-gray-50/80 p-4 dark:border-gray-800 dark:bg-gray-900/40">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-gray-900 dark:text-white">Job 时间线</p>
+                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">查看这个 PR 被触发过多少次 review，每次对应哪个 commit 与报告。</p>
+                              </div>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">{pr.jobCount} 个</span>
                             </div>
-                            <span className="text-xs text-gray-500 dark:text-gray-400">{pr.reports.length} 份</span>
+                            {pr.jobs.length > 0 ? (
+                              <div className="mt-3 space-y-3">
+                                {pr.jobs.map((job) => {
+                                  const jobStatus = jobStatusConfig[job.status];
+                                  return (
+                                    <div key={job.id} className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950/60">
+                                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                        <div className="min-w-0">
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <Badge variant={jobStatus.variant}>{jobStatus.label}</Badge>
+                                            <Link href={`/dashboard/jobs/${job.id}`} className="text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                                              Job #{job.id}
+                                            </Link>
+                                            <span className="rounded-full bg-gray-900 px-2.5 py-1 text-[11px] font-medium text-white dark:bg-gray-200 dark:text-gray-900">
+                                              {formatCommit(job.shortHeadCommit || job.headCommit)}
+                                            </span>
+                                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                                              {triggerSourceLabel[job.triggerSource || 'unknown']}
+                                            </span>
+                                          </div>
+                                          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                            更新时间 {formatDate(job.updatedAt)}
+                                            {job.errorMessage ? ` · ${job.errorMessage}` : ''}
+                                          </p>
+                                        </div>
+                                        <div className="flex shrink-0 flex-wrap gap-2">
+                                          {job.report ? (
+                                            <Link
+                                              href={`/dashboard/reports/${job.report.analysisId}`}
+                                              className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                            >
+                                              报告 #{job.report.analysisId}
+                                            </Link>
+                                          ) : (
+                                            <span className="inline-flex items-center rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                                              暂无报告
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="mt-3 rounded-xl border border-dashed border-gray-300 px-4 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                                当前 PR 还没有已记录的 review job。
+                              </div>
+                            )}
                           </div>
-                          {pr.reports.length > 0 ? (
-                            <div className="mt-3 space-y-3">
-                              {pr.reports.map((report) => {
-                                const reportRisk = riskConfig[report.riskLevel];
-                                return (
-                                  <div key={report.analysisId} className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950/60 lg:flex-row lg:items-center lg:justify-between">
-                                    <div className="min-w-0">
+
+                          <div className="rounded-2xl border border-gray-200/80 bg-gray-50/80 p-4 dark:border-gray-800 dark:bg-gray-900/40">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-gray-900 dark:text-white">Review 报告</p>
+                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">每次完成的 review 都会生成独立报告，可回看历史结论。</p>
+                              </div>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">{pr.reports.length} 份</span>
+                            </div>
+                            {pr.reports.length > 0 ? (
+                              <div className="mt-3 space-y-3">
+                                {pr.reports.map((report) => {
+                                  const reportRisk = riskConfig[report.riskLevel];
+                                  return (
+                                    <div key={report.analysisId} className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950/60">
                                       <div className="flex flex-wrap items-center gap-2">
                                         <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${reportRisk.className}`}>{reportRisk.label}</span>
                                         <Badge variant={report.status === 'completed' ? 'success' : report.status === 'failed' ? 'error' : 'warning'}>
@@ -359,30 +441,30 @@ export default function RepositoryPullRequestsPage() {
                                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                                         {report.commentCount} 评论 / {report.issueCount} 问题 / {report.fileCount} 文件 · {formatDate(report.completedAt || report.createdAt)}
                                       </p>
+                                      <div className="mt-3 flex shrink-0 flex-wrap gap-2">
+                                        <Link
+                                          href={`/dashboard/reports/${report.analysisId}`}
+                                          className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                        >
+                                          查看报告
+                                        </Link>
+                                        <Link
+                                          href={report.jobId ? `/dashboard/jobs/${report.jobId}` : '/dashboard/jobs'}
+                                          className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                        >
+                                          {report.jobId ? '跳转 Job' : '查看 Job 列表'}
+                                        </Link>
+                                      </div>
                                     </div>
-                                    <div className="flex shrink-0 flex-wrap gap-2">
-                                      <Link
-                                        href={`/dashboard/reports/${report.analysisId}`}
-                                        className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                                      >
-                                        查看报告
-                                      </Link>
-                                      <Link
-                                        href={report.jobId ? `/dashboard/jobs/${report.jobId}` : '/dashboard/jobs'}
-                                        className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                                      >
-                                        {report.jobId ? '跳转 Job' : '查看 Job 列表'}
-                                      </Link>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div className="mt-3 rounded-xl border border-dashed border-gray-300 px-4 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                              当前 PR 还没有可查看的 review 报告。
-                            </div>
-                          )}
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="mt-3 rounded-xl border border-dashed border-gray-300 px-4 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                                当前 PR 还没有可查看的 review 报告。
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
 

@@ -8,6 +8,8 @@ import type {
   MemoryInfo,
   OAuthInstallation,
   PaginatedResponse,
+  PullRequestHistoryItem,
+  PullRequestReviewJob,
   Repository,
   RepositoryPullRequest,
   JobLog,
@@ -121,12 +123,70 @@ interface RepositoryPullRequestApiItem {
   fileCount: number;
   analysisJobStage?: string | null;
   analysisJobMessage?: string | null;
+  jobCount?: number;
+  jobs?: PullRequestReviewJobApiItem[];
   reports?: ReviewReportSummaryApiItem[];
 }
 
 interface RepositoryPullRequestListResponse {
   repository: RepositoryApiItem;
   pullRequests: RepositoryPullRequestApiItem[];
+}
+
+interface PullRequestReviewJobApiItem {
+  id: string | number;
+  status: PullRequestReviewJob['status'];
+  triggerSource?: PullRequestReviewJob['triggerSource'] | null;
+  headCommit?: string | null;
+  shortHeadCommit?: string | null;
+  analysisId?: string | number | null;
+  errorMessage?: string | null;
+  createdAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  updatedAt: string;
+  report?: ReviewReportSummaryApiItem | null;
+}
+
+interface PullRequestHistoryApiItem {
+  repositoryId?: string | number | null;
+  repositoryFullName: string;
+  repositoryUrl?: string | null;
+  repositoryWatchEnabled?: boolean;
+  platform: PullRequestHistoryItem['platform'];
+  owner: string;
+  repoName: string;
+  prNumber: number;
+  title: string;
+  author: string;
+  url: string;
+  reviewStatus: PullRequestHistoryItem['reviewStatus'];
+  reviewProgress: number;
+  latestAnalysisId?: string | number | null;
+  latestReviewJobId?: string | number | null;
+  latestReviewJobStatus?: PullRequestHistoryItem['latestReviewJobStatus'] | null;
+  latestReviewJobCreatedAt?: string | null;
+  lastReviewedAt?: string | null;
+  latestRiskLevel: PullRequestHistoryItem['latestRiskLevel'];
+  latestRiskSummary?: string | null;
+  commentCount: number;
+  issueCount: number;
+  fileCount: number;
+  latestHeadCommit?: string | null;
+  lastActivityAt: string;
+  jobCount?: number;
+  jobs?: PullRequestReviewJobApiItem[];
+  reports?: ReviewReportSummaryApiItem[];
+}
+
+interface PullRequestHistoryListResponse {
+  pullRequests: PullRequestHistoryApiItem[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
 interface AnalysisApiItem {
@@ -265,6 +325,23 @@ function mapRepository(item: RepositoryApiItem): Repository {
   };
 }
 
+function mapPullRequestReviewJob(item: PullRequestReviewJobApiItem): PullRequestReviewJob {
+  return {
+    id: String(item.id),
+    status: item.status,
+    triggerSource: item.triggerSource || undefined,
+    headCommit: item.headCommit || undefined,
+    shortHeadCommit: item.shortHeadCommit || undefined,
+    analysisId: item.analysisId ? String(item.analysisId) : undefined,
+    errorMessage: item.errorMessage || undefined,
+    createdAt: item.createdAt,
+    startedAt: item.startedAt || undefined,
+    completedAt: item.completedAt || undefined,
+    updatedAt: item.updatedAt,
+    report: item.report ? mapReviewReportSummary(item.report) : undefined,
+  };
+}
+
 function mapRepositoryPullRequest(item: RepositoryPullRequestApiItem): RepositoryPullRequest {
   return {
     prNumber: item.prNumber,
@@ -288,6 +365,41 @@ function mapRepositoryPullRequest(item: RepositoryPullRequestApiItem): Repositor
     fileCount: item.fileCount,
     analysisJobStage: item.analysisJobStage || undefined,
     analysisJobMessage: item.analysisJobMessage || undefined,
+    jobCount: item.jobCount ?? item.jobs?.length ?? 0,
+    jobs: (item.jobs || []).map(mapPullRequestReviewJob),
+    reports: (item.reports || []).map(mapReviewReportSummary),
+  };
+}
+
+function mapPullRequestHistoryItem(item: PullRequestHistoryApiItem): PullRequestHistoryItem {
+  return {
+    repositoryId: item.repositoryId ? String(item.repositoryId) : undefined,
+    repositoryFullName: item.repositoryFullName,
+    repositoryUrl: item.repositoryUrl || undefined,
+    repositoryWatchEnabled: Boolean(item.repositoryWatchEnabled),
+    platform: item.platform,
+    owner: item.owner,
+    repoName: item.repoName,
+    prNumber: item.prNumber,
+    title: item.title,
+    author: item.author,
+    url: item.url,
+    reviewStatus: item.reviewStatus,
+    reviewProgress: item.reviewProgress,
+    latestAnalysisId: item.latestAnalysisId ? String(item.latestAnalysisId) : undefined,
+    latestReviewJobId: item.latestReviewJobId ? String(item.latestReviewJobId) : undefined,
+    latestReviewJobStatus: item.latestReviewJobStatus || undefined,
+    latestReviewJobCreatedAt: item.latestReviewJobCreatedAt || undefined,
+    lastReviewedAt: item.lastReviewedAt || undefined,
+    latestRiskLevel: item.latestRiskLevel,
+    latestRiskSummary: item.latestRiskSummary || undefined,
+    commentCount: item.commentCount,
+    issueCount: item.issueCount,
+    fileCount: item.fileCount,
+    latestHeadCommit: item.latestHeadCommit || undefined,
+    lastActivityAt: item.lastActivityAt,
+    jobCount: item.jobCount ?? item.jobs?.length ?? 0,
+    jobs: (item.jobs || []).map(mapPullRequestReviewJob),
     reports: (item.reports || []).map(mapReviewReportSummary),
   };
 }
@@ -737,6 +849,29 @@ class ApiClient {
   }
 
   // ============ 分析 API ============
+
+  async getPullRequestHistory(params?: {
+    platform?: string;
+    status?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<PaginatedResponse<PullRequestHistoryItem>> {
+    const response = await this.get<PullRequestHistoryListResponse>('/api/analyses/pull-requests', {
+      platform: params?.platform,
+      status: params?.status,
+      page: params?.page,
+      limit: params?.pageSize,
+    });
+
+    return {
+      success: true,
+      data: response.pullRequests.map(mapPullRequestHistoryItem),
+      total: response.pagination.total,
+      page: response.pagination.page,
+      pageSize: response.pagination.limit,
+      hasMore: response.pagination.page < response.pagination.totalPages,
+    };
+  }
 
   // 获取分析列表
   async getAnalyses(params?: {

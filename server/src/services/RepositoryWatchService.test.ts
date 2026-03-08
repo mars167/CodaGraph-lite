@@ -116,4 +116,42 @@ describe('RepositoryWatchService', () => {
       expect.stringContaining('open PR=2，新入队=1，失败=1')
     );
   });
+
+  it('forces token refresh and retries when listing pull requests returns 401', async () => {
+    oauthInstallationServiceMock.ensureValidAccessToken
+      .mockResolvedValueOnce({
+        ...installation,
+        access_token: 'stale-token',
+      })
+      .mockResolvedValueOnce({
+        ...installation,
+        access_token: 'fresh-token',
+      });
+
+    listPullRequestsMock
+      .mockRejectedValueOnce(new Error('GET https://api.github.com/repos/mars167/CodaGraph-lite/pulls?page=1&per_page=50&state=open 失败: 401 Unauthorized'))
+      .mockResolvedValueOnce([{ number: 1 }]);
+    reviewTriggerServiceMock.triggerForRepository.mockResolvedValue({ created: true });
+
+    const service = new RepositoryWatchService();
+
+    await (service as any).processRepository(repository);
+
+    expect(oauthInstallationServiceMock.ensureValidAccessToken).toHaveBeenNthCalledWith(1, installation);
+    expect(oauthInstallationServiceMock.ensureValidAccessToken).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        access_token: 'stale-token',
+      }),
+      true
+    );
+    expect(listPullRequestsMock).toHaveBeenCalledTimes(2);
+    expect(reviewTriggerServiceMock.triggerForRepository).toHaveBeenCalledWith(
+      repository,
+      1,
+      expect.objectContaining({
+        source: 'watch',
+      })
+    );
+  });
 });

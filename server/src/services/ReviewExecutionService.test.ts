@@ -330,6 +330,52 @@ describe('ReviewExecutionService', () => {
     expect(persistedPayload.inlineComments).toEqual({ planned: 1, posted: 1 });
   });
 
+  it('forces token refresh and retries once when GitHub review submission returns 401', async () => {
+    oauthInstallationServiceMock.ensureValidAccessToken
+      .mockResolvedValueOnce({
+        access_token: 'stale-token',
+        auth_type: 'github_app',
+        github_app_installation_id: '109713665',
+      })
+      .mockResolvedValueOnce({
+        access_token: 'fresh-token',
+        auth_type: 'github_app',
+        github_app_installation_id: '109713665',
+      });
+
+    commentClientMock.submitReview
+      .mockRejectedValueOnce(new Error('GitHub API 批量 review 失败: 401: Bad credentials'))
+      .mockResolvedValueOnce(undefined);
+
+    const service = new ReviewExecutionService();
+
+    const result = await service.execute(1004, JSON.stringify({
+      platform: 'github',
+      repo_name: 'mars/lite',
+      pr_number: '42',
+      repository_id: '7',
+      analysis_id: '13',
+      analysis_job_id: '17',
+    }));
+
+    expect(result.postedCommentCount).toBe(2);
+    expect(commentClientMock.submitReview).toHaveBeenCalledTimes(2);
+    expect(oauthInstallationServiceMock.ensureValidAccessToken).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        id: 11,
+        access_token: 'old-token',
+      })
+    );
+    expect(oauthInstallationServiceMock.ensureValidAccessToken).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        access_token: 'stale-token',
+      }),
+      true
+    );
+  });
+
   it('still creates a GitHub review when there are no inline findings', async () => {
     reviewEngineReviewMock.mockResolvedValueOnce({
       fileReviews: [
