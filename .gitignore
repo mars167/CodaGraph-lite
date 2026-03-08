@@ -51,17 +51,24 @@ logs/
 .codebuddy/
 .commandcode/
 .continue/
+.codex/
 .cursor/
+.gemini/
+.amazonq/
 .factory/
 .iflow/
 .kilocode/
 .kiro/
 .kode/
+.cline/
 .opencode/
 .pi/
 .qoder/
+.roo/
+.roo-code/
 .trae/
 .vibe/
+.windsurf/
 .zencoder/
 
 # 操作系统
@@ -77,6 +84,13 @@ htmlcov/
 tmp/
 temp/
 *.tmp
+*.orig
+*.rej
+.cache/
+.direnv/
+.envrc
+.turbo/
+.vercel/
 .run/
 test-results/
 playwright-report/
