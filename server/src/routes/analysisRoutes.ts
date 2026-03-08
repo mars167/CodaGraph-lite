@@ -12,14 +12,16 @@ import type { AnalysisStatus, Platform } from '../models/types';
 import { createPlatformClient } from '../platform/client';
 import type { ReviewFinding } from '../review/reviewEngine';
 import {
+  buildPullRequestKey,
   buildPullRequestJobSummary,
+  buildRepositoryKey,
   buildPullRequestUrl,
   buildReportSummary,
   compareDateDesc,
   computeReviewProgress,
   deriveRiskLevel,
   getReviewStatus,
-  matchesPullRequestJob,
+  indexJobsByPullRequest,
   pickMostRecentDate,
 } from '../review/pullRequestSummaries';
 import {
@@ -87,33 +89,44 @@ router.get('/pull-requests', async (req: Request, res: Response) => {
     const analysisById = new Map(analyses.map((analysis) => [analysis.id, analysis]));
     const repositoryByKey = new Map(
       repositories.map((repository) => [
-        `${repository.platform}:${repository.owner}/${repository.name}`,
+        buildRepositoryKey(repository.platform, repository.owner, repository.name),
         repository,
       ])
     );
-    const analysesByPr = new Map<string, typeof analyses>();
+    const jobsByPr = indexJobsByPullRequest(recentJobs, analysisById);
+    const analysesByPr = new Map<string, {
+      target: {
+        platform: Platform;
+        owner: string;
+        repoName: string;
+        prNumber: number;
+      };
+      analyses: typeof analyses;
+    }>();
 
     for (const analysis of analyses) {
-      const key = `${analysis.platform}:${analysis.owner}/${analysis.repo_name}#${analysis.pr_number}`;
-      const existing = analysesByPr.get(key) || [];
-      existing.push(analysis);
-      analysesByPr.set(key, existing);
+      const target = {
+        platform: analysis.platform,
+        owner: analysis.owner,
+        repoName: analysis.repo_name,
+        prNumber: analysis.pr_number,
+      };
+      const key = buildPullRequestKey(target);
+      const existing = analysesByPr.get(key);
+      if (existing) {
+        existing.analyses.push(analysis);
+        continue;
+      }
+
+      analysesByPr.set(key, { target, analyses: [analysis] });
     }
 
-    const groups = Array.from(analysesByPr.entries()).map(([key, prAnalyses]) => {
+    const groups = Array.from(analysesByPr.values()).map(({ target, analyses: prAnalyses }) => {
       const latestAnalysis = prAnalyses[0] || null;
-      const [repoKey, prNumberToken] = key.split('#');
-      const [platformName, repoNameToken] = repoKey.split(':');
-      const [owner, repoName] = repoNameToken.split('/');
-      const prNumber = Number(prNumberToken);
-      const repository = repositoryByKey.get(repoKey) || null;
-      const jobs = recentJobs
-        .filter((job) => matchesPullRequestJob(job, {
-          platform: platformName as Platform,
-          owner,
-          repoName,
-          prNumber,
-        }, analysisById))
+      const repository = repositoryByKey.get(
+        buildRepositoryKey(target.platform, target.owner, target.repoName)
+      ) || null;
+      const jobs = (jobsByPr.get(buildPullRequestKey(target)) || [])
         .map((job) => buildPullRequestJobSummary(job, analysisById))
         .sort((left, right) => compareDateDesc(left.updatedAt, right.updatedAt));
       const latestJob = jobs[0] || null;
@@ -132,16 +145,16 @@ router.get('/pull-requests', async (req: Request, res: Response) => {
 
       return {
         repositoryId: repository?.id || null,
-        repositoryFullName: repository?.full_name || `${owner}/${repoName}`,
+        repositoryFullName: repository?.full_name || `${target.owner}/${target.repoName}`,
         repositoryUrl: repository?.html_url || null,
         repositoryWatchEnabled: Boolean(repository?.watch_enabled),
-        platform: platformName as Platform,
-        owner,
-        repoName,
-        prNumber,
-        title: latestAnalysis?.pr_title || `PR #${prNumber}`,
+        platform: target.platform,
+        owner: target.owner,
+        repoName: target.repoName,
+        prNumber: target.prNumber,
+        title: latestAnalysis?.pr_title || `PR #${target.prNumber}`,
         author: latestAnalysis?.pr_author || 'unknown',
-        url: buildPullRequestUrl(platformName as Platform, owner, repoName, prNumber),
+        url: buildPullRequestUrl(target.platform, target.owner, target.repoName, target.prNumber),
         reviewStatus: getReviewStatus(latestAnalysis, latestJob),
         reviewProgress: computeReviewProgress(latestAnalysis, latestJob, null),
         latestAnalysisId: latestAnalysis?.id || null,
@@ -170,7 +183,7 @@ router.get('/pull-requests', async (req: Request, res: Response) => {
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
     const safePage = Number.isNaN(pageNum) || pageNum < 1 ? 1 : pageNum;
-    const safeLimit = Number.isNaN(limitNum) || limitNum < 1 ? 20 : limitNum;
+    const safeLimit = Math.min(Number.isNaN(limitNum) || limitNum < 1 ? 20 : limitNum, 100);
     const offset = (safePage - 1) * safeLimit;
 
     return res.json({
@@ -184,10 +197,13 @@ router.get('/pull-requests', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('获取 PR 维度分析历史失败:', error);
-    return res.status(500).json({
+    const response: { error: string; details?: string } = {
       error: '内部服务器错误',
-      details: (error as Error).message,
-    });
+    };
+    if (process.env.NODE_ENV === 'development') {
+      response.details = (error as Error).message;
+    }
+    return res.status(500).json(response);
   }
 });
 

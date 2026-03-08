@@ -3,12 +3,20 @@ import type { Analysis, Job, ReviewReportSummary, JobPayload, Platform } from '.
 export type ReviewRiskLevel = 'low' | 'medium' | 'high' | 'critical' | 'unknown';
 
 export type ParsedJobPayload = {
+  platform?: Platform;
   repoName?: string;
   fullRepoName?: string;
   prNumber?: number;
   analysisId?: number;
   headCommit?: string;
   triggerSource?: JobPayload['trigger_source'];
+};
+
+export type PullRequestTarget = {
+  platform: Platform;
+  owner: string;
+  repoName: string;
+  prNumber: number;
 };
 
 export type PullRequestJobSummary = {
@@ -32,6 +40,60 @@ function normalizeString(value: Date | string | null | undefined): string | null
   }
 
   return typeof value === 'string' ? value : new Date(value).toISOString();
+}
+
+function parseInteger(value: unknown): number | undefined {
+  const parsed = typeof value === 'number'
+    ? value
+    : typeof value === 'string'
+      ? parseInt(value, 10)
+      : undefined;
+  return typeof parsed === 'number' && !Number.isNaN(parsed) ? parsed : undefined;
+}
+
+function parsePlatform(value: unknown): Platform | undefined {
+  return value === 'github' || value === 'gitee' || value === 'gitlab'
+    ? value
+    : undefined;
+}
+
+function toValidTimestamp(value?: string | null): number {
+  if (!value) {
+    return 0;
+  }
+
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+export function buildRepositoryKey(
+  platform: Platform,
+  owner: string,
+  repoName: string
+): string {
+  return `${platform}:${owner}/${repoName}`;
+}
+
+export function buildPullRequestKey(target: PullRequestTarget): string {
+  return `${buildRepositoryKey(target.platform, target.owner, target.repoName)}#${target.prNumber}`;
+}
+
+export function parseRepositoryFullName(
+  value: string | null | undefined
+): { owner: string; repoName: string } | null {
+  if (!value) {
+    return null;
+  }
+
+  const separatorIndex = value.indexOf('/');
+  if (separatorIndex <= 0 || separatorIndex >= value.length - 1) {
+    return null;
+  }
+
+  return {
+    owner: value.slice(0, separatorIndex),
+    repoName: value.slice(separatorIndex + 1),
+  };
 }
 
 export function parseJsonObject(value: string | null | undefined): Record<string, unknown> | null {
@@ -145,24 +207,14 @@ export function buildReportSummary(analysis: Analysis): ReviewReportSummary {
 export function parseJobPayload(job: Job): ParsedJobPayload {
   const payload = parseJsonObject(job.payload);
   const rawRepoName = typeof payload?.repo_name === 'string' ? payload.repo_name : undefined;
-  const rawPrNumber = payload?.pr_number;
-  const rawAnalysisId = payload?.analysis_id;
-  const analysisId = typeof rawAnalysisId === 'number'
-    ? rawAnalysisId
-    : typeof rawAnalysisId === 'string'
-      ? parseInt(rawAnalysisId, 10)
-      : undefined;
-  const prNumber = typeof rawPrNumber === 'number'
-    ? rawPrNumber
-    : typeof rawPrNumber === 'string'
-      ? parseInt(rawPrNumber, 10)
-      : undefined;
+  const parsedRepository = parseRepositoryFullName(rawRepoName);
 
   return {
-    repoName: rawRepoName?.includes('/') ? rawRepoName.split('/').pop() : rawRepoName,
+    platform: parsePlatform(payload?.platform),
+    repoName: parsedRepository?.repoName || rawRepoName,
     fullRepoName: rawRepoName,
-    prNumber: Number.isNaN(prNumber) ? undefined : prNumber,
-    analysisId: Number.isNaN(analysisId) ? undefined : analysisId,
+    prNumber: parseInteger(payload?.pr_number),
+    analysisId: parseInteger(payload?.analysis_id),
     headCommit: typeof payload?.head_commit === 'string' ? payload.head_commit : undefined,
     triggerSource: payload?.trigger_source === 'manual' || payload?.trigger_source === 'watch' || payload?.trigger_source === 'webhook'
       ? payload.trigger_source
@@ -170,29 +222,79 @@ export function parseJobPayload(job: Job): ParsedJobPayload {
   };
 }
 
-export function matchesPullRequestJob(
+export function getPullRequestTargetFromJob(
   job: Job,
-  target: { platform: Platform; owner: string; repoName: string; prNumber: number },
   analysisById?: Map<number, Analysis>
-): boolean {
+): PullRequestTarget | null {
   const payload = parseJobPayload(job);
 
   if (analysisById && payload.analysisId) {
     const linkedAnalysis = analysisById.get(payload.analysisId);
     if (linkedAnalysis) {
-      return linkedAnalysis.platform === target.platform
-        && linkedAnalysis.owner === target.owner
-        && linkedAnalysis.repo_name === target.repoName
-        && linkedAnalysis.pr_number === target.prNumber;
+      return {
+        platform: linkedAnalysis.platform,
+        owner: linkedAnalysis.owner,
+        repoName: linkedAnalysis.repo_name,
+        prNumber: linkedAnalysis.pr_number,
+      };
     }
   }
 
-  if (payload.prNumber !== target.prNumber) {
-    return false;
+  if (!payload.platform || payload.prNumber === undefined) {
+    return null;
   }
 
-  return payload.fullRepoName === `${target.owner}/${target.repoName}`
-    || payload.repoName === target.repoName;
+  const parsedRepository = parseRepositoryFullName(payload.fullRepoName);
+  if (!parsedRepository) {
+    return null;
+  }
+
+  return {
+    platform: payload.platform,
+    owner: parsedRepository.owner,
+    repoName: parsedRepository.repoName,
+    prNumber: payload.prNumber,
+  };
+}
+
+export function matchesPullRequestJob(
+  job: Job,
+  target: PullRequestTarget,
+  analysisById?: Map<number, Analysis>
+): boolean {
+  const jobTarget = getPullRequestTargetFromJob(job, analysisById);
+  return Boolean(
+    jobTarget
+      && jobTarget.platform === target.platform
+      && jobTarget.owner === target.owner
+      && jobTarget.repoName === target.repoName
+      && jobTarget.prNumber === target.prNumber
+  );
+}
+
+export function indexJobsByPullRequest(
+  jobs: Job[],
+  analysisById: Map<number, Analysis>
+): Map<string, Job[]> {
+  const jobsByPullRequest = new Map<string, Job[]>();
+
+  for (const job of jobs) {
+    const target = getPullRequestTargetFromJob(job, analysisById);
+    if (!target) {
+      continue;
+    }
+
+    const key = buildPullRequestKey(target);
+    const existing = jobsByPullRequest.get(key);
+    if (existing) {
+      existing.push(job);
+      continue;
+    }
+
+    jobsByPullRequest.set(key, [job]);
+  }
+
+  return jobsByPullRequest;
 }
 
 export function computeReviewProgress(
@@ -263,13 +365,13 @@ export function buildPullRequestJobSummary(
 }
 
 export function compareDateDesc(left?: string | null, right?: string | null): number {
-  const leftTime = left ? new Date(left).getTime() : 0;
-  const rightTime = right ? new Date(right).getTime() : 0;
+  const leftTime = toValidTimestamp(left);
+  const rightTime = toValidTimestamp(right);
   return rightTime - leftTime;
 }
 
 export function pickMostRecentDate(values: Array<string | null | undefined>): string | null {
   return values
-    .filter((value): value is string => Boolean(value))
+    .filter((value): value is string => typeof value === 'string' && toValidTimestamp(value) > 0)
     .sort(compareDateDesc)[0] || null;
 }

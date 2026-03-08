@@ -3,6 +3,7 @@ import { getRepositoryModel } from '../models/Repository';
 import type { Repository as CachedRepository } from '../models/types';
 import type { PullRequest as PlatformPullRequest } from '../platform/client';
 import { createPlatformClient } from '../platform/client';
+import { isAuthenticationFailure } from '../utils/authFailures';
 import { logger } from '../utils/logger';
 import { getOAuthInstallationService } from './OAuthInstallationService';
 import { getReviewTriggerService } from './ReviewTriggerService';
@@ -27,13 +28,6 @@ export class RepositoryWatchService {
       intervalMs: config.intervalMs ?? 60_000,
       perPage: config.perPage ?? 50,
     };
-  }
-
-  private isAuthenticationFailure(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error);
-    return /(^|[^0-9])401([^0-9]|$)/.test(message)
-      || /bad credentials/i.test(message)
-      || /unauthorized/i.test(message);
   }
 
   async start(): Promise<void> {
@@ -95,7 +89,7 @@ export class RepositoryWatchService {
       try {
         pullRequests = await this.listOpenPullRequests(client, repository.owner, repository.name);
       } catch (error) {
-        if (!this.isAuthenticationFailure(error)) {
+        if (!isAuthenticationFailure(error)) {
           throw error;
         }
 

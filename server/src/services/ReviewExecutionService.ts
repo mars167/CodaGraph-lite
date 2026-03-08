@@ -16,6 +16,7 @@ import {
 } from '../platform/GitHubClient';
 import { getQueueService } from '../jobs/QueueService';
 import { getOAuthInstallationService } from './OAuthInstallationService';
+import { isAuthenticationFailure } from '../utils/authFailures';
 import {
   AdvancedReviewEngine,
   type ReviewFileInput,
@@ -259,13 +260,6 @@ function dedupeFindings(findings: ReviewFinding[]): ReviewFinding[] {
       finding,
     ])
   ).values()];
-}
-
-function isAuthenticationFailure(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /(^|[^0-9])401([^0-9]|$)/.test(message)
-    || /bad credentials/i.test(message)
-    || /unauthorized/i.test(message);
 }
 
 export class ReviewExecutionService {

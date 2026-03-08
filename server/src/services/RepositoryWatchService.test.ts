@@ -16,6 +16,9 @@ const reviewTriggerServiceMock = {
 };
 
 const listPullRequestsMock = jest.fn();
+const createPlatformClientMock = jest.fn(() => ({
+  listPullRequests: listPullRequestsMock,
+}));
 
 const loggerMock = {
   info: jest.fn(),
@@ -39,9 +42,7 @@ jest.mock('./ReviewTriggerService', () => ({
 }));
 
 jest.mock('../platform/client', () => ({
-  createPlatformClient: jest.fn(() => ({
-    listPullRequests: listPullRequestsMock,
-  })),
+  createPlatformClient: createPlatformClientMock,
 }));
 
 jest.mock('../utils/logger', () => ({
@@ -146,6 +147,24 @@ describe('RepositoryWatchService', () => {
       true
     );
     expect(listPullRequestsMock).toHaveBeenCalledTimes(2);
+    expect(createPlatformClientMock).toHaveBeenNthCalledWith(
+      1,
+      'github',
+      'stale-token',
+      expect.objectContaining({
+        authType: 'github_app',
+        githubAppInstallationId: '123',
+      })
+    );
+    expect(createPlatformClientMock).toHaveBeenNthCalledWith(
+      2,
+      'github',
+      'fresh-token',
+      expect.objectContaining({
+        authType: 'github_app',
+        githubAppInstallationId: '123',
+      })
+    );
     expect(reviewTriggerServiceMock.triggerForRepository).toHaveBeenCalledWith(
       repository,
       1,

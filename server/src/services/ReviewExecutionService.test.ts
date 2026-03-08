@@ -53,6 +53,9 @@ const commentClientMock = {
   postReviewComment: jest.fn(),
   submitReview: jest.fn(),
 };
+const GitHubClientMock = jest.fn(() => commentClientMock);
+const GiteeClientMock = jest.fn(() => commentClientMock);
+const GitLabClientMock = jest.fn(() => commentClientMock);
 
 const reviewEngineReviewMock = jest.fn();
 
@@ -93,9 +96,9 @@ jest.mock('../platform/client', () => ({
 }));
 
 jest.mock('../platform/GitHubClient', () => ({
-  GitHubClient: jest.fn(() => commentClientMock),
-  GiteeClient: jest.fn(() => commentClientMock),
-  GitLabClient: jest.fn(() => commentClientMock),
+  GitHubClient: GitHubClientMock,
+  GiteeClient: GiteeClientMock,
+  GitLabClient: GitLabClientMock,
 }));
 
 jest.mock('../review/reviewEngine', () => ({
@@ -374,6 +377,8 @@ describe('ReviewExecutionService', () => {
       }),
       true
     );
+    expect(GitHubClientMock).toHaveBeenNthCalledWith(1, 'stale-token');
+    expect(GitHubClientMock).toHaveBeenNthCalledWith(2, 'fresh-token');
   });
 
   it('still creates a GitHub review when there are no inline findings', async () => {

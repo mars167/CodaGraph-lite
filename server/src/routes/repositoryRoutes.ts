@@ -17,17 +17,19 @@ import { resolveReviewRouteError } from './reviewRouteErrors';
 import type { Platform, CreateRepositoryDTO, Analysis, Job, ReviewReportSummary } from '../models/types';
 import type { Repository as PlatformRepository, PullRequest as PlatformPullRequest } from '../platform/client';
 import {
+  buildPullRequestKey,
   buildPullRequestJobSummary,
   buildReportSummary,
   compareDateDesc,
   computeReviewProgress,
   deriveRiskLevel,
   getReviewStatus,
-  matchesPullRequestJob,
+  indexJobsByPullRequest,
   normalizePullRequestState,
   type PullRequestJobSummary,
   type ReviewRiskLevel,
 } from '../review/pullRequestSummaries';
+import { isAuthenticationFailureMessage } from '../utils/authFailures';
 
 const router = express.Router();
 
@@ -248,6 +250,8 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
     const state = (Array.isArray(req.query.state) ? req.query.state[0] : req.query.state) as string | undefined;
     const page = parseInt((Array.isArray(req.query.page) ? req.query.page[0] : req.query.page || '1') as string, 10);
     const limit = parseInt((Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit || '20') as string, 10);
+    const safePage = Number.isNaN(page) || page < 1 ? 1 : page;
+    const safeLimit = Math.min(Number.isNaN(limit) || limit < 1 ? 20 : limit, 100);
 
     if (isNaN(id)) {
       return res.status(400).json({ error: '无效的 ID' });
@@ -274,8 +278,8 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
         repository.name,
       {
         state: state === 'all' || state === 'closed' || state === 'open' ? state : 'open',
-        page: Number.isNaN(page) || page < 1 ? 1 : page,
-        per_page: Number.isNaN(limit) || limit < 1 ? 20 : limit,
+        page: safePage,
+        per_page: safeLimit,
       }
     );
 
@@ -302,6 +306,7 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
     }
 
     const recentJobs = jobModel.findByType('pr_analysis', 500);
+    const jobsByPr = indexJobsByPullRequest(recentJobs, analysisById);
 
     const pullRequests: PullRequestReviewSummary[] = remotePullRequests.map((pullRequest: PlatformPullRequest) => {
       const providerAuthor = (pullRequest as PlatformPullRequest & {
@@ -312,13 +317,12 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
         .filter((analysis) => analysis.status === 'completed' || analysis.status === 'failed' || analysis.status === 'cancelled')
         .slice(0, 5)
         .map(buildReportSummary);
-      const prJobs = recentJobs
-        .filter((job) => matchesPullRequestJob(job, {
-          platform: repository.platform,
-          owner: repository.owner,
-          repoName: repository.name,
-          prNumber: pullRequest.number,
-        }, analysisById))
+      const prJobs = (jobsByPr.get(buildPullRequestKey({
+        platform: repository.platform,
+        owner: repository.owner,
+        repoName: repository.name,
+        prNumber: pullRequest.number,
+      })) || [])
         .map((job) => buildPullRequestJobSummary(job, analysisById))
         .sort((left, right) => compareDateDesc(left.updatedAt, right.updatedAt));
       const latestAnalysisJob = latestAnalysis
@@ -359,8 +363,8 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
       repository,
       pullRequests,
       pagination: {
-        page: Number.isNaN(page) || page < 1 ? 1 : page,
-        limit: Number.isNaN(limit) || limit < 1 ? 20 : limit,
+        page: safePage,
+        limit: safeLimit,
         total: pullRequests.length,
         totalPages: pullRequests.length === 0 ? 0 : 1,
       },
@@ -368,7 +372,7 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('获取仓库 PR 列表失败:', error);
     const message = (error as Error).message;
-    const statusCode = /重新授权|OAuth token|401 Unauthorized/.test(message) ? 401 : 500;
+    const statusCode = isAuthenticationFailureMessage(message) ? 401 : 500;
     return res.status(statusCode).json({
       error: statusCode === 401 ? 'OAuth 授权已失效，请重新授权 GitHub' : '内部服务器错误',
       details: (error as Error).message,
