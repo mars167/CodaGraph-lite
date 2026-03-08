@@ -4,7 +4,7 @@ import { getJobLogModel } from '../models/JobLog';
 import { getOAuthInstallationModel } from '../models/OAuthInstallation';
 import { getReviewLockModel } from '../models/ReviewLock';
 import { getRepositoryModel } from '../models/Repository';
-import type { Analysis, JobPayload, Platform } from '../models/types';
+import type { Analysis, JobPayload, OAuthInstallation, Platform } from '../models/types';
 import { createPlatformClient } from '../platform/client';
 import type { PullRequest as PlatformPullRequest, Repository as PlatformRepository } from '../platform/client';
 import {
@@ -16,6 +16,8 @@ import {
 } from '../platform/GitHubClient';
 import { getQueueService } from '../jobs/QueueService';
 import { getOAuthInstallationService } from './OAuthInstallationService';
+import { isAuthenticationFailure } from '../utils/authFailures';
+import { sanitizeLogText } from '../utils/redactSensitive';
 import {
   AdvancedReviewEngine,
   type ReviewFileInput,
@@ -36,19 +38,6 @@ class ReviewCancelledError extends Error {
     super(message);
     this.name = 'ReviewCancelledError';
   }
-}
-
-function truncate(value: string, maxLength = 220): string {
-  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
-}
-
-function sanitizeLogText(value: string): string {
-  return truncate(
-    value
-      .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]')
-      .replace(/("?(token|secret|password|authorization|api[_-]?key)"?\s*[:=]\s*"?)[^",\s]+/gi, '$1[REDACTED]')
-      .replace(/[A-Fa-f0-9]{32,}/g, '[REDACTED_HASH]')
-  );
 }
 
 function severityWeight(severity: ReviewFinding['severity']): number {
@@ -294,6 +283,17 @@ export class ReviewExecutionService {
     return parsed;
   }
 
+  private buildPlatformClient(installation: OAuthInstallation, platform: Platform) {
+    return createPlatformClient(platform, installation.access_token, {
+      authType: installation.auth_type || 'oauth',
+      githubAppInstallationId: installation.github_app_installation_id || null,
+    });
+  }
+
+  private buildCommentClient(installation: OAuthInstallation, platform: Platform): PlatformClient {
+    return createCommentClient(platform, installation.access_token);
+  }
+
   async execute(jobId: number, rawPayload: string): Promise<ReviewExecutionResult> {
     const payload = this.parsePayload(rawPayload);
     const [owner, repoName] = payload.repo_name.split('/', 2);
@@ -335,27 +335,57 @@ export class ReviewExecutionService {
     this.log(jobId, 'info', 'review-agent 已启动');
     this.log(jobId, 'info', 'review-agent 推理开始，已进入实时日志模式');
 
-    const validInstallation = await this.oauthInstallationService.ensureValidAccessToken(installation);
-    const platformClient = createPlatformClient(repository.platform, validInstallation.access_token, {
-      authType: validInstallation.auth_type || 'oauth',
-      githubAppInstallationId: validInstallation.github_app_installation_id || null,
-    });
-    const commentClient = createCommentClient(repository.platform, validInstallation.access_token);
+    let activeInstallation = await this.oauthInstallationService.ensureValidAccessToken(installation);
+    let platformClient = this.buildPlatformClient(activeInstallation, repository.platform);
+    let commentClient = this.buildCommentClient(activeInstallation, repository.platform);
+
+    const refreshClients = async (context: string, error: unknown): Promise<void> => {
+      this.log(
+        jobId,
+        'warn',
+        `${context} 遇到鉴权失败，正在强制刷新 token 并重试: ${error instanceof Error ? error.message : String(error)}`
+      );
+      activeInstallation = await this.oauthInstallationService.ensureValidAccessToken(activeInstallation, true);
+      platformClient = this.buildPlatformClient(activeInstallation, repository.platform);
+      commentClient = this.buildCommentClient(activeInstallation, repository.platform);
+    };
+
+    const withAuthRefresh = async <T>(context: string, operation: () => Promise<T>): Promise<T> => {
+      try {
+        return await operation();
+      } catch (error) {
+        if (!isAuthenticationFailure(error)) {
+          throw error;
+        }
+
+        await refreshClients(context, error);
+        return operation();
+      }
+    };
 
     this.ensureNotCancelled(jobId);
     this.logTool(jobId, 'platform.getPullRequest', `repo=${repository.full_name},pr=${prNumber}`, '读取 PR 元数据');
-    const pullRequest = await platformClient.getPullRequest(repository.owner, repository.name, prNumber);
+    const pullRequest = await withAuthRefresh(
+      '读取 PR 元数据',
+      () => platformClient.getPullRequest(repository.owner, repository.name, prNumber)
+    );
     this.analysisJobModel.updateProgress(analysisJob.id, 0.15, `已读取 PR #${prNumber} 元数据`);
     this.log(jobId, 'info', `review-agent 判断：PR 标题为 "${pullRequest.title}"，准备抓取变更文件`);
 
     this.ensureNotCancelled(jobId);
     this.logTool(jobId, 'platform.getRepository', `repo=${repository.full_name}`, '读取仓库克隆信息');
-    const platformRepository: PlatformRepository = await platformClient.getRepository(repository.owner, repository.name);
+    const platformRepository: PlatformRepository = await withAuthRefresh(
+      '读取仓库克隆信息',
+      () => platformClient.getRepository(repository.owner, repository.name)
+    );
 
     this.ensureNotCancelled(jobId);
     this.logTool(jobId, 'platform.getPullRequestFiles', `repo=${repository.full_name},pr=${prNumber}`, '拉取 PR diff 文件列表');
     const files = normalizePlatformFiles(
-      await platformClient.getPullRequestFiles(repository.owner, repository.name, prNumber)
+      await withAuthRefresh(
+        '拉取 PR diff 文件列表',
+        () => platformClient.getPullRequestFiles(repository.owner, repository.name, prNumber)
+      )
     );
     this.analysisJobModel.updateProgress(analysisJob.id, 0.25, `检测到 ${files.length} 个变更文件`);
     this.log(jobId, 'info', `review-agent 判断：本次需要分析 ${files.length} 个文件`);
@@ -367,7 +397,7 @@ export class ReviewExecutionService {
       repo: repository.name,
       prNumber,
       repositoryCloneUrl: platformRepository.clone_url,
-      accessToken: validInstallation.access_token,
+      accessToken: activeInstallation.access_token,
       baseSha: pullRequest.base.sha,
       headSha: pullRequest.head.sha,
       defaultBranch: platformRepository.default_branch,
@@ -423,17 +453,20 @@ export class ReviewExecutionService {
           `repo=${repository.full_name},pr=${prNumber},comments=${advancedReview.inlineComments.length}`,
           `fallback=${fallbackFindings.length}`
         );
-        await commentClient.submitReview!(prInfo, {
-          body: batchSummaryCommentBody,
-          commitId: pullRequest.head.sha,
-          comments: advancedReview.inlineComments.map((inlineComment) => ({
-            body: formatFindingBody(inlineComment.finding),
-            position: {
-              path: inlineComment.finding.filePath,
-              line: inlineComment.position.line,
-            },
-          })),
-        });
+        await withAuthRefresh(
+          '发布 GitHub 批量 review',
+          () => commentClient.submitReview!(prInfo, {
+            body: batchSummaryCommentBody,
+            commitId: pullRequest.head.sha,
+            comments: advancedReview.inlineComments.map((inlineComment) => ({
+              body: formatFindingBody(inlineComment.finding),
+              position: {
+                path: inlineComment.finding.filePath,
+                line: inlineComment.position.line,
+              },
+            })),
+          })
+        );
         inlineCommentCount = advancedReview.inlineComments.length;
         postedCommentCount = inlineCommentCount + 1;
       } catch (error) {
@@ -455,18 +488,21 @@ export class ReviewExecutionService {
             `repo=${repository.full_name},pr=${prNumber},file=${inlineComment.finding.filePath},line=${inlineComment.position.line}`,
             `severity=${inlineComment.finding.severity}`
           );
-          await commentClient.postReviewComment(
-            prInfo,
-            {
-              body: formatFindingBody(inlineComment.finding),
-              filePath: inlineComment.finding.filePath,
-              lineNumber: inlineComment.position.line,
-              commitId: pullRequest.head.sha,
-            },
-            {
-              path: inlineComment.finding.filePath,
-              line: inlineComment.position.line,
-            }
+          await withAuthRefresh(
+            `发布行级评论 ${inlineComment.finding.filePath}:${inlineComment.position.line}`,
+            () => commentClient.postReviewComment(
+              prInfo,
+              {
+                body: formatFindingBody(inlineComment.finding),
+                filePath: inlineComment.finding.filePath,
+                lineNumber: inlineComment.position.line,
+                commitId: pullRequest.head.sha,
+              },
+              {
+                path: inlineComment.finding.filePath,
+                line: inlineComment.position.line,
+              }
+            )
           );
           postedCommentCount += 1;
           inlineCommentCount += 1;
@@ -495,7 +531,10 @@ export class ReviewExecutionService {
         `repo=${repository.full_name},pr=${prNumber}`,
         `comment_length=${fallbackSummaryCommentBody.length}`
       );
-      await commentClient.postComment(prInfo, { body: fallbackSummaryCommentBody });
+      await withAuthRefresh(
+        '发布摘要评论',
+        () => commentClient.postComment(prInfo, { body: fallbackSummaryCommentBody })
+      );
       postedCommentCount += 1;
     }
 

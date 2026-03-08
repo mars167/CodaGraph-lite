@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS admin (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+  updated_at DATETIME DEFAULT (datetime('now', 'localtime')),
   last_login_at DATETIME
 );
 
@@ -38,8 +38,8 @@ CREATE TABLE IF NOT EXISTS installation (
   refresh_token TEXT,
   token_expires_at DATETIME,
   permissions TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+  updated_at DATETIME DEFAULT (datetime('now', 'localtime')),
   is_active BOOLEAN DEFAULT 1
 );
 
@@ -73,17 +73,20 @@ CREATE TABLE IF NOT EXISTS repository (
   webhook_url TEXT,
   is_active BOOLEAN DEFAULT 1,
   watch_enabled BOOLEAN DEFAULT 0,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  is_favorite BOOLEAN DEFAULT 0,
+  created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+  updated_at DATETIME DEFAULT (datetime('now', 'localtime')),
   last_synced_at DATETIME,
   last_analyzed_at DATETIME,
-  watch_last_checked_at DATETIME
+  watch_last_checked_at DATETIME,
+  favorited_at DATETIME
 );
 
 CREATE INDEX IF NOT EXISTS idx_repository_platform ON repository(platform);
 CREATE INDEX IF NOT EXISTS idx_repository_owner ON repository(owner);
 CREATE INDEX IF NOT EXISTS idx_repository_installation ON repository(installation_id);
 CREATE INDEX IF NOT EXISTS idx_repository_watch_enabled ON repository(watch_enabled, is_active);
+CREATE INDEX IF NOT EXISTS idx_repository_favorite ON repository(is_favorite, favorited_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_unique ON repository(platform, owner, name);
 `;
 
@@ -111,8 +114,8 @@ CREATE TABLE IF NOT EXISTS analysis (
   completed_at DATETIME,
   failed_at DATETIME,
   error_message TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+  updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_analysis_pr ON analysis(platform, owner, repo_name, pr_number);
@@ -145,7 +148,7 @@ CREATE TABLE IF NOT EXISTS analysis_job (
   completed_at DATETIME,
   failed_at DATETIME,
   error_message TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_analysis_job_analysis ON analysis_job(analysis_id);
@@ -169,8 +172,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   started_at DATETIME,
   completed_at DATETIME,
   failed_at DATETIME,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+  updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status_priority ON jobs(status, priority, created_at);
@@ -190,8 +193,8 @@ CREATE TABLE IF NOT EXISTS review_lock (
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'released')),
   analysis_id INTEGER REFERENCES analysis(id) ON DELETE SET NULL,
   job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+  updated_at DATETIME DEFAULT (datetime('now', 'localtime')),
   released_at DATETIME
 );
 
@@ -209,7 +212,7 @@ CREATE TABLE IF NOT EXISTS job_log (
   job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
   level TEXT NOT NULL CHECK(level IN ('info', 'warn', 'error')),
   message TEXT NOT NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_job_log_job_id ON job_log(job_id, created_at DESC);
@@ -228,7 +231,7 @@ CREATE TABLE IF NOT EXISTS webhook_event (
   payload TEXT, -- JSON 格式的完整 payload
   processed BOOLEAN DEFAULT 0,
   processing_error TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_webhook_event_platform ON webhook_event(platform);
@@ -260,7 +263,7 @@ CREATE TABLE IF NOT EXISTS usage_metric (
   metric_value INTEGER NOT NULL,
   platform TEXT,
   repository_id INTEGER REFERENCES repository(id) ON DELETE SET NULL,
-  recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  recorded_at DATETIME DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_usage_metric_type ON usage_metric(metric_type);
@@ -271,7 +274,7 @@ export const APP_SETTING_TABLE = `
 CREATE TABLE IF NOT EXISTS app_setting (
   setting_key TEXT PRIMARY KEY,
   setting_value TEXT NOT NULL,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_app_setting_updated_at ON app_setting(updated_at DESC);
@@ -286,7 +289,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   version INTEGER NOT NULL UNIQUE,
   description TEXT,
-  applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  applied_at DATETIME DEFAULT (datetime('now', 'localtime'))
 );
 `;
 

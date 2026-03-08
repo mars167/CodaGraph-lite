@@ -10,6 +10,7 @@
 import { getJobModel } from '../models/Job';
 import { getJobLogModel } from '../models/JobLog';
 import type { JobType, QueueJobStatus, JobPayload } from '../models/types';
+import { sanitizeSensitiveText } from '../utils/redactSensitive';
 
 export interface QueueServiceConfig {
   maxConcurrentJobs?: number; // 最大并发作业数（2u2g: 1）
@@ -131,6 +132,7 @@ export class QueueService {
   }
 
   failJob(id: number, errorMessage: string): boolean {
+    const sanitizedError = sanitizeSensitiveText(errorMessage);
     if (!this.activeJobs.has(id)) {
       console.warn(`⚠️ 作业 #${id} 不在活动集合中`);
       return false;
@@ -140,16 +142,16 @@ export class QueueService {
     if (currentJob?.status === 'cancelled') {
       this.activeJobs.delete(id);
       this.cancellationRequests.delete(id);
-      this.jobLogModel.create(id, 'warn', `作业终止完成: ${errorMessage}`);
+      this.jobLogModel.create(id, 'warn', `作业终止完成: ${sanitizedError}`);
       return true;
     }
 
-    this.jobModel.markFailed(id, errorMessage);
+    this.jobModel.markFailed(id, sanitizedError);
     this.activeJobs.delete(id);
     this.cancellationRequests.delete(id);
-    this.jobLogModel.create(id, 'error', `作业处理失败: ${errorMessage}`);
+    this.jobLogModel.create(id, 'error', `作业处理失败: ${sanitizedError}`);
 
-    console.error(`❌ 作业 #${id} 失败: ${errorMessage}`);
+    console.error(`❌ 作业 #${id} 失败: ${sanitizedError}`);
     return true;
   }
 

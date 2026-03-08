@@ -16,6 +16,20 @@ import { getReviewTriggerService } from '../services/ReviewTriggerService';
 import { resolveReviewRouteError } from './reviewRouteErrors';
 import type { Platform, CreateRepositoryDTO, Analysis, Job, ReviewReportSummary } from '../models/types';
 import type { Repository as PlatformRepository, PullRequest as PlatformPullRequest } from '../platform/client';
+import {
+  buildPullRequestKey,
+  buildPullRequestJobSummary,
+  buildReportSummary,
+  compareDateDesc,
+  computeReviewProgress,
+  deriveRiskLevel,
+  getReviewStatus,
+  indexJobsByPullRequest,
+  normalizePullRequestState,
+  type PullRequestJobSummary,
+  type ReviewRiskLevel,
+} from '../review/pullRequestSummaries';
+import { isAuthenticationFailureMessage } from '../utils/authFailures';
 
 const router = express.Router();
 
@@ -23,9 +37,8 @@ type RepositoryQuery = {
   platform?: Platform;
   page?: string;
   limit?: string;
+  favorites?: string;
 };
-
-type ReviewRiskLevel = 'low' | 'medium' | 'high' | 'critical' | 'unknown';
 
 type PullRequestReviewSummary = {
   prNumber: number;
@@ -49,163 +62,10 @@ type PullRequestReviewSummary = {
   fileCount: number;
   analysisJobStage: string | null;
   analysisJobMessage: string | null;
+  jobCount: number;
+  jobs: PullRequestJobSummary[];
   reports: ReviewReportSummary[];
 };
-
-function normalizePullRequestState(state: string, mergedAt?: string | null): 'open' | 'closed' | 'merged' {
-  if (mergedAt) {
-    return 'merged';
-  }
-  if (state === 'opened') {
-    return 'open';
-  }
-  return state === 'closed' ? 'closed' : 'open';
-}
-
-function parseJsonObject(value: string | null | undefined): Record<string, unknown> | null {
-  if (!value) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
-  } catch {
-    return null;
-  }
-}
-
-function deriveRiskLevel(analysis: Analysis | null): { level: ReviewRiskLevel; summary: string | null } {
-  if (!analysis) {
-    return { level: 'unknown', summary: null };
-  }
-
-  const payload = parseJsonObject(analysis.analysis_result);
-  const candidate = payload?.riskLevel ?? payload?.risk_level ?? payload?.risk ?? null;
-  if (typeof candidate === 'string') {
-    const normalized = candidate.toLowerCase();
-    if (normalized === 'low' || normalized === 'medium' || normalized === 'high' || normalized === 'critical') {
-      return {
-        level: normalized,
-        summary: typeof payload?.summary === 'string' ? payload.summary : null,
-      };
-    }
-  }
-
-  if (analysis.status === 'failed') {
-    return { level: 'unknown', summary: analysis.error_message || null };
-  }
-  if (analysis.issue_count >= 10) {
-    return { level: 'critical', summary: `发现 ${analysis.issue_count} 个问题` };
-  }
-  if (analysis.issue_count >= 5) {
-    return { level: 'high', summary: `发现 ${analysis.issue_count} 个问题` };
-  }
-  if (analysis.issue_count > 0) {
-    return { level: 'medium', summary: `发现 ${analysis.issue_count} 个问题` };
-  }
-  if (analysis.comment_count > 0) {
-    return { level: 'low', summary: `生成 ${analysis.comment_count} 条审查评论` };
-  }
-
-  return {
-    level: analysis.status === 'completed' ? 'low' : 'unknown',
-    summary: analysis.status === 'completed' ? '最近一次审查未发现明显风险' : null,
-  };
-}
-
-function buildReportSummary(analysis: Analysis): ReviewReportSummary {
-  const payload = parseJsonObject(analysis.analysis_result);
-  const risk = deriveRiskLevel(analysis);
-  const rawJobId = payload?.jobId;
-  const jobId = typeof rawJobId === 'number'
-    ? rawJobId
-    : typeof rawJobId === 'string'
-      ? parseInt(rawJobId, 10)
-      : null;
-
-  return {
-    analysisId: analysis.id,
-    jobId: Number.isNaN(jobId) ? null : jobId,
-    status: analysis.status,
-    riskLevel: risk.level,
-    summary: typeof payload?.summary === 'string' ? payload.summary : risk.summary,
-    issueCount: analysis.issue_count,
-    commentCount: analysis.comment_count,
-    fileCount: analysis.file_count,
-    createdAt: analysis.created_at,
-    completedAt: analysis.completed_at || null,
-  };
-}
-
-function parseJobPayload(job: Job): { repoName?: string; fullRepoName?: string; prNumber?: number } {
-  const payload = parseJsonObject(job.payload);
-  const rawRepoName = typeof payload?.repo_name === 'string' ? payload.repo_name : undefined;
-  const rawPrNumber = payload?.pr_number;
-  const prNumber = typeof rawPrNumber === 'number'
-    ? rawPrNumber
-    : typeof rawPrNumber === 'string'
-      ? parseInt(rawPrNumber, 10)
-      : undefined;
-
-  return {
-    repoName: rawRepoName?.includes('/') ? rawRepoName.split('/').pop() : rawRepoName,
-    fullRepoName: rawRepoName,
-    prNumber: Number.isNaN(prNumber) ? undefined : prNumber,
-  };
-}
-
-function matchesRepositoryJob(job: Job, repository: { owner: string; name: string }, prNumber: number): boolean {
-  const payload = parseJobPayload(job);
-  if (payload.prNumber !== prNumber) {
-    return false;
-  }
-
-  return payload.repoName === repository.name
-    || payload.fullRepoName === `${repository.owner}/${repository.name}`;
-}
-
-function computeReviewProgress(
-  analysis: Analysis | null,
-  latestJob: Job | null,
-  latestAnalysisJob: { progress?: number | null } | null
-): number {
-  if (analysis?.status === 'completed') {
-    return 100;
-  }
-  if (analysis?.status === 'failed' || analysis?.status === 'cancelled') {
-    return 100;
-  }
-  if (typeof latestAnalysisJob?.progress === 'number' && latestAnalysisJob.progress > 0) {
-    return Math.round(latestAnalysisJob.progress * 100);
-  }
-  if (latestJob?.status === 'processing' || analysis?.status === 'processing') {
-    return 60;
-  }
-  if (latestJob?.status === 'pending' || analysis?.status === 'pending') {
-    return 15;
-  }
-  return 0;
-}
-
-function getReviewStatus(
-  analysis: Analysis | null,
-  latestJob: Job | null
-): PullRequestReviewSummary['reviewStatus'] {
-  if (!analysis && !latestJob) {
-    return 'not_started';
-  }
-  if (analysis?.status === 'completed') {
-    return 'completed';
-  }
-  if (analysis?.status === 'failed' || latestJob?.status === 'failed' || latestJob?.status === 'dead') {
-    return 'failed';
-  }
-  if (analysis?.status === 'processing' || latestJob?.status === 'processing') {
-    return 'processing';
-  }
-  return 'pending';
-}
 
 function normalizeRepositoryPayload(
   platform: Platform,
@@ -287,7 +147,7 @@ async function hydrateRepositoryCache(platform?: Platform) {
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const { platform, page = '1', limit = '20' } = req.query as RepositoryQuery;
+    const { platform, page = '1', limit = '20', favorites } = req.query as RepositoryQuery;
 
     const installationModel = getOAuthInstallationModel();
     const repositoryModel = getRepositoryModel();
@@ -295,6 +155,26 @@ router.get('/', async (req: Request, res: Response) => {
     const limitNum = parseInt(limit, 10);
     const safePage = Number.isNaN(pageNum) || pageNum < 1 ? 1 : pageNum;
     const safeLimit = Number.isNaN(limitNum) || limitNum < 1 ? 20 : limitNum;
+    const favoritesOnly = favorites === '1' || favorites === 'true';
+
+    if (favoritesOnly) {
+      const allFavoriteRepositories = repositoryModel
+        .findFavorites(1000)
+        .filter((repository) => (platform ? repository.platform === platform : true));
+      const offset = (safePage - 1) * safeLimit;
+      const repositories = allFavoriteRepositories.slice(offset, offset + safeLimit);
+
+      return res.json({
+        repositories,
+        pagination: {
+          page: safePage,
+          limit: safeLimit,
+          total: allFavoriteRepositories.length,
+          totalPages: Math.ceil(allFavoriteRepositories.length / safeLimit),
+        },
+      });
+    }
+
     const activeInstallations = platform
       ? installationModel.findActiveByPlatform(platform)
       : installationModel.findActive();
@@ -307,7 +187,10 @@ router.get('/', async (req: Request, res: Response) => {
       : repositoryModel.findAll({
           sortOrder: 'DESC',
         }))
-      .filter((repository) => activeInstallationIds.has(repository.installation_id));
+      .filter((repository) => activeInstallationIds.has(repository.installation_id))
+      .sort((left, right) => {
+        return compareDateDesc(String(left.updated_at), String(right.updated_at));
+      });
     const offset = (safePage - 1) * safeLimit;
     const repositories = allRepositories.slice(offset, offset + safeLimit);
 
@@ -367,6 +250,8 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
     const state = (Array.isArray(req.query.state) ? req.query.state[0] : req.query.state) as string | undefined;
     const page = parseInt((Array.isArray(req.query.page) ? req.query.page[0] : req.query.page || '1') as string, 10);
     const limit = parseInt((Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit || '20') as string, 10);
+    const safePage = Number.isNaN(page) || page < 1 ? 1 : page;
+    const safeLimit = Math.min(Number.isNaN(limit) || limit < 1 ? 20 : limit, 100);
 
     if (isNaN(id)) {
       return res.status(400).json({ error: '无效的 ID' });
@@ -393,8 +278,8 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
         repository.name,
       {
         state: state === 'all' || state === 'closed' || state === 'open' ? state : 'open',
-        page: Number.isNaN(page) || page < 1 ? 1 : page,
-        per_page: Number.isNaN(limit) || limit < 1 ? 20 : limit,
+        page: safePage,
+        per_page: safeLimit,
       }
     );
 
@@ -408,8 +293,10 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
     });
     const latestAnalysisByPr = new Map<number, Analysis>();
     const analysesByPr = new Map<number, Analysis[]>();
+    const analysisById = new Map<number, Analysis>();
 
     for (const analysis of analyses) {
+      analysisById.set(analysis.id, analysis);
       const existing = analysesByPr.get(analysis.pr_number) || [];
       existing.push(analysis);
       analysesByPr.set(analysis.pr_number, existing);
@@ -418,7 +305,8 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
       }
     }
 
-    const recentJobs = jobModel.findByType('pr_analysis', 200);
+    const recentJobs = jobModel.findByType('pr_analysis', 500);
+    const jobsByPr = indexJobsByPullRequest(recentJobs, analysisById);
 
     const pullRequests: PullRequestReviewSummary[] = remotePullRequests.map((pullRequest: PlatformPullRequest) => {
       const providerAuthor = (pullRequest as PlatformPullRequest & {
@@ -429,12 +317,18 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
         .filter((analysis) => analysis.status === 'completed' || analysis.status === 'failed' || analysis.status === 'cancelled')
         .slice(0, 5)
         .map(buildReportSummary);
+      const prJobs = (jobsByPr.get(buildPullRequestKey({
+        platform: repository.platform,
+        owner: repository.owner,
+        repoName: repository.name,
+        prNumber: pullRequest.number,
+      })) || [])
+        .map((job) => buildPullRequestJobSummary(job, analysisById))
+        .sort((left, right) => compareDateDesc(left.updatedAt, right.updatedAt));
       const latestAnalysisJob = latestAnalysis
         ? analysisJobModel.findByAnalysisId(latestAnalysis.id).slice(-1)[0] || null
         : null;
-      const latestJob = recentJobs.find((job) =>
-        matchesRepositoryJob(job, repository, pullRequest.number)
-      ) || null;
+      const latestJob = prJobs[0] || null;
       const risk = deriveRiskLevel(latestAnalysis);
 
       return {
@@ -450,7 +344,7 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
         latestAnalysisId: latestAnalysis?.id || null,
         latestReviewJobId: latestJob?.id || null,
         latestReviewJobStatus: latestJob?.status || null,
-        latestReviewJobCreatedAt: latestJob?.created_at ? String(latestJob.created_at) : null,
+        latestReviewJobCreatedAt: latestJob?.createdAt ? String(latestJob.createdAt) : null,
         lastReviewedAt: latestAnalysis?.completed_at ? String(latestAnalysis.completed_at) : latestAnalysis?.updated_at ? String(latestAnalysis.updated_at) : null,
         latestRiskLevel: risk.level,
         latestRiskSummary: risk.summary,
@@ -459,16 +353,18 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
         fileCount: latestAnalysis?.file_count || 0,
         analysisJobStage: latestAnalysisJob?.stage || null,
         analysisJobMessage: latestAnalysisJob?.message || null,
+        jobCount: prJobs.length,
+        jobs: prJobs,
         reports: reportHistory,
       };
-    });
+    }).sort((left, right) => compareDateDesc(left.updatedAt, right.updatedAt));
 
     return res.json({
       repository,
       pullRequests,
       pagination: {
-        page: Number.isNaN(page) || page < 1 ? 1 : page,
-        limit: Number.isNaN(limit) || limit < 1 ? 20 : limit,
+        page: safePage,
+        limit: safeLimit,
         total: pullRequests.length,
         totalPages: pullRequests.length === 0 ? 0 : 1,
       },
@@ -476,7 +372,7 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('获取仓库 PR 列表失败:', error);
     const message = (error as Error).message;
-    const statusCode = /重新授权|OAuth token|401 Unauthorized/.test(message) ? 401 : 500;
+    const statusCode = isAuthenticationFailureMessage(message) ? 401 : 500;
     return res.status(statusCode).json({
       error: statusCode === 401 ? 'OAuth 授权已失效，请重新授权 GitHub' : '内部服务器错误',
       details: (error as Error).message,
@@ -546,6 +442,41 @@ router.patch('/:id/watch', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('切换仓库 Watch 状态失败:', error);
+    return res.status(500).json({
+      error: '内部服务器错误',
+      details: (error as Error).message,
+    });
+  }
+});
+
+router.patch('/:id/favorite', async (req: Request, res: Response) => {
+  try {
+    const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const id = parseInt(idParam, 10);
+
+    if (isNaN(id)) {
+      return res.status(400).json({ error: '无效的 ID' });
+    }
+
+    const repositoryModel = getRepositoryModel();
+    const repository = repositoryModel.findById(id);
+    if (!repository) {
+      return res.status(404).json({ error: '仓库不存在' });
+    }
+
+    const requestedEnabled = typeof req.body?.enabled === 'boolean'
+      ? req.body.enabled
+      : !repository.is_favorite;
+
+    const updated = repositoryModel.updateFavorite(id, requestedEnabled);
+
+    return res.json({
+      success: true,
+      repository: updated,
+      message: `仓库已${requestedEnabled ? '加入' : '移出'}收藏`,
+    });
+  } catch (error) {
+    console.error('切换仓库收藏状态失败:', error);
     return res.status(500).json({
       error: '内部服务器错误',
       details: (error as Error).message,

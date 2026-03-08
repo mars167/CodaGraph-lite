@@ -5,6 +5,7 @@
  */
 
 import { getConnection } from '../database/connection';
+import { LOCAL_DB_NOW_SQL } from '../utils/time';
 import type {
   Installation,
   CreateInstallationDTO,
@@ -156,7 +157,7 @@ export class InstallationModel {
       return this.findById(id);
     }
 
-    fields.push('updated_at = CURRENT_TIMESTAMP');
+    fields.push(`updated_at = ${LOCAL_DB_NOW_SQL}`);
     params.push(id);
 
     const sql = `UPDATE installation SET ${fields.join(', ')} WHERE id = ?`;
@@ -177,7 +178,7 @@ export class InstallationModel {
   ): boolean {
     const result = this.db.execute(
       `UPDATE installation
-       SET access_token = ?, refresh_token = ?, token_expires_at = ?, updated_at = CURRENT_TIMESTAMP
+       SET access_token = ?, refresh_token = ?, token_expires_at = ?, updated_at = ${LOCAL_DB_NOW_SQL}
        WHERE id = ?`,
       [accessToken, refreshToken, expiresAt.toISOString(), id]
     );

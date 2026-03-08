@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiClient } from '@/lib/api-client';
+import { formatDateTime } from '@/lib/datetime';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -750,7 +751,7 @@ export default function SettingsPage() {
                             </p>
                             {installation.expiresAt && (
                               <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                                过期时间: {new Date(installation.expiresAt).toLocaleString('zh-CN')}
+                                过期时间: {formatDateTime(installation.expiresAt)}
                               </p>
                             )}
                           </div>

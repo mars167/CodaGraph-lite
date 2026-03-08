@@ -5,6 +5,7 @@
  */
 
 import { getConnection } from '../database/connection';
+import { LOCAL_DB_NOW_SQL } from '../utils/time';
 import type {
   OAuthToken,
   Platform,
@@ -117,7 +118,7 @@ export class OAuthTokenModel {
       return this.findById(id);
     }
 
-    fields.push('updated_at = CURRENT_TIMESTAMP');
+    fields.push(`updated_at = ${LOCAL_DB_NOW_SQL}`);
     params.push(id);
 
     const sql = `UPDATE "oauth_tokens" SET ${fields.join(', ')} WHERE id = ?`;

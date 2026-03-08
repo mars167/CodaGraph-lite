@@ -1,4 +1,5 @@
 import { getConnection } from '../database/connection';
+import { LOCAL_DB_NOW_SQL } from '../utils/time';
 import type { Platform, ReviewLock } from './types';
 
 type ReviewLockSource = ReviewLock['source'];
@@ -49,8 +50,8 @@ export class ReviewLockModel {
     try {
       const result = this.db.execute(
         `INSERT INTO review_lock (
-          platform, owner, repo_name, pr_number, head_commit, source, status
-        ) VALUES (?, ?, ?, ?, ?, ?, 'active')`,
+          platform, owner, repo_name, pr_number, head_commit, source, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'active', ${LOCAL_DB_NOW_SQL}, ${LOCAL_DB_NOW_SQL})`,
         [
           input.platform,
           input.owner,
@@ -89,7 +90,7 @@ export class ReviewLockModel {
       return this.findById(id);
     }
 
-    fields.push('updated_at = CURRENT_TIMESTAMP');
+    fields.push(`updated_at = ${LOCAL_DB_NOW_SQL}`);
     params.push(id);
     this.db.execute(
       `UPDATE review_lock
@@ -105,8 +106,8 @@ export class ReviewLockModel {
     const result = this.db.execute(
       `UPDATE review_lock
        SET status = 'released',
-           released_at = CURRENT_TIMESTAMP,
-           updated_at = CURRENT_TIMESTAMP
+           released_at = ${LOCAL_DB_NOW_SQL},
+           updated_at = ${LOCAL_DB_NOW_SQL}
        WHERE id = ?
          AND status = 'active'`,
       [id]
@@ -119,8 +120,8 @@ export class ReviewLockModel {
     const result = this.db.execute(
       `UPDATE review_lock
        SET status = 'released',
-           released_at = CURRENT_TIMESTAMP,
-           updated_at = CURRENT_TIMESTAMP
+           released_at = ${LOCAL_DB_NOW_SQL},
+           updated_at = ${LOCAL_DB_NOW_SQL}
        WHERE analysis_id = ?
          AND status = 'active'`,
       [analysisId]

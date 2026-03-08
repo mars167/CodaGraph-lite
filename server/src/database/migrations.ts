@@ -5,6 +5,7 @@
  */
 
 import { getConnection } from './index';
+import { sanitizeSensitiveText } from '../utils/redactSensitive';
 
 /**
  * 迁移记录
@@ -13,6 +14,42 @@ export interface Migration {
   version: number;
   name: string;
   applied_at: Date | string;
+}
+
+interface MigrationDefinition {
+  version: number;
+  name: string;
+  sql?: string;
+  run?: (db: ReturnType<typeof getConnection>) => void;
+}
+
+function redactColumnValues(
+  db: ReturnType<typeof getConnection>,
+  table: string,
+  idColumn: string,
+  targetColumn: string
+): void {
+  const rows = db.all<{ id: number; value: string | null }>(
+    `SELECT ${idColumn} as id, ${targetColumn} as value
+     FROM ${table}
+     WHERE ${targetColumn} IS NOT NULL`
+  );
+
+  for (const row of rows) {
+    if (!row.value) {
+      continue;
+    }
+
+    const sanitized = sanitizeSensitiveText(row.value);
+    if (sanitized !== row.value) {
+      db.execute(
+        `UPDATE ${table}
+         SET ${targetColumn} = ?
+         WHERE ${idColumn} = ?`,
+        [sanitized, row.id]
+      );
+    }
+  }
 }
 
 /**
@@ -56,7 +93,7 @@ export async function runMigrations(): Promise<number> {
     }
 
     // 迁移脚本列表
-    const migrations = [
+    const migrations: MigrationDefinition[] = [
       {
         version: 1,
         name: 'initial_schema',
@@ -218,8 +255,8 @@ export async function runMigrations(): Promise<number> {
             token_expires_at DATETIME,
             permissions TEXT,
             is_active INTEGER DEFAULT 1,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+            updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
           );
 
           CREATE INDEX IF NOT EXISTS idx_oauth_installations_platform ON oauth_installations(platform);
@@ -232,7 +269,7 @@ export async function runMigrations(): Promise<number> {
             state TEXT NOT NULL UNIQUE,
             redirect_uri TEXT NOT NULL,
             scope TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT (datetime('now', 'localtime')),
             expires_at DATETIME NOT NULL
           );
 
@@ -248,7 +285,7 @@ export async function runMigrations(): Promise<number> {
             refresh_token TEXT,
             token_type TEXT NOT NULL CHECK(token_type IN ('access', 'refresh', 'state')),
             expires_at DATETIME NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT (datetime('now', 'localtime'))
           );
 
           CREATE INDEX IF NOT EXISTS idx_oauth_tokens_platform ON oauth_tokens(platform);
@@ -292,7 +329,7 @@ export async function runMigrations(): Promise<number> {
             job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
             level TEXT NOT NULL CHECK(level IN ('info', 'warn', 'error')),
             message TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT (datetime('now', 'localtime'))
           );
 
           CREATE INDEX IF NOT EXISTS idx_job_log_job_id ON job_log(job_id, created_at DESC);
@@ -317,8 +354,8 @@ export async function runMigrations(): Promise<number> {
             status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'released')),
             analysis_id INTEGER REFERENCES analysis(id) ON DELETE SET NULL,
             job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+            updated_at DATETIME DEFAULT (datetime('now', 'localtime')),
             released_at DATETIME
           );
 
@@ -337,11 +374,181 @@ export async function runMigrations(): Promise<number> {
           CREATE TABLE IF NOT EXISTS app_setting (
             setting_key TEXT PRIMARY KEY,
             setting_value TEXT NOT NULL,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
           );
 
           CREATE INDEX IF NOT EXISTS idx_app_setting_updated_at ON app_setting(updated_at DESC);
         `
+      },
+      {
+        version: 9,
+        name: 'add_repository_favorite_fields',
+        sql: `
+          ALTER TABLE repository ADD COLUMN is_favorite BOOLEAN DEFAULT 0;
+          ALTER TABLE repository ADD COLUMN favorited_at DATETIME;
+          CREATE INDEX IF NOT EXISTS idx_repository_favorite ON repository(is_favorite, favorited_at DESC);
+        `
+      },
+      {
+        version: 10,
+        name: 'normalize_timezone_storage_for_review_tables',
+        sql: `
+          UPDATE jobs
+          SET started_at = datetime(started_at, '+8 hours')
+          WHERE started_at IS NOT NULL
+            AND started_at NOT LIKE '%T%'
+            AND started_at NOT LIKE '%Z';
+
+          UPDATE jobs
+          SET completed_at = datetime(completed_at, '+8 hours')
+          WHERE completed_at IS NOT NULL
+            AND completed_at NOT LIKE '%T%'
+            AND completed_at NOT LIKE '%Z';
+
+          UPDATE jobs
+          SET failed_at = datetime(failed_at, '+8 hours')
+          WHERE failed_at IS NOT NULL
+            AND failed_at NOT LIKE '%T%'
+            AND failed_at NOT LIKE '%Z';
+
+          UPDATE jobs
+          SET updated_at = started_at
+          WHERE status = 'processing' AND started_at IS NOT NULL;
+
+          UPDATE jobs
+          SET updated_at = completed_at
+          WHERE status = 'completed' AND completed_at IS NOT NULL;
+
+          UPDATE jobs
+          SET updated_at = failed_at
+          WHERE status IN ('failed', 'cancelled', 'dead') AND failed_at IS NOT NULL;
+
+          UPDATE analysis
+          SET started_at = datetime(started_at, '+8 hours')
+          WHERE started_at IS NOT NULL
+            AND started_at NOT LIKE '%T%'
+            AND started_at NOT LIKE '%Z';
+
+          UPDATE analysis
+          SET completed_at = datetime(completed_at, '+8 hours')
+          WHERE completed_at IS NOT NULL
+            AND completed_at NOT LIKE '%T%'
+            AND completed_at NOT LIKE '%Z';
+
+          UPDATE analysis
+          SET failed_at = datetime(failed_at, '+8 hours')
+          WHERE failed_at IS NOT NULL
+            AND failed_at NOT LIKE '%T%'
+            AND failed_at NOT LIKE '%Z';
+
+          UPDATE analysis
+          SET updated_at = started_at
+          WHERE status = 'processing' AND started_at IS NOT NULL;
+
+          UPDATE analysis
+          SET updated_at = completed_at
+          WHERE status = 'completed' AND completed_at IS NOT NULL;
+
+          UPDATE analysis
+          SET updated_at = failed_at
+          WHERE status IN ('failed', 'cancelled') AND failed_at IS NOT NULL;
+
+          UPDATE analysis_job
+          SET started_at = datetime(started_at, '+8 hours')
+          WHERE started_at IS NOT NULL
+            AND started_at NOT LIKE '%T%'
+            AND started_at NOT LIKE '%Z';
+
+          UPDATE analysis_job
+          SET completed_at = datetime(completed_at, '+8 hours')
+          WHERE completed_at IS NOT NULL
+            AND completed_at NOT LIKE '%T%'
+            AND completed_at NOT LIKE '%Z';
+
+          UPDATE analysis_job
+          SET failed_at = datetime(failed_at, '+8 hours')
+          WHERE failed_at IS NOT NULL
+            AND failed_at NOT LIKE '%T%'
+            AND failed_at NOT LIKE '%Z';
+
+          UPDATE analysis_job
+          SET updated_at = started_at
+          WHERE status = 'processing' AND started_at IS NOT NULL;
+
+          UPDATE analysis_job
+          SET updated_at = completed_at
+          WHERE status = 'completed' AND completed_at IS NOT NULL;
+
+          UPDATE analysis_job
+          SET updated_at = failed_at
+          WHERE status = 'failed' AND failed_at IS NOT NULL;
+
+          UPDATE job_log
+          SET created_at = datetime(created_at, '+8 hours')
+          WHERE created_at IS NOT NULL
+            AND created_at NOT LIKE '%T%'
+            AND created_at NOT LIKE '%Z';
+
+          UPDATE review_lock
+          SET created_at = datetime(created_at, '+8 hours')
+          WHERE created_at IS NOT NULL
+            AND created_at NOT LIKE '%T%'
+            AND created_at NOT LIKE '%Z';
+
+          UPDATE review_lock
+          SET updated_at = datetime(updated_at, '+8 hours')
+          WHERE updated_at IS NOT NULL
+            AND updated_at NOT LIKE '%T%'
+            AND updated_at NOT LIKE '%Z';
+
+          UPDATE review_lock
+          SET released_at = datetime(released_at, '+8 hours')
+          WHERE released_at IS NOT NULL
+            AND released_at NOT LIKE '%T%'
+            AND released_at NOT LIKE '%Z';
+
+          UPDATE oauth_installations
+          SET created_at = datetime(created_at, '+8 hours')
+          WHERE created_at IS NOT NULL
+            AND created_at NOT LIKE '%T%'
+            AND created_at NOT LIKE '%Z';
+
+          UPDATE oauth_installations
+          SET updated_at = datetime(updated_at, '+8 hours')
+          WHERE updated_at IS NOT NULL
+            AND updated_at NOT LIKE '%T%'
+            AND updated_at NOT LIKE '%Z';
+
+          UPDATE oauth_authorize
+          SET created_at = datetime(created_at, '+8 hours')
+          WHERE created_at IS NOT NULL
+            AND created_at NOT LIKE '%T%'
+            AND created_at NOT LIKE '%Z';
+
+          UPDATE oauth_tokens
+          SET created_at = datetime(created_at, '+8 hours')
+          WHERE created_at IS NOT NULL
+            AND created_at NOT LIKE '%T%'
+            AND created_at NOT LIKE '%Z';
+
+          UPDATE app_setting
+          SET updated_at = datetime(updated_at, '+8 hours')
+          WHERE updated_at IS NOT NULL
+            AND updated_at NOT LIKE '%T%'
+            AND updated_at NOT LIKE '%Z';
+        `
+      },
+      {
+        version: 11,
+        name: 'redact_sensitive_values_in_logs_and_errors',
+        run: (db) => {
+          redactColumnValues(db, 'job_log', 'id', 'message');
+          redactColumnValues(db, 'jobs', 'id', 'error_message');
+          redactColumnValues(db, 'analysis', 'id', 'error_message');
+          redactColumnValues(db, 'analysis_job', 'id', 'error_message');
+          redactColumnValues(db, 'analysis_job', 'id', 'message');
+          redactColumnValues(db, 'webhook_event', 'id', 'processing_error');
+        },
       },
     ];
 
@@ -350,14 +557,19 @@ export async function runMigrations(): Promise<number> {
       if (!appliedVersions.has(migration.version)) {
         console.log(`📦 应用迁移 v${migration.version}: ${migration.name}`);
 
-        // 分割 SQL 语句并逐个执行
-        const statements = migration.sql
-          .split(';')
-          .map(s => s.trim())
-          .filter(s => s.length > 0);
+        if (migration.sql) {
+          const statements = migration.sql
+            .split(';')
+            .map(s => s.trim())
+            .filter(s => s.length > 0);
 
-        for (const statement of statements) {
-          db.execute(statement);
+          for (const statement of statements) {
+            db.execute(statement);
+          }
+        }
+
+        if (migration.run) {
+          migration.run(db);
         }
 
         // 记录迁移

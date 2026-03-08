@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { formatDateTime } from '@/lib/datetime';
 import type { Admin } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -178,9 +179,7 @@ export default function UsersPage() {
 
   // 格式化日期
   const formatDate = (dateStr?: string) => {
-    if (!dateStr) return '-';
-    const date = new Date(dateStr);
-    return date.toLocaleString('zh-CN');
+    return formatDateTime(dateStr, { fallback: '-' });
   };
 
   if (isLoading) {

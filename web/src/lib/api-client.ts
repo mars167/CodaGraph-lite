@@ -8,6 +8,8 @@ import type {
   MemoryInfo,
   OAuthInstallation,
   PaginatedResponse,
+  PullRequestHistoryItem,
+  PullRequestReviewJob,
   Repository,
   RepositoryPullRequest,
   JobLog,
@@ -18,6 +20,7 @@ import type {
   SystemSettings,
   SystemStatus,
 } from '@/types';
+import { normalizeTimestampInput } from '@/lib/datetime';
 
 // API 基础 URL
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:7900';
@@ -80,11 +83,13 @@ interface RepositoryApiItem {
   webhook_url?: string | null;
   is_active: boolean;
   watch_enabled?: boolean;
+  is_favorite?: boolean;
   created_at: string;
   updated_at: string;
   last_synced_at?: string | null;
   last_analyzed_at?: string | null;
   watch_last_checked_at?: string | null;
+  favorited_at?: string | null;
   last_commit_at?: string | null;
   pushed_at?: string | null;
 }
@@ -121,12 +126,70 @@ interface RepositoryPullRequestApiItem {
   fileCount: number;
   analysisJobStage?: string | null;
   analysisJobMessage?: string | null;
+  jobCount?: number;
+  jobs?: PullRequestReviewJobApiItem[];
   reports?: ReviewReportSummaryApiItem[];
 }
 
 interface RepositoryPullRequestListResponse {
   repository: RepositoryApiItem;
   pullRequests: RepositoryPullRequestApiItem[];
+}
+
+interface PullRequestReviewJobApiItem {
+  id: string | number;
+  status: PullRequestReviewJob['status'];
+  triggerSource?: PullRequestReviewJob['triggerSource'] | null;
+  headCommit?: string | null;
+  shortHeadCommit?: string | null;
+  analysisId?: string | number | null;
+  errorMessage?: string | null;
+  createdAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  updatedAt: string;
+  report?: ReviewReportSummaryApiItem | null;
+}
+
+interface PullRequestHistoryApiItem {
+  repositoryId?: string | number | null;
+  repositoryFullName: string;
+  repositoryUrl?: string | null;
+  repositoryWatchEnabled?: boolean;
+  platform: PullRequestHistoryItem['platform'];
+  owner: string;
+  repoName: string;
+  prNumber: number;
+  title: string;
+  author: string;
+  url: string;
+  reviewStatus: PullRequestHistoryItem['reviewStatus'];
+  reviewProgress: number;
+  latestAnalysisId?: string | number | null;
+  latestReviewJobId?: string | number | null;
+  latestReviewJobStatus?: PullRequestHistoryItem['latestReviewJobStatus'] | null;
+  latestReviewJobCreatedAt?: string | null;
+  lastReviewedAt?: string | null;
+  latestRiskLevel: PullRequestHistoryItem['latestRiskLevel'];
+  latestRiskSummary?: string | null;
+  commentCount: number;
+  issueCount: number;
+  fileCount: number;
+  latestHeadCommit?: string | null;
+  lastActivityAt: string;
+  jobCount?: number;
+  jobs?: PullRequestReviewJobApiItem[];
+  reports?: ReviewReportSummaryApiItem[];
+}
+
+interface PullRequestHistoryListResponse {
+  pullRequests: PullRequestHistoryApiItem[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
 interface AnalysisApiItem {
@@ -252,16 +315,35 @@ function mapRepository(item: RepositoryApiItem): Repository {
     language: item.language || undefined,
     htmlUrl: item.html_url || undefined,
     webhookUrl: item.webhook_url || undefined,
-    lastSyncedAt: item.last_synced_at || item.last_analyzed_at || undefined,
+    lastSyncedAt: normalizeTimestampInput(item.last_synced_at) || normalizeTimestampInput(item.last_analyzed_at) || undefined,
     watchEnabled: Boolean(item.watch_enabled),
-    watchLastCheckedAt: item.watch_last_checked_at || undefined,
+    favorite: Boolean(item.is_favorite),
+    favoritedAt: normalizeTimestampInput(item.favorited_at) || undefined,
+    watchLastCheckedAt: normalizeTimestampInput(item.watch_last_checked_at) || undefined,
     active: item.is_active,
     stars: item.stars_count ?? 0,
     forks: item.forks_count ?? 0,
     pullRequests: item.pull_requests_count ?? item.pr_count ?? undefined,
-    lastCommitAt: item.last_commit_at || item.pushed_at || undefined,
-    createdAt: item.created_at,
-    updatedAt: item.updated_at,
+    lastCommitAt: normalizeTimestampInput(item.last_commit_at) || normalizeTimestampInput(item.pushed_at) || undefined,
+    createdAt: normalizeTimestampInput(item.created_at) || item.created_at,
+    updatedAt: normalizeTimestampInput(item.updated_at) || item.updated_at,
+  };
+}
+
+function mapPullRequestReviewJob(item: PullRequestReviewJobApiItem): PullRequestReviewJob {
+  return {
+    id: String(item.id),
+    status: item.status,
+    triggerSource: item.triggerSource || undefined,
+    headCommit: item.headCommit || undefined,
+    shortHeadCommit: item.shortHeadCommit || undefined,
+    analysisId: item.analysisId ? String(item.analysisId) : undefined,
+    errorMessage: item.errorMessage || undefined,
+    createdAt: normalizeTimestampInput(item.createdAt) || item.createdAt,
+    startedAt: normalizeTimestampInput(item.startedAt) || undefined,
+    completedAt: normalizeTimestampInput(item.completedAt) || undefined,
+    updatedAt: normalizeTimestampInput(item.updatedAt) || item.updatedAt,
+    report: item.report ? mapReviewReportSummary(item.report) : undefined,
   };
 }
 
@@ -272,15 +354,15 @@ function mapRepositoryPullRequest(item: RepositoryPullRequestApiItem): Repositor
     author: item.author,
     url: item.url,
     state: item.state,
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt,
+    createdAt: normalizeTimestampInput(item.createdAt) || item.createdAt,
+    updatedAt: normalizeTimestampInput(item.updatedAt) || item.updatedAt,
     reviewStatus: item.reviewStatus,
     reviewProgress: item.reviewProgress,
     latestAnalysisId: item.latestAnalysisId ? String(item.latestAnalysisId) : undefined,
     latestReviewJobId: item.latestReviewJobId ? String(item.latestReviewJobId) : undefined,
     latestReviewJobStatus: item.latestReviewJobStatus || undefined,
-    latestReviewJobCreatedAt: item.latestReviewJobCreatedAt || undefined,
-    lastReviewedAt: item.lastReviewedAt || undefined,
+    latestReviewJobCreatedAt: normalizeTimestampInput(item.latestReviewJobCreatedAt) || undefined,
+    lastReviewedAt: normalizeTimestampInput(item.lastReviewedAt) || undefined,
     latestRiskLevel: item.latestRiskLevel,
     latestRiskSummary: item.latestRiskSummary || undefined,
     commentCount: item.commentCount,
@@ -288,6 +370,41 @@ function mapRepositoryPullRequest(item: RepositoryPullRequestApiItem): Repositor
     fileCount: item.fileCount,
     analysisJobStage: item.analysisJobStage || undefined,
     analysisJobMessage: item.analysisJobMessage || undefined,
+    jobCount: item.jobCount ?? item.jobs?.length ?? 0,
+    jobs: (item.jobs || []).map(mapPullRequestReviewJob),
+    reports: (item.reports || []).map(mapReviewReportSummary),
+  };
+}
+
+function mapPullRequestHistoryItem(item: PullRequestHistoryApiItem): PullRequestHistoryItem {
+  return {
+    repositoryId: item.repositoryId ? String(item.repositoryId) : undefined,
+    repositoryFullName: item.repositoryFullName,
+    repositoryUrl: item.repositoryUrl || undefined,
+    repositoryWatchEnabled: Boolean(item.repositoryWatchEnabled),
+    platform: item.platform,
+    owner: item.owner,
+    repoName: item.repoName,
+    prNumber: item.prNumber,
+    title: item.title,
+    author: item.author,
+    url: item.url,
+    reviewStatus: item.reviewStatus,
+    reviewProgress: item.reviewProgress,
+    latestAnalysisId: item.latestAnalysisId ? String(item.latestAnalysisId) : undefined,
+    latestReviewJobId: item.latestReviewJobId ? String(item.latestReviewJobId) : undefined,
+    latestReviewJobStatus: item.latestReviewJobStatus || undefined,
+    latestReviewJobCreatedAt: normalizeTimestampInput(item.latestReviewJobCreatedAt) || undefined,
+    lastReviewedAt: normalizeTimestampInput(item.lastReviewedAt) || undefined,
+    latestRiskLevel: item.latestRiskLevel,
+    latestRiskSummary: item.latestRiskSummary || undefined,
+    commentCount: item.commentCount,
+    issueCount: item.issueCount,
+    fileCount: item.fileCount,
+    latestHeadCommit: item.latestHeadCommit || undefined,
+    lastActivityAt: normalizeTimestampInput(item.lastActivityAt) || item.lastActivityAt,
+    jobCount: item.jobCount ?? item.jobs?.length ?? 0,
+    jobs: (item.jobs || []).map(mapPullRequestReviewJob),
     reports: (item.reports || []).map(mapReviewReportSummary),
   };
 }
@@ -302,8 +419,8 @@ function mapReviewReportSummary(item: ReviewReportSummaryApiItem): ReviewReportS
     issueCount: item.issueCount,
     commentCount: item.commentCount,
     fileCount: item.fileCount,
-    createdAt: item.createdAt,
-    completedAt: item.completedAt || undefined,
+    createdAt: normalizeTimestampInput(item.createdAt) || item.createdAt,
+    completedAt: normalizeTimestampInput(item.completedAt) || undefined,
   };
 }
 
@@ -323,10 +440,10 @@ function mapAnalysis(item: AnalysisApiItem): Analysis {
     errorMessage: item.error_message || undefined,
     reviewCommentCount: item.comment_count,
     fileAnalysisCount: item.file_count,
-    startedAt: item.started_at || undefined,
-    completedAt: item.completed_at || undefined,
-    createdAt: item.created_at,
-    updatedAt: item.updated_at,
+    startedAt: normalizeTimestampInput(item.started_at) || undefined,
+    completedAt: normalizeTimestampInput(item.completed_at) || undefined,
+    createdAt: normalizeTimestampInput(item.created_at) || item.created_at,
+    updatedAt: normalizeTimestampInput(item.updated_at) || item.updated_at,
   };
 }
 
@@ -350,9 +467,9 @@ function mapJob(item: JobApiItem): AnalysisJob {
     attempts: item.attempts,
     maxAttempts: item.max_attempts,
     errorMessage: item.error_message || undefined,
-    createdAt: item.created_at,
-    startedAt: item.started_at || undefined,
-    completedAt: item.completed_at || undefined,
+    createdAt: normalizeTimestampInput(item.created_at) || item.created_at,
+    startedAt: normalizeTimestampInput(item.started_at) || undefined,
+    completedAt: normalizeTimestampInput(item.completed_at) || undefined,
   };
 }
 
@@ -361,7 +478,7 @@ function mapJobLog(item: JobLogApiItem): JobLog {
     id: String(item.id),
     level: item.level,
     message: item.message,
-    createdAt: item.created_at,
+    createdAt: normalizeTimestampInput(item.created_at) || item.created_at,
   };
 }
 
@@ -620,9 +737,9 @@ class ApiClient {
       accessToken: item.access_token,
       refreshToken: item.refresh_token || undefined,
       scope: item.permissions || '',
-      expiresAt: item.token_expires_at || undefined,
-      createdAt: item.created_at,
-      updatedAt: item.updated_at,
+      expiresAt: normalizeTimestampInput(item.token_expires_at) || item.token_expires_at || undefined,
+      createdAt: normalizeTimestampInput(item.created_at) || item.created_at,
+      updatedAt: normalizeTimestampInput(item.updated_at) || item.updated_at,
     }));
 
     return {
@@ -644,9 +761,10 @@ class ApiClient {
   // ============ 仓库 API ============
 
   // 获取仓库列表
-  async getRepositories(params?: { platform?: string; page?: number; pageSize?: number }): Promise<PaginatedResponse<Repository>> {
+  async getRepositories(params?: { platform?: string; favoritesOnly?: boolean; page?: number; pageSize?: number }): Promise<PaginatedResponse<Repository>> {
     const response = await this.get<RepositoryListResponse>('/api/repositories', {
       platform: params?.platform,
+      favorites: params?.favoritesOnly ? '1' : undefined,
       page: params?.page,
       limit: params?.pageSize,
     });
@@ -726,6 +844,17 @@ class ApiClient {
     };
   }
 
+  async setRepositoryFavorite(id: string, enabled: boolean): Promise<ApiResponse<Repository>> {
+    const response = await this.patch<{ repository: RepositoryApiItem }>(`/api/repositories/${id}/favorite`, {
+      enabled,
+    });
+
+    return {
+      success: true,
+      data: mapRepository(response.repository),
+    };
+  }
+
   // 切换仓库激活状态
   async toggleRepository(id: string): Promise<void> {
     return this.patch<void>(`/api/repositories/${id}/toggle`);
@@ -737,6 +866,29 @@ class ApiClient {
   }
 
   // ============ 分析 API ============
+
+  async getPullRequestHistory(params?: {
+    platform?: string;
+    status?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<PaginatedResponse<PullRequestHistoryItem>> {
+    const response = await this.get<PullRequestHistoryListResponse>('/api/analyses/pull-requests', {
+      platform: params?.platform,
+      status: params?.status,
+      page: params?.page,
+      limit: params?.pageSize,
+    });
+
+    return {
+      success: true,
+      data: response.pullRequests.map(mapPullRequestHistoryItem),
+      total: response.pagination.total,
+      page: response.pagination.page,
+      pageSize: response.pagination.limit,
+      hasMore: response.pagination.page < response.pagination.totalPages,
+    };
+  }
 
   // 获取分析列表
   async getAnalyses(params?: {
@@ -866,7 +1018,7 @@ class ApiClient {
         commentCount: analysis.reviewCommentCount,
         issueCount: response.report?.findings?.length || 0,
         jobId: response.report?.jobId ? String(response.report.jobId) : undefined,
-        generatedAt: response.report?.generatedAt,
+        generatedAt: normalizeTimestampInput(response.report?.generatedAt) || response.report?.generatedAt,
       },
     };
   }

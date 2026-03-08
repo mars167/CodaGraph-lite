@@ -5,6 +5,7 @@
  */
 
 import { getConnection } from '../database/connection';
+import { LOCAL_DB_NOW_SQL } from '../utils/time';
 import type {
   OAuthInstallation,
   CreateInstallationDTO,
@@ -78,8 +79,9 @@ export class OAuthInstallationModel {
     this.db.execute(
       `INSERT INTO oauth_installations (
         platform, auth_type, github_app_installation_id, account_id,
-        account_name, access_token, refresh_token, token_expires_at, permissions
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        account_name, access_token, refresh_token, token_expires_at, permissions,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${LOCAL_DB_NOW_SQL}, ${LOCAL_DB_NOW_SQL})`,
       [
         dto.platform,
         dto.auth_type || 'oauth',
@@ -155,7 +157,7 @@ export class OAuthInstallationModel {
       return this.findById(id);
     }
 
-    fields.push('updated_at = CURRENT_TIMESTAMP');
+    fields.push(`updated_at = ${LOCAL_DB_NOW_SQL}`);
     params.push(id);
 
     const sql = `UPDATE oauth_installations SET ${fields.join(', ')} WHERE id = ?`;
@@ -182,7 +184,7 @@ export class OAuthInstallationModel {
    */
   setActive(id: number, active: boolean): boolean {
     const result = this.db.execute(
-      'UPDATE oauth_installations SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      `UPDATE oauth_installations SET is_active = ?, updated_at = ${LOCAL_DB_NOW_SQL} WHERE id = ?`,
       [active ? 1 : 0, id]
     );
 

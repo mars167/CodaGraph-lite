@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { formatDateTime } from '@/lib/datetime';
 import type { Analysis, AnalysisJob, JobLog } from '@/types';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -19,10 +20,26 @@ const statusVariantMap: Record<AnalysisJob['status'], 'warning' | 'info' | 'succ
   cancelled: 'warning',
 };
 
-const levelStyleMap: Record<JobLog['level'], string> = {
-  info: 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/40 dark:bg-blue-900/20 dark:text-blue-300',
-  warn: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300',
-  error: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-300',
+const levelStyleMap: Record<JobLog['level'], {
+  badge: string;
+  row: string;
+  accent: string;
+}> = {
+  info: {
+    badge: 'border-cyan-400/30 bg-cyan-400/10 text-cyan-200',
+    row: 'border-cyan-400/10 hover:bg-cyan-400/5',
+    accent: 'text-cyan-300',
+  },
+  warn: {
+    badge: 'border-amber-400/30 bg-amber-400/10 text-amber-200',
+    row: 'border-amber-400/10 hover:bg-amber-400/5',
+    accent: 'text-amber-300',
+  },
+  error: {
+    badge: 'border-rose-400/30 bg-rose-400/10 text-rose-200',
+    row: 'border-rose-400/10 hover:bg-rose-400/5',
+    accent: 'text-rose-300',
+  },
 };
 
 const jobTypeLabels: Record<AnalysisJob['type'], string> = {
@@ -89,12 +106,8 @@ export default function JobDetailPage() {
     };
   }, [isLive, loadData]);
 
-  const formatDate = (value?: string) => {
-    if (!value) return '--';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '--';
-    return date.toLocaleString('zh-CN', { hour12: false });
-  };
+  const formatDate = (value?: string) => formatDateTime(value);
+  const formatTerminalTime = (value?: string) => formatDateTime(value, { withSeconds: true });
 
   const handleCancel = async () => {
     if (!job) {
@@ -215,24 +228,77 @@ export default function JobDetailPage() {
       </div>
 
       <Card>
-        <CardContent className="p-5">
-          <div className="flex items-center justify-between gap-4 border-b border-gray-200 pb-4 dark:border-gray-800">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">实时日志</h2>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">按时间顺序展示作业生命周期事件、review-agent 推理节点和工具调用摘要。敏感输出已过滤。</p>
+        <CardContent className="overflow-hidden rounded-3xl border border-slate-800 bg-[#08111f] p-0 shadow-[0_28px_90px_-44px_rgba(2,6,23,0.95)]">
+          <div className="relative border-b border-slate-800/90 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.2),_transparent_38%),linear-gradient(180deg,_rgba(15,23,42,0.98),_rgba(2,6,23,0.98))] px-5 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="h-3 w-3 rounded-full bg-rose-400/90" />
+                  <span className="h-3 w-3 rounded-full bg-amber-300/90" />
+                  <span className="h-3 w-3 rounded-full bg-emerald-400/90" />
+                  <span className="ml-3 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-0.5 font-mono text-[11px] uppercase tracking-[0.22em] text-cyan-200">
+                    job-console
+                  </span>
+                </div>
+                <h2 className="mt-4 text-lg font-semibold text-slate-50">实时日志</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  终端流式视图，展示 worker 生命周期、review-agent 推理节点和工具调用摘要。
+                </p>
+              </div>
+              <div className="grid min-w-[220px] grid-cols-2 gap-2 font-mono text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-3">
+                  <div>entries</div>
+                  <div className="mt-2 text-2xl tracking-normal text-slate-100">{logs.length}</div>
+                </div>
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-3">
+                  <div>session</div>
+                  <div className={`mt-2 text-sm tracking-[0.24em] ${isLive ? 'text-emerald-300' : 'text-slate-200'}`}>
+                    {isLive ? 'TAILING' : 'CLOSED'}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-          <div className="mt-4 space-y-3">
-            {logs.length > 0 ? logs.map((log) => (
-              <div key={log.id} className={`rounded-xl border px-4 py-3 ${levelStyleMap[log.level]}`}>
-                <div className="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.14em]">
-                  <span>{log.level}</span>
-                  <span>{formatDate(log.createdAt)}</span>
-                </div>
-                <p className="mt-2 text-sm leading-6">{log.message}</p>
+
+          <div className="relative bg-[linear-gradient(180deg,_rgba(2,6,23,0.96),_rgba(2,6,23,1))]">
+            <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(148,163,184,0.08)_1px,transparent_1px)] [background-size:100%_28px]" />
+            {logs.length > 0 ? (
+              <div className="relative max-h-[620px] overflow-y-auto font-mono">
+                {logs.map((log, index) => {
+                  const styles = levelStyleMap[log.level];
+                  const prompt = log.message.startsWith('[tool]') ? '$' : log.level === 'error' ? '!' : '>';
+
+                  return (
+                    <div
+                      key={log.id}
+                      className={`grid grid-cols-[116px_96px_24px_minmax(0,1fr)] items-start gap-3 border-b px-5 py-3 text-sm transition-colors ${styles.row} ${index === logs.length - 1 ? 'shadow-[inset_0_-1px_0_rgba(15,23,42,0)]' : ''}`}
+                    >
+                      <div className="pt-0.5 text-[11px] tracking-[0.08em] text-slate-500">
+                        {formatTerminalTime(log.createdAt)}
+                      </div>
+                      <div>
+                        <span className={`inline-flex min-w-[72px] items-center justify-center rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${styles.badge}`}>
+                          {log.level}
+                        </span>
+                      </div>
+                      <div className={`pt-0.5 text-base font-semibold ${styles.accent}`}>
+                        {prompt}
+                      </div>
+                      <div className="min-w-0">
+                        <pre className="whitespace-pre-wrap break-words text-[13px] leading-6 text-slate-100">
+                          <code>{log.message}</code>
+                        </pre>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            )) : (
-              <div className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">暂无日志</div>
+            ) : (
+              <div className="relative px-5 py-10 font-mono text-sm text-slate-500">
+                <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 px-5 py-8 text-center">
+                  [ console idle ] 暂无日志输出
+                </div>
+              </div>
             )}
           </div>
         </CardContent>

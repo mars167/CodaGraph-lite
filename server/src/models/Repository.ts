@@ -5,6 +5,7 @@
  */
 
 import { getConnection } from '../database/connection';
+import { LOCAL_DB_NOW_SQL } from '../utils/time';
 import type {
   Repository,
   CreateRepositoryDTO,
@@ -84,6 +85,17 @@ export class RepositoryModel {
     );
   }
 
+  findFavorites(limit = 100): Repository[] {
+    return this.db.all<Repository>(
+      `SELECT *
+       FROM repository
+       WHERE is_active = 1 AND is_favorite = 1
+       ORDER BY favorited_at DESC, updated_at DESC
+       LIMIT ?`,
+      [limit]
+    );
+  }
+
   /**
    * 获取所有仓库
    */
@@ -139,8 +151,8 @@ export class RepositoryModel {
         platform, remote_id, owner, name, full_name, description,
         is_private, language, stars_count, forks_count, default_branch,
         html_url, installation_id, webhook_id, webhook_secret, webhook_url,
-        is_active, watch_enabled, last_synced_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        is_active, watch_enabled, last_synced_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${LOCAL_DB_NOW_SQL}, ${LOCAL_DB_NOW_SQL})`,
       [
         dto.platform,
         toNullableText(dto.remote_id),
@@ -199,8 +211,10 @@ export class RepositoryModel {
         | 'installation_id'
         | 'last_synced_at'
         | 'watch_enabled'
+        | 'is_favorite'
         | 'watch_last_checked_at'
         | 'last_analyzed_at'
+        | 'favorited_at'
       >
     >
   ): Repository | null {
@@ -263,6 +277,10 @@ export class RepositoryModel {
       fields.push('watch_enabled = ?');
       params.push(updates.watch_enabled ? 1 : 0);
     }
+    if (updates.is_favorite !== undefined) {
+      fields.push('is_favorite = ?');
+      params.push(updates.is_favorite ? 1 : 0);
+    }
     if (updates.last_synced_at !== undefined) {
       fields.push('last_synced_at = ?');
       params.push(
@@ -281,12 +299,18 @@ export class RepositoryModel {
         updates.last_analyzed_at ? toISOString(updates.last_analyzed_at) : null
       );
     }
+    if (updates.favorited_at !== undefined) {
+      fields.push('favorited_at = ?');
+      params.push(
+        updates.favorited_at ? toISOString(updates.favorited_at) : null
+      );
+    }
 
     if (fields.length === 0) {
       return this.findById(id);
     }
 
-    fields.push('updated_at = CURRENT_TIMESTAMP');
+    fields.push(`updated_at = ${LOCAL_DB_NOW_SQL}`);
     params.push(id);
 
     const sql = `UPDATE repository SET ${fields.join(', ')} WHERE id = ?`;
@@ -330,7 +354,7 @@ export class RepositoryModel {
   updateLastAnalyzed(id: number, analyzedAt: Date): boolean {
     const result = this.db.execute(
       `UPDATE repository
-       SET last_analyzed_at = ?, updated_at = CURRENT_TIMESTAMP
+       SET last_analyzed_at = ?, updated_at = ${LOCAL_DB_NOW_SQL}
        WHERE id = ?`,
       [toISOString(analyzedAt), id]
     );
@@ -366,6 +390,13 @@ export class RepositoryModel {
     return this.update(id, { watch_last_checked_at: checkedAt }) !== null;
   }
 
+  updateFavorite(id: number, enabled: boolean): Repository | null {
+    return this.update(id, {
+      is_favorite: enabled,
+      favorited_at: enabled ? new Date() : null,
+    });
+  }
+
   /**
    * 删除仓库
    */
@@ -397,7 +428,7 @@ export class RepositoryModel {
     if (activeFullNames.length === 0) {
       const result = this.db.execute(
         `UPDATE repository
-         SET is_active = 0, updated_at = CURRENT_TIMESTAMP
+         SET is_active = 0, updated_at = ${LOCAL_DB_NOW_SQL}
          WHERE installation_id = ? AND is_active = 1`,
         [installationId]
       );
@@ -408,7 +439,7 @@ export class RepositoryModel {
     const placeholders = activeFullNames.map(() => '?').join(', ');
     const result = this.db.execute(
       `UPDATE repository
-       SET is_active = 0, updated_at = CURRENT_TIMESTAMP
+       SET is_active = 0, updated_at = ${LOCAL_DB_NOW_SQL}
        WHERE installation_id = ?
          AND is_active = 1
          AND full_name NOT IN (${placeholders})`,

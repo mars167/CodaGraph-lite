@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { formatOptionalDateTime } from '@/lib/datetime';
 import type { Repository, Platform } from '@/types';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Loading } from '@/components/ui/Loading';
@@ -23,11 +24,11 @@ const platformThemes: Record<Platform, {
   link: string;
 }> = {
   github: {
-    pill: 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900',
-    accent: 'bg-slate-900 dark:bg-slate-100',
-    soft: 'from-slate-50 via-white to-slate-100 dark:from-gray-900 dark:via-gray-900 dark:to-slate-950',
-    button: 'border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-600 dark:hover:bg-gray-800',
-    link: 'text-slate-700 hover:text-slate-950 dark:text-slate-200 dark:hover:text-white',
+    pill: 'bg-emerald-600 text-white dark:bg-emerald-500 dark:text-white',
+    accent: 'bg-emerald-600 dark:bg-emerald-400',
+    soft: 'from-emerald-50 via-white to-green-50 dark:from-gray-900 dark:via-gray-900 dark:to-emerald-950/30',
+    button: 'border-emerald-200 bg-white text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 dark:border-emerald-900/60 dark:bg-gray-900 dark:text-emerald-300 dark:hover:border-emerald-800 dark:hover:bg-emerald-950/30',
+    link: 'text-emerald-700 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200',
   },
   gitee: {
     pill: 'bg-rose-600 text-white dark:bg-rose-500 dark:text-white',
@@ -46,32 +47,7 @@ const platformThemes: Record<Platform, {
 };
 
 function formatDateTime(value?: string) {
-  if (!value) {
-    return null;
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  return date.toLocaleString('zh-CN', { hour12: false });
-}
-
-function formatShortDate(value?: string) {
-  if (!value) {
-    return '--';
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '--';
-  }
-
-  return date.toLocaleDateString('zh-CN', {
-    month: 'numeric',
-    day: 'numeric',
-  });
+  return formatOptionalDateTime(value, { withSeconds: false });
 }
 
 function formatCount(value?: number) {
@@ -87,6 +63,7 @@ export default function RepositoriesPage() {
   const [filter, setFilter] = useState<Platform>('github');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [updatingWatchId, setUpdatingWatchId] = useState<string | null>(null);
+  const [updatingFavoriteId, setUpdatingFavoriteId] = useState<string | null>(null);
   const pageSize = 20;
 
   const loadRepositories = useCallback(async (currentPage = 1, platformFilter = filter) => {
@@ -130,6 +107,7 @@ export default function RepositoriesPage() {
     const privateCount = filteredRepositories.filter((repo) => repo.private).length;
     const connectedCount = filteredRepositories.filter((repo) => Boolean(repo.webhookUrl)).length;
     const watchedCount = filteredRepositories.filter((repo) => Boolean(repo.watchEnabled)).length;
+    const favoriteCount = filteredRepositories.filter((repo) => Boolean(repo.favorite)).length;
     const languageCount = new Set(
       filteredRepositories
         .map((repo) => repo.language)
@@ -141,6 +119,7 @@ export default function RepositoriesPage() {
       privateCount,
       connectedCount,
       watchedCount,
+      favoriteCount,
       languageCount,
     };
   }, [filteredRepositories]);
@@ -163,6 +142,24 @@ export default function RepositoriesPage() {
       error('更新失败', err instanceof Error ? err.message : '无法更新仓库 Watch 状态');
     } finally {
       setUpdatingWatchId(null);
+    }
+  }, [error, success]);
+
+  const handleToggleFavorite = useCallback(async (repo: Repository) => {
+    try {
+      setUpdatingFavoriteId(repo.id);
+      const response = await apiClient.setRepositoryFavorite(repo.id, !repo.favorite);
+      setRepositories((current) => current.map((item) => (
+        item.id === repo.id ? response.data : item
+      )));
+      success(
+        response.data.favorite ? '已加入工作空间' : '已移出工作空间',
+        `${repo.fullName} ${response.data.favorite ? '已加入收藏仓库列表' : '已从收藏仓库列表移除'}`
+      );
+    } catch (err) {
+      error('更新失败', err instanceof Error ? err.message : '无法更新仓库收藏状态');
+    } finally {
+      setUpdatingFavoriteId(null);
     }
   }, [error, success]);
 
@@ -189,10 +186,11 @@ export default function RepositoriesPage() {
                   当前视图聚焦 {platformNames[filter]} 仓库。先筛平台，再按 owner/repo 搜索，最后直接进入每个仓库的 PR 流水线。
                 </p>
 
-                <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                   {[
                     { label: '平台仓库', value: total.toLocaleString('zh-CN'), tone: 'text-slate-950 dark:text-white' },
                     { label: '当前结果', value: repositoryInsights.visible.toLocaleString('zh-CN'), tone: activeTheme.link },
+                    { label: '收藏仓库', value: repositoryInsights.favoriteCount.toLocaleString('zh-CN'), tone: 'text-amber-700 dark:text-amber-300' },
                     { label: 'Watch 中', value: repositoryInsights.watchedCount.toLocaleString('zh-CN'), tone: 'text-violet-700 dark:text-violet-300' },
                     { label: 'Webhook 已连', value: repositoryInsights.connectedCount.toLocaleString('zh-CN'), tone: 'text-emerald-700 dark:text-emerald-300' },
                   ].map((item) => (
@@ -212,15 +210,26 @@ export default function RepositoriesPage() {
               </div>
 
               <div className="rounded-[28px] border border-white/80 bg-white/85 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-gray-950/70 sm:p-5">
-                <div className="flex items-center justify-between">
+                <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-slate-900 dark:text-white">筛选器</p>
                     <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">
                       平台切换会重新读取列表，搜索在当前平台结果内即时过滤。
                     </p>
                   </div>
-                  <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 dark:bg-gray-800 dark:text-gray-300">
-                    {platformNames[filter]}
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Link
+                      href="/dashboard/workspace"
+                      className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:border-amber-300 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:border-amber-800"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="m9.049 2.927.951 1.927 2.126.309a1 1 0 0 1 .554 1.706l-1.539 1.5.364 2.118a1 1 0 0 1-1.451 1.054L8 10.347l-1.902.999a1 1 0 0 1-1.451-1.054l.364-2.118-1.539-1.5a1 1 0 0 1 .554-1.706l2.126-.309.951-1.927a1 1 0 0 1 1.792 0Z" />
+                      </svg>
+                      我的工作空间
+                    </Link>
+                    <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 dark:bg-gray-800 dark:text-gray-300">
+                      {platformNames[filter]}
+                    </div>
                   </div>
                 </div>
 
@@ -278,6 +287,9 @@ export default function RepositoriesPage() {
                   <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-gray-800">
                     活跃语言 {repositoryInsights.languageCount}
                   </span>
+                  <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                    收藏 {repositoryInsights.favoriteCount}
+                  </span>
                   {searchKeyword.trim() ? (
                     <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
                       搜索命中 {repositoryInsights.visible}
@@ -298,7 +310,7 @@ export default function RepositoriesPage() {
         </Card>
       ) : filteredRepositories.length > 0 ? (
         <>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">
                 Repository View
@@ -307,22 +319,17 @@ export default function RepositoriesPage() {
                 当前展示 {filteredRepositories.length} 个仓库
               </h2>
             </div>
-            <div className="text-sm text-slate-500 dark:text-gray-400">
-              每个仓库卡片固定为「身份信息 / 关键状态 / 指标与入口」三段，避免信息块高度错位。
-            </div>
           </div>
 
           <div className="space-y-4">
             {filteredRepositories.map((repo) => {
               const theme = platformThemes[repo.platform];
               const lastCommitText = formatDateTime(repo.lastCommitAt);
-              const lastSyncedText = formatDateTime(repo.lastSyncedAt);
 
               const metrics = [
                 { label: 'Stars', value: formatCount(repo.stars) },
                 { label: 'Forks', value: formatCount(repo.forks) },
                 { label: 'PR 数', value: formatCount(repo.pullRequests) },
-                { label: '最近同步', value: formatShortDate(repo.lastSyncedAt) },
               ];
 
               return (
@@ -350,6 +357,11 @@ export default function RepositoriesPage() {
                               <Badge variant={repo.watchEnabled ? 'info' : 'default'} size="sm">
                                 {repo.watchEnabled ? 'Watch 已开启' : 'Watch 未开启'}
                               </Badge>
+                              {repo.favorite ? (
+                                <Badge variant="warning" size="sm">
+                                  已收藏
+                                </Badge>
+                              ) : null}
                               {typeof repo.active === 'boolean' ? (
                                 <Badge variant={repo.active ? 'success' : 'default'} size="sm">
                                   {repo.active ? '启用中' : '已停用'}
@@ -430,6 +442,30 @@ export default function RepositoriesPage() {
                           <div className="flex flex-row gap-2 xl:flex-col xl:items-end">
                             <button
                               type="button"
+                              onClick={() => void handleToggleFavorite(repo)}
+                              disabled={updatingFavoriteId === repo.id}
+                              className={[
+                                'inline-flex items-center justify-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-all',
+                                repo.favorite
+                                  ? 'border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:border-amber-800 dark:hover:bg-amber-950/70'
+                                  : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-600 dark:hover:bg-gray-800',
+                                updatingFavoriteId === repo.id ? 'cursor-wait opacity-70' : '',
+                              ].join(' ')}
+                            >
+                              {updatingFavoriteId === repo.id ? (
+                                <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                                </svg>
+                              ) : (
+                                <svg className="h-4 w-4" fill={repo.favorite ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m11.049 2.927.95 1.927a1 1 0 00.753.548l2.126.309a1 1 0 01.554 1.706l-1.538 1.499a1 1 0 00-.287.886l.363 2.118a1 1 0 01-1.45 1.054l-1.902-.999a1 1 0 00-.93 0l-1.902.999a1 1 0 01-1.45-1.054l.363-2.118a1 1 0 00-.287-.886L2.57 7.417a1 1 0 01.554-1.706l2.126-.309a1 1 0 00.753-.548l.95-1.927a1 1 0 011.793 0z" />
+                                </svg>
+                              )}
+                              {repo.favorite ? '取消收藏' : '加入收藏'}
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => void handleToggleWatch(repo)}
                               disabled={updatingWatchId === repo.id}
                               className={[
@@ -452,18 +488,6 @@ export default function RepositoriesPage() {
                               )}
                               {repo.watchEnabled ? '关闭 Watch' : '开启 Watch'}
                             </button>
-                            <Link
-                              href={`/dashboard/repositories/${repo.id}`}
-                              className="inline-flex items-center justify-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
-                            >
-                              查看 PR 列表
-                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
-                            </Link>
-                            <div className="rounded-full border border-slate-200 bg-white/80 px-3 py-2 text-xs text-slate-500 shadow-sm dark:border-gray-800 dark:bg-gray-950/70 dark:text-gray-400">
-                              {lastSyncedText ? `上次同步 ${lastSyncedText}` : '尚未记录同步时间'}
-                            </div>
                           </div>
                         </div>
                       </div>

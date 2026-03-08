@@ -16,6 +16,9 @@ const reviewTriggerServiceMock = {
 };
 
 const listPullRequestsMock = jest.fn();
+const createPlatformClientMock = jest.fn(() => ({
+  listPullRequests: listPullRequestsMock,
+}));
 
 const loggerMock = {
   info: jest.fn(),
@@ -39,9 +42,7 @@ jest.mock('./ReviewTriggerService', () => ({
 }));
 
 jest.mock('../platform/client', () => ({
-  createPlatformClient: jest.fn(() => ({
-    listPullRequests: listPullRequestsMock,
-  })),
+  createPlatformClient: createPlatformClientMock,
 }));
 
 jest.mock('../utils/logger', () => ({
@@ -114,6 +115,62 @@ describe('RepositoryWatchService', () => {
     );
     expect(loggerMock.info).toHaveBeenCalledWith(
       expect.stringContaining('open PR=2，新入队=1，失败=1')
+    );
+  });
+
+  it('forces token refresh and retries when listing pull requests returns 401', async () => {
+    oauthInstallationServiceMock.ensureValidAccessToken
+      .mockResolvedValueOnce({
+        ...installation,
+        access_token: 'stale-token',
+      })
+      .mockResolvedValueOnce({
+        ...installation,
+        access_token: 'fresh-token',
+      });
+
+    listPullRequestsMock
+      .mockRejectedValueOnce(new Error('GET https://api.github.com/repos/mars167/CodaGraph-lite/pulls?page=1&per_page=50&state=open 失败: 401 Unauthorized'))
+      .mockResolvedValueOnce([{ number: 1 }]);
+    reviewTriggerServiceMock.triggerForRepository.mockResolvedValue({ created: true });
+
+    const service = new RepositoryWatchService();
+
+    await (service as any).processRepository(repository);
+
+    expect(oauthInstallationServiceMock.ensureValidAccessToken).toHaveBeenNthCalledWith(1, installation);
+    expect(oauthInstallationServiceMock.ensureValidAccessToken).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        access_token: 'stale-token',
+      }),
+      true
+    );
+    expect(listPullRequestsMock).toHaveBeenCalledTimes(2);
+    expect(createPlatformClientMock).toHaveBeenNthCalledWith(
+      1,
+      'github',
+      'stale-token',
+      expect.objectContaining({
+        authType: 'github_app',
+        githubAppInstallationId: '123',
+      })
+    );
+    expect(createPlatformClientMock).toHaveBeenNthCalledWith(
+      2,
+      'github',
+      'fresh-token',
+      expect.objectContaining({
+        authType: 'github_app',
+        githubAppInstallationId: '123',
+      })
+    );
+    expect(reviewTriggerServiceMock.triggerForRepository).toHaveBeenCalledWith(
+      repository,
+      1,
+      expect.objectContaining({
+        source: 'watch',
+      })
     );
   });
 });

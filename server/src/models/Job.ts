@@ -5,6 +5,8 @@
  */
 
 import { getConnection } from '../database/connection';
+import { sanitizeSensitiveText } from '../utils/redactSensitive';
+import { LOCAL_DB_NOW_SQL } from '../utils/time';
 import type {
   Job,
   JobPayload,
@@ -140,8 +142,8 @@ export class JobModel {
    */
   create(type: JobType, payload: JobPayload, priority = 5): Job {
     const result = this.db.execute(
-      `INSERT INTO jobs (type, payload, priority)
-       VALUES (?, ?, ?)`,
+      `INSERT INTO jobs (type, payload, priority, created_at, updated_at)
+       VALUES (?, ?, ?, ${LOCAL_DB_NOW_SQL}, ${LOCAL_DB_NOW_SQL})`,
       [type, JSON.stringify(payload), priority]
     );
 
@@ -165,11 +167,11 @@ export class JobModel {
 
       // 根据状态设置时间戳
       if (updates.status === 'processing') {
-        fields.push('started_at = CURRENT_TIMESTAMP');
+        fields.push(`started_at = ${LOCAL_DB_NOW_SQL}`);
       } else if (updates.status === 'completed') {
-        fields.push('completed_at = CURRENT_TIMESTAMP');
+        fields.push(`completed_at = ${LOCAL_DB_NOW_SQL}`);
       } else if (updates.status === 'failed' || updates.status === 'cancelled' || updates.status === 'dead') {
-        fields.push('failed_at = CURRENT_TIMESTAMP');
+        fields.push(`failed_at = ${LOCAL_DB_NOW_SQL}`);
         // 获取当前 attempts 并递增
         const currentJob = this.findById(id);
         const currentAttempts = currentJob?.attempts || 0;
@@ -183,14 +185,14 @@ export class JobModel {
 
     if (updates.error_message !== undefined) {
       fields.push('error_message = ?');
-      params.push(updates.error_message);
+      params.push(updates.error_message === null ? null : sanitizeSensitiveText(updates.error_message));
     }
 
     if (fields.length === 0) {
       return this.findById(id);
     }
 
-    fields.push('updated_at = CURRENT_TIMESTAMP');
+    fields.push(`updated_at = ${LOCAL_DB_NOW_SQL}`);
     params.push(id);
 
     const sql = `UPDATE jobs SET ${fields.join(', ')} WHERE id = ?`;
@@ -246,7 +248,7 @@ export class JobModel {
    */
   incrementAttempts(id: number): Job | null {
     const result = this.db.execute(
-      `UPDATE jobs SET attempts = attempts + 1, updated_at = CURRENT_TIMESTAMP
+      `UPDATE jobs SET attempts = attempts + 1, updated_at = ${LOCAL_DB_NOW_SQL}
        WHERE id = ?`,
       [id]
     );
@@ -353,7 +355,7 @@ export class JobModel {
       `UPDATE jobs
        SET status = 'pending',
            attempts = 0,
-           updated_at = CURRENT_TIMESTAMP
+           updated_at = ${LOCAL_DB_NOW_SQL}
        WHERE status = 'dead'
          AND attempts < ?`,
       [maxAttempts]

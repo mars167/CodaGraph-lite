@@ -5,6 +5,8 @@
  */
 
 import { getConnection } from '../database/connection';
+import { sanitizeSensitiveText } from '../utils/redactSensitive';
+import { LOCAL_DB_NOW_SQL } from '../utils/time';
 import type {
   AnalysisJob,
   AnalysisJobStage,
@@ -66,8 +68,8 @@ export class AnalysisJobModel {
    */
   create(analysisId: number | null, stage: AnalysisJobStage): AnalysisJob {
     const result = this.db.execute(
-      `INSERT INTO analysis_job (analysis_id, stage, status, progress, message)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO analysis_job (analysis_id, stage, status, progress, message, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ${LOCAL_DB_NOW_SQL}, ${LOCAL_DB_NOW_SQL})`,
       [analysisId, stage, 'pending', 0, '等待开始']
     );
 
@@ -87,15 +89,15 @@ export class AnalysisJobModel {
     const params: any[] = [status];
 
     if (status === 'processing') {
-      fields.push('started_at = CURRENT_TIMESTAMP');
+      fields.push(`started_at = ${LOCAL_DB_NOW_SQL}`);
     } else if (status === 'completed') {
-      fields.push('completed_at = CURRENT_TIMESTAMP');
+      fields.push(`completed_at = ${LOCAL_DB_NOW_SQL}`);
     } else if (status === 'failed') {
-      fields.push('failed_at = CURRENT_TIMESTAMP');
+      fields.push(`failed_at = ${LOCAL_DB_NOW_SQL}`);
     }
 
     const sql = `UPDATE analysis_job
-       SET status = ?, ${fields.join(', ')}
+       SET status = ?, ${fields.join(', ')}, updated_at = ${LOCAL_DB_NOW_SQL}
        WHERE id = ?`;
 
     this.db.execute(sql, [...params, id]);
@@ -116,11 +118,11 @@ export class AnalysisJobModel {
 
     if (message !== undefined) {
       fields.push('message = ?');
-      params.push(message);
+      params.push(sanitizeSensitiveText(message));
     }
 
     const sql = `UPDATE analysis_job
-       SET ${fields.join(', ')}
+       SET ${fields.join(', ')}, updated_at = ${LOCAL_DB_NOW_SQL}
        WHERE id = ?`;
 
     this.db.execute(sql, [...params, id]);
@@ -139,12 +141,12 @@ export class AnalysisJobModel {
    * 标记为完成
    */
   markComplete(id: number, progress = 1.0, message?: string): AnalysisJob | null {
-    const fields = ['progress = ?', 'status = ?', 'completed_at = CURRENT_TIMESTAMP'];
+    const fields = ['progress = ?', 'status = ?', `completed_at = ${LOCAL_DB_NOW_SQL}`, `updated_at = ${LOCAL_DB_NOW_SQL}`];
     const params: any[] = [progress, 'completed'];
 
     if (message !== undefined) {
       fields.push('message = ?');
-      params.push(message);
+      params.push(sanitizeSensitiveText(message));
     }
 
     const sql = `UPDATE analysis_job
@@ -163,10 +165,11 @@ export class AnalysisJobModel {
     const sql = `UPDATE analysis_job
        SET status = 'failed',
            error_message = ?,
-           failed_at = CURRENT_TIMESTAMP
+           failed_at = ${LOCAL_DB_NOW_SQL},
+           updated_at = ${LOCAL_DB_NOW_SQL}
        WHERE id = ?`;
 
-    this.db.execute(sql, [errorMessage, id]);
+    this.db.execute(sql, [sanitizeSensitiveText(errorMessage), id]);
 
     return this.findById(id);
   }

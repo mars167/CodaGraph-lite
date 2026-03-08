@@ -8,6 +8,7 @@ import { getJobLogModel } from '../models/JobLog';
 import { getAnalysisModel } from '../models/Analysis';
 import { getAnalysisJobModel } from '../models/AnalysisJob';
 import type { Job, JobType, QueueJobStatus } from '../models/types';
+import { normalizeApiTimestamp } from '../utils/time';
 
 type SortOrder = 'ASC' | 'DESC';
 
@@ -71,6 +72,26 @@ function enrichJob(job: Job) {
       ? payload.pr_title
       : analysis?.pr_title || null,
     trigger_source: typeof payload.trigger_source === 'string' ? payload.trigger_source : null,
+    created_at: normalizeApiTimestamp(job.created_at) || '',
+    started_at: normalizeApiTimestamp(job.started_at),
+    completed_at: normalizeApiTimestamp(job.completed_at),
+    failed_at: normalizeApiTimestamp(job.failed_at),
+    updated_at: normalizeApiTimestamp(job.updated_at) || normalizeApiTimestamp(job.created_at) || '',
+  };
+}
+
+function serializeAnalysis(analysis: ReturnType<typeof resolveJobAnalysis>) {
+  if (!analysis) {
+    return null;
+  }
+
+  return {
+    ...analysis,
+    created_at: normalizeApiTimestamp(analysis.created_at) || '',
+    started_at: normalizeApiTimestamp(analysis.started_at),
+    completed_at: normalizeApiTimestamp(analysis.completed_at),
+    failed_at: normalizeApiTimestamp(analysis.failed_at),
+    updated_at: normalizeApiTimestamp(analysis.updated_at) || normalizeApiTimestamp(analysis.created_at) || '',
   };
 }
 
@@ -272,7 +293,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       analysis = null;
     }
 
-    return res.json({ job, analysis });
+    return res.json({ job: enrichJob(job), analysis: serializeAnalysis(analysis) });
   } catch (error) {
     console.error('获取作业失败:', error);
     return res.status(500).json({
@@ -300,7 +321,10 @@ router.get('/:id/logs', async (req: Request, res: Response) => {
     const logs = getJobLogModel().findByJobId(jobId, Number.isNaN(limit) ? 200 : limit);
     return res.json({
       jobId,
-      logs: logs.reverse(),
+      logs: logs.reverse().map((log) => ({
+        ...log,
+        created_at: normalizeApiTimestamp(log.created_at) || '',
+      })),
     });
   } catch (error) {
     console.error('获取作业日志失败:', error);

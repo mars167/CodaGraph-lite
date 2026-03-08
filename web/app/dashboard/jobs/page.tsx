@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { formatDateTime } from '@/lib/datetime';
 import type { AnalysisJob } from '@/types';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -108,10 +109,7 @@ export default function JobsPage() {
 
   const totalPages = Math.ceil(total / pageSize);
 
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return '--';
-    return new Date(dateString).toLocaleString('zh-CN');
-  };
+  const formatDate = (dateString?: string) => formatDateTime(dateString);
 
   const formatDuration = (startedAt?: string, completedAt?: string) => {
     if (!startedAt || !completedAt) return '--';
@@ -241,9 +239,12 @@ export default function JobsPage() {
                         </div>
 
                         <div className="min-w-0">
-                          <p className="truncate text-lg font-semibold text-gray-900 dark:text-white">
+                          <Link
+                            href={`/dashboard/jobs/${job.id}`}
+                            className="block truncate text-lg font-semibold text-gray-900 transition-colors hover:text-blue-700 dark:text-white dark:hover:text-blue-300"
+                          >
                             Job #{job.id} · {getJobHeadline(job)}
-                          </p>
+                          </Link>
                           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                             {getJobMeta(job)}
                           </p>
@@ -268,12 +269,6 @@ export default function JobsPage() {
 
                       {job.status === 'pending' || job.status === 'processing' ? (
                         <div className="flex flex-col items-end gap-2">
-                          <Link
-                            href={`/dashboard/jobs/${job.id}`}
-                            className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                          >
-                            查看实时状态
-                          </Link>
                           <Button
                             variant="danger"
                             size="sm"
@@ -284,12 +279,6 @@ export default function JobsPage() {
                         </div>
                       ) : job.status === 'failed' || job.status === 'cancelled' || job.status === 'completed' ? (
                         <div className="flex flex-col items-end gap-2">
-                          <Link
-                            href={`/dashboard/jobs/${job.id}`}
-                            className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                          >
-                            查看实时状态
-                          </Link>
                           <Button
                             size="sm"
                             onClick={() => void handleRetry(job.id)}
@@ -297,14 +286,7 @@ export default function JobsPage() {
                             重试
                           </Button>
                         </div>
-                      ) : (
-                        <Link
-                          href={`/dashboard/jobs/${job.id}`}
-                          className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                        >
-                          查看实时状态
-                        </Link>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 ))}

@@ -3,6 +3,8 @@
  * 提供结构化日志记录功能
  */
 
+import { sanitizeSensitiveText, sanitizeUnknown } from './redactSensitive';
+
 export enum LogLevel {
   DEBUG = 0,
   INFO = 1,
@@ -39,7 +41,7 @@ class Logger {
 
   private formatMessage(level: string, message: string): string {
     const timestamp = new Date().toISOString();
-    return `[${timestamp}] [${this.prefix}] [${level}] ${message}`;
+    return `[${timestamp}] [${this.prefix}] [${level}] ${sanitizeSensitiveText(message)}`;
   }
 
   debug(message: string): void {
@@ -63,7 +65,7 @@ class Logger {
   error(message: string, error?: Error): void {
     if (this.level <= LogLevel.ERROR) {
       const errorMsg = error
-        ? `${message}\n${error.stack || error.message}`
+        ? `${message}\n${sanitizeUnknown(error)}`
         : message;
       console.error(this.formatMessage('ERROR', errorMsg));
     }

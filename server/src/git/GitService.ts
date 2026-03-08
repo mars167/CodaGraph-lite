@@ -7,6 +7,7 @@ import { spawn, ChildProcess } from 'child_process';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { logger } from '../utils/logger';
+import { formatCommandForLog, sanitizeSensitiveText } from '../utils/redactSensitive';
 
 export interface GitCloneOptions {
   depth?: number;
@@ -45,7 +46,7 @@ export class GitService {
 
     // 构造克隆 URL
     const cloneUrl = this.getCloneUrl(platform, owner, repo, token);
-    logger.debug(`克隆 URL: ${cloneUrl}`);
+    logger.debug(`克隆 URL: ${sanitizeSensitiveText(cloneUrl)}`);
 
     try {
       // 创建目录
@@ -103,6 +104,7 @@ export class GitService {
     env?: NodeJS.ProcessEnv
   ): Promise<string> {
     return new Promise((resolve, reject) => {
+      const commandForLog = formatCommandForLog('git', args);
       const childProcess: ChildProcess = spawn('git', args, {
         cwd: cwd || this.workspaceRoot,
         env: {
@@ -127,7 +129,11 @@ export class GitService {
         if (code === 0) {
           resolve(stdout);
         } else {
-          reject(new Error(`git ${operation} failed with code ${code}: ${stderr}`));
+          reject(
+            new Error(
+              `git ${operation} failed with code ${code}: ${commandForLog}\n${sanitizeSensitiveText(stderr)}`
+            )
+          );
         }
       });
     });

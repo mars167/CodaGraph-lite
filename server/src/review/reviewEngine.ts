@@ -4,6 +4,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { Platform } from '../models/types';
 import { logger } from '../utils/logger';
+import { formatCommandForLog, sanitizeSensitiveText } from '../utils/redactSensitive';
 import { annotateDiffWithLineNumbers, getChangedHeadLines, mapLineToInlineComment, type InlineCommentPosition } from './diffMapper';
 import { CodeContextRuntime } from './codeContextRuntime';
 import { ReviewLLMClient } from './llmClient';
@@ -444,14 +445,21 @@ export class AdvancedReviewEngine {
     args: string[],
     cwd?: string
   ): Promise<ShellResult> {
-    const result = await execFileAsync(command, args, {
-      cwd,
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    return {
-      stdout: result.stdout,
-      stderr: result.stderr,
-    };
+    try {
+      const result = await execFileAsync(command, args, {
+        cwd,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+      };
+    } catch (error) {
+      const execError = error as Error & { stderr?: string };
+      const commandForLog = formatCommandForLog(command, args);
+      const details = sanitizeSensitiveText(execError.stderr || execError.message);
+      throw new Error(`Command failed: ${commandForLog}${details ? `\n${details}` : ''}`);
+    }
   }
 
   private async cloneAndCheckout(input: AdvancedReviewInput, workspacePath: string): Promise<void> {

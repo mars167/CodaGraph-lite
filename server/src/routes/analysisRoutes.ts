@@ -8,9 +8,23 @@ import { getAnalysisJobModel } from '../models/AnalysisJob';
 import { getOAuthInstallationModel } from '../models/OAuthInstallation';
 import { getRepositoryModel } from '../models/Repository';
 import { getQueueService } from '../jobs/QueueService';
-import type { AnalysisStatus, Platform } from '../models/types';
+import type { Analysis, AnalysisStatus, Platform } from '../models/types';
 import { createPlatformClient } from '../platform/client';
 import type { ReviewFinding } from '../review/reviewEngine';
+import {
+  buildPullRequestKey,
+  buildPullRequestJobSummary,
+  buildRepositoryKey,
+  buildPullRequestUrl,
+  buildReportSummary,
+  compareDateDesc,
+  computeReviewProgress,
+  deriveRiskLevel,
+  getReviewStatus,
+  indexJobsByPullRequest,
+  pickMostRecentDate,
+} from '../review/pullRequestSummaries';
+import { normalizeApiTimestamp } from '../utils/time';
 import {
   buildReviewReportFileContexts,
   type ReviewReportPatchFile,
@@ -43,6 +57,171 @@ interface PlatformPullRequestFile {
   previous_filename?: string;
   patch?: string;
 }
+
+function serializeAnalysis(analysis: Analysis | null) {
+  if (!analysis) {
+    return null;
+  }
+
+  return {
+    ...analysis,
+    created_at: normalizeApiTimestamp(analysis.created_at) || '',
+    started_at: normalizeApiTimestamp(analysis.started_at),
+    completed_at: normalizeApiTimestamp(analysis.completed_at),
+    failed_at: normalizeApiTimestamp(analysis.failed_at),
+    updated_at: normalizeApiTimestamp(analysis.updated_at) || normalizeApiTimestamp(analysis.created_at) || '',
+  };
+}
+
+router.get('/pull-requests', async (req: Request, res: Response) => {
+  try {
+    const {
+      status,
+      platform,
+      page = '1',
+      limit = '20',
+    } = req.query as {
+      status?: AnalysisStatus;
+      platform?: Platform;
+      page?: string;
+      limit?: string;
+    };
+
+    const analysisModel = getAnalysisModel();
+    const repositoryModel = getRepositoryModel();
+    const jobModel = getQueueService().getJobModel();
+    const analyses = analysisModel.findAll({
+      limit: 1000,
+      sortBy: 'updated_at',
+      sortOrder: 'DESC',
+    });
+    const recentJobs = jobModel.findByType('pr_analysis', 1000);
+    const repositories = repositoryModel.findAll({
+      limit: 1000,
+      sortBy: 'updated_at',
+      sortOrder: 'DESC',
+    });
+
+    const analysisById = new Map(analyses.map((analysis) => [analysis.id, analysis]));
+    const repositoryByKey = new Map(
+      repositories.map((repository) => [
+        buildRepositoryKey(repository.platform, repository.owner, repository.name),
+        repository,
+      ])
+    );
+    const jobsByPr = indexJobsByPullRequest(recentJobs, analysisById);
+    const analysesByPr = new Map<string, {
+      target: {
+        platform: Platform;
+        owner: string;
+        repoName: string;
+        prNumber: number;
+      };
+      analyses: typeof analyses;
+    }>();
+
+    for (const analysis of analyses) {
+      const target = {
+        platform: analysis.platform,
+        owner: analysis.owner,
+        repoName: analysis.repo_name,
+        prNumber: analysis.pr_number,
+      };
+      const key = buildPullRequestKey(target);
+      const existing = analysesByPr.get(key);
+      if (existing) {
+        existing.analyses.push(analysis);
+        continue;
+      }
+
+      analysesByPr.set(key, { target, analyses: [analysis] });
+    }
+
+    const groups = Array.from(analysesByPr.values()).map(({ target, analyses: prAnalyses }) => {
+      const latestAnalysis = prAnalyses[0] || null;
+      const repository = repositoryByKey.get(
+        buildRepositoryKey(target.platform, target.owner, target.repoName)
+      ) || null;
+      const jobs = (jobsByPr.get(buildPullRequestKey(target)) || [])
+        .map((job) => buildPullRequestJobSummary(job, analysisById))
+        .sort((left, right) => compareDateDesc(left.updatedAt, right.updatedAt));
+      const latestJob = jobs[0] || null;
+      const risk = deriveRiskLevel(latestAnalysis);
+      const reports = prAnalyses
+        .filter((analysis) => analysis.status === 'completed' || analysis.status === 'failed' || analysis.status === 'cancelled')
+        .slice(0, 5)
+        .map(buildReportSummary);
+      const lastActivityAt = pickMostRecentDate([
+        latestJob?.updatedAt,
+        latestAnalysis?.updated_at ? String(latestAnalysis.updated_at) : null,
+        latestAnalysis?.completed_at ? String(latestAnalysis.completed_at) : null,
+        reports[0]?.completedAt ? String(reports[0].completedAt) : null,
+        reports[0]?.createdAt ? String(reports[0].createdAt) : null,
+      ]) || new Date(0).toISOString();
+
+      return {
+        repositoryId: repository?.id || null,
+        repositoryFullName: repository?.full_name || `${target.owner}/${target.repoName}`,
+        repositoryUrl: repository?.html_url || null,
+        repositoryWatchEnabled: Boolean(repository?.watch_enabled),
+        platform: target.platform,
+        owner: target.owner,
+        repoName: target.repoName,
+        prNumber: target.prNumber,
+        title: latestAnalysis?.pr_title || `PR #${target.prNumber}`,
+        author: latestAnalysis?.pr_author || 'unknown',
+        url: buildPullRequestUrl(target.platform, target.owner, target.repoName, target.prNumber),
+        reviewStatus: getReviewStatus(latestAnalysis, latestJob),
+        reviewProgress: computeReviewProgress(latestAnalysis, latestJob, null),
+        latestAnalysisId: latestAnalysis?.id || null,
+        latestReviewJobId: latestJob?.id || null,
+        latestReviewJobStatus: latestJob?.status || null,
+        latestReviewJobCreatedAt: latestJob?.createdAt || null,
+        lastReviewedAt: latestAnalysis?.completed_at ? String(latestAnalysis.completed_at) : latestAnalysis?.updated_at ? String(latestAnalysis.updated_at) : null,
+        latestRiskLevel: risk.level,
+        latestRiskSummary: risk.summary,
+        commentCount: latestAnalysis?.comment_count || 0,
+        issueCount: latestAnalysis?.issue_count || 0,
+        fileCount: latestAnalysis?.file_count || 0,
+        latestHeadCommit: latestJob?.headCommit || latestAnalysis?.head_commit || null,
+        lastActivityAt,
+        jobCount: jobs.length,
+        jobs,
+        reports,
+      };
+    });
+
+    const filtered = groups
+      .filter((group) => (platform ? group.platform === platform : true))
+      .filter((group) => (status ? group.reviewStatus === status : true))
+      .sort((left, right) => compareDateDesc(left.lastActivityAt, right.lastActivityAt));
+
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+    const safePage = Number.isNaN(pageNum) || pageNum < 1 ? 1 : pageNum;
+    const safeLimit = Math.min(Number.isNaN(limitNum) || limitNum < 1 ? 20 : limitNum, 100);
+    const offset = (safePage - 1) * safeLimit;
+
+    return res.json({
+      pullRequests: filtered.slice(offset, offset + safeLimit),
+      pagination: {
+        page: safePage,
+        limit: safeLimit,
+        total: filtered.length,
+        totalPages: Math.ceil(filtered.length / safeLimit),
+      },
+    });
+  } catch (error) {
+    console.error('获取 PR 维度分析历史失败:', error);
+    const response: { error: string; details?: string } = {
+      error: '内部服务器错误',
+    };
+    if (process.env.NODE_ENV === 'development') {
+      response.details = (error as Error).message;
+    }
+    return res.status(500).json(response);
+  }
+});
 
 function parseReportPayload(raw: string): StoredReviewReportPayload | null {
   try {
@@ -132,7 +311,7 @@ router.get('/', async (req: Request, res: Response) => {
     const offset = (pageNum - 1) * limitNum;
 
     return res.json({
-      analyses: filtered.slice(offset, offset + limitNum),
+      analyses: filtered.slice(offset, offset + limitNum).map((analysis) => serializeAnalysis(analysis)),
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -162,7 +341,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: '分析记录不存在' });
     }
 
-    return res.json({ analysis });
+    return res.json({ analysis: serializeAnalysis(analysis) });
   } catch (error) {
     console.error('获取分析详情失败:', error);
     return res.status(500).json({
@@ -207,7 +386,15 @@ router.get('/:id/report', async (req: Request, res: Response) => {
       };
     }
 
-    return res.json({ analysis, report });
+    return res.json({
+      analysis: serializeAnalysis(analysis),
+      report: report
+        ? {
+            ...report,
+            generatedAt: normalizeApiTimestamp(report.generatedAt) || report.generatedAt,
+          }
+        : report,
+    });
   } catch (error) {
     console.error('获取分析报告失败:', error);
     return res.status(500).json({
@@ -262,7 +449,7 @@ router.post('/:id/retry', async (req: Request, res: Response) => {
 
     return res.json({
       success: true,
-      analysis: analysisModel.findById(cloned.id),
+      analysis: serializeAnalysis(analysisModel.findById(cloned.id)),
       jobId: queueResult.id,
       message: '分析已重新加入队列',
     });

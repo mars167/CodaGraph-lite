@@ -20,8 +20,8 @@ CREATE TABLE IF NOT EXISTS oauth_installations (
   token_expires_at DATETIME,
   permissions TEXT,
   is_active INTEGER DEFAULT 1,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+  updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_oauth_installations_platform ON oauth_installations(platform);
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS oauth_authorize (
   state TEXT NOT NULL UNIQUE,
   redirect_uri TEXT NOT NULL,
   scope TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME DEFAULT (datetime('now', 'localtime')),
   expires_at DATETIME NOT NULL
 );
 
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
   access_token TEXT NOT NULL,
   token_type TEXT NOT NULL CHECK(token_type IN ('access', 'refresh', 'state')),
   expires_at DATETIME NOT NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_oauth_tokens_platform ON oauth_tokens(platform);

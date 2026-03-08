@@ -64,6 +64,8 @@ export interface Repository {
   webhookUrl?: string;
   lastSyncedAt?: string;
   watchEnabled?: boolean;
+  favorite?: boolean;
+  favoritedAt?: string;
   watchLastCheckedAt?: string;
   active?: boolean;
   stars?: number;
@@ -77,6 +79,21 @@ export interface Repository {
 export type PullRequestReviewStatus = 'not_started' | 'pending' | 'processing' | 'completed' | 'failed';
 export type PullRequestRiskLevel = 'low' | 'medium' | 'high' | 'critical' | 'unknown';
 
+export interface PullRequestReviewJob {
+  id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'dead';
+  triggerSource?: 'manual' | 'watch' | 'webhook' | 'unknown';
+  headCommit?: string;
+  shortHeadCommit?: string;
+  analysisId?: string;
+  errorMessage?: string;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  updatedAt: string;
+  report?: ReviewReportSummary;
+}
+
 export interface RepositoryPullRequest {
   prNumber: number;
   title: string;
@@ -89,7 +106,7 @@ export interface RepositoryPullRequest {
   reviewProgress: number;
   latestAnalysisId?: string;
   latestReviewJobId?: string;
-  latestReviewJobStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'dead';
+  latestReviewJobStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'dead';
   latestReviewJobCreatedAt?: string;
   lastReviewedAt?: string;
   latestRiskLevel: PullRequestRiskLevel;
@@ -99,6 +116,39 @@ export interface RepositoryPullRequest {
   fileCount: number;
   analysisJobStage?: string;
   analysisJobMessage?: string;
+  jobCount: number;
+  jobs: PullRequestReviewJob[];
+  reports: ReviewReportSummary[];
+}
+
+export interface PullRequestHistoryItem {
+  repositoryId?: string;
+  repositoryFullName: string;
+  repositoryUrl?: string;
+  repositoryWatchEnabled?: boolean;
+  platform: Platform;
+  owner: string;
+  repoName: string;
+  prNumber: number;
+  title: string;
+  author: string;
+  url: string;
+  reviewStatus: PullRequestReviewStatus;
+  reviewProgress: number;
+  latestAnalysisId?: string;
+  latestReviewJobId?: string;
+  latestReviewJobStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'dead';
+  latestReviewJobCreatedAt?: string;
+  lastReviewedAt?: string;
+  latestRiskLevel: PullRequestRiskLevel;
+  latestRiskSummary?: string;
+  commentCount: number;
+  issueCount: number;
+  fileCount: number;
+  latestHeadCommit?: string;
+  lastActivityAt: string;
+  jobCount: number;
+  jobs: PullRequestReviewJob[];
   reports: ReviewReportSummary[];
 }
 
@@ -341,6 +391,14 @@ export interface ResourceStats {
   jobsProcessed: number;
   jobsFailed: number;
   avgProcessingTime: number;
+  queue?: {
+    activeCount: number;
+    pendingCount: number;
+    total: number;
+  };
+  limits?: {
+    workerCount: number;
+  };
   currentMemory?: MemoryInfo;
   peakMemory?: number;
   llm?: {
