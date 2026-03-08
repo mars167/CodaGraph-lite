@@ -19,6 +19,7 @@
 
 - [项目简介](#项目简介)
 - [核心特性](#核心特性)
+- [页面预览](#页面预览)
 - [技术栈](#技术栈)
 - [2u2g 服务器适配](#2u2g-服务器适配)
 - [快速开始](#快速开始)
@@ -84,6 +85,35 @@ CodaGraph-lite 是 CodaGraph 的轻量级版本，专为个人开发者或小型
 - 仓库管理
 - 审查历史和作业状态监控
 - 实时内存和资源使用查看
+
+---
+
+## 页面预览
+
+以下截图来自本地运行中的真实页面，用于展示当前版本的后台界面和报告体验。
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/dashboard-overview.png" alt="系统概览仪表板" width="100%">
+      <p align="center"><strong>系统概览</strong><br>查看作业吞吐、LLM Token、资源状态和运行模型。</p>
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/dashboard-repositories.png" alt="仓库管理页面" width="100%">
+      <p align="center"><strong>仓库管理</strong><br>集中管理接入仓库、Watch 状态、Webhook 和下一步动作。</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/dashboard-workspace.png" alt="我的工作空间页面" width="100%">
+      <p align="center"><strong>我的工作空间</strong><br>按收藏仓库聚合日常关注对象，直接进入单仓库管理和 Watch 操作。</p>
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/dashboard-report-9219.png" alt="审查报告页面" width="100%">
+      <p align="center"><strong>Review 报告</strong><br>渲染 Markdown 摘要、风险分布和 GitHub 风格的问题明细。</p>
+    </td>
+  </tr>
+</table>
 
 ---
 
