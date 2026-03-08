@@ -144,7 +144,7 @@ export default function RepositoryPullRequestsPage() {
       return '--';
     }
 
-    return date.toLocaleString('zh-CN', { hour12: false });
+    return date.toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' });
   };
 
   const formatCommit = (value?: string) => {

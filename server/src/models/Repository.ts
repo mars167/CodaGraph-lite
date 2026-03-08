@@ -5,6 +5,7 @@
  */
 
 import { getConnection } from '../database/connection';
+import { LOCAL_DB_NOW_SQL } from '../utils/time';
 import type {
   Repository,
   CreateRepositoryDTO,
@@ -150,8 +151,8 @@ export class RepositoryModel {
         platform, remote_id, owner, name, full_name, description,
         is_private, language, stars_count, forks_count, default_branch,
         html_url, installation_id, webhook_id, webhook_secret, webhook_url,
-        is_active, watch_enabled, last_synced_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        is_active, watch_enabled, last_synced_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${LOCAL_DB_NOW_SQL}, ${LOCAL_DB_NOW_SQL})`,
       [
         dto.platform,
         toNullableText(dto.remote_id),
@@ -309,7 +310,7 @@ export class RepositoryModel {
       return this.findById(id);
     }
 
-    fields.push('updated_at = CURRENT_TIMESTAMP');
+    fields.push(`updated_at = ${LOCAL_DB_NOW_SQL}`);
     params.push(id);
 
     const sql = `UPDATE repository SET ${fields.join(', ')} WHERE id = ?`;
@@ -353,7 +354,7 @@ export class RepositoryModel {
   updateLastAnalyzed(id: number, analyzedAt: Date): boolean {
     const result = this.db.execute(
       `UPDATE repository
-       SET last_analyzed_at = ?, updated_at = CURRENT_TIMESTAMP
+       SET last_analyzed_at = ?, updated_at = ${LOCAL_DB_NOW_SQL}
        WHERE id = ?`,
       [toISOString(analyzedAt), id]
     );
@@ -427,7 +428,7 @@ export class RepositoryModel {
     if (activeFullNames.length === 0) {
       const result = this.db.execute(
         `UPDATE repository
-         SET is_active = 0, updated_at = CURRENT_TIMESTAMP
+         SET is_active = 0, updated_at = ${LOCAL_DB_NOW_SQL}
          WHERE installation_id = ? AND is_active = 1`,
         [installationId]
       );
@@ -438,7 +439,7 @@ export class RepositoryModel {
     const placeholders = activeFullNames.map(() => '?').join(', ');
     const result = this.db.execute(
       `UPDATE repository
-       SET is_active = 0, updated_at = CURRENT_TIMESTAMP
+       SET is_active = 0, updated_at = ${LOCAL_DB_NOW_SQL}
        WHERE installation_id = ?
          AND is_active = 1
          AND full_name NOT IN (${placeholders})`,

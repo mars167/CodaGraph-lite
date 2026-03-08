@@ -1,4 +1,5 @@
 import type { Analysis, Job, ReviewReportSummary, JobPayload, Platform } from '../models/types';
+import { normalizeApiTimestamp } from '../utils/time';
 
 export type ReviewRiskLevel = 'low' | 'medium' | 'high' | 'critical' | 'unknown';
 
@@ -58,11 +59,12 @@ function parsePlatform(value: unknown): Platform | undefined {
 }
 
 function toValidTimestamp(value?: string | null): number {
-  if (!value) {
+  const normalized = normalizeApiTimestamp(value);
+  if (!normalized) {
     return 0;
   }
 
-  const timestamp = new Date(value).getTime();
+  const timestamp = new Date(normalized).getTime();
   return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
@@ -199,8 +201,8 @@ export function buildReportSummary(analysis: Analysis): ReviewReportSummary {
     issueCount: analysis.issue_count,
     commentCount: analysis.comment_count,
     fileCount: analysis.file_count,
-    createdAt: analysis.created_at,
-    completedAt: analysis.completed_at || null,
+    createdAt: normalizeApiTimestamp(analysis.created_at) || '',
+    completedAt: normalizeApiTimestamp(analysis.completed_at) || null,
   };
 }
 
@@ -351,10 +353,10 @@ export function buildPullRequestJobSummary(
   return {
     id: job.id,
     status: job.status,
-    createdAt: normalizeString(job.created_at) || '',
-    startedAt: normalizeString(job.started_at),
-    completedAt: normalizeString(job.completed_at),
-    updatedAt: normalizeString(job.updated_at) || normalizeString(job.created_at) || '',
+    createdAt: normalizeApiTimestamp(job.created_at) || '',
+    startedAt: normalizeApiTimestamp(job.started_at),
+    completedAt: normalizeApiTimestamp(job.completed_at),
+    updatedAt: normalizeApiTimestamp(job.updated_at) || normalizeApiTimestamp(job.created_at) || '',
     triggerSource: payload.triggerSource || 'unknown',
     headCommit,
     shortHeadCommit: headCommit ? headCommit.slice(0, 8) : null,
@@ -371,7 +373,9 @@ export function compareDateDesc(left?: string | null, right?: string | null): nu
 }
 
 export function pickMostRecentDate(values: Array<string | null | undefined>): string | null {
-  return values
+  const latest = values
     .filter((value): value is string => typeof value === 'string' && toValidTimestamp(value) > 0)
     .sort(compareDateDesc)[0] || null;
+
+  return normalizeApiTimestamp(latest);
 }

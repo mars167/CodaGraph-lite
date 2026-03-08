@@ -17,6 +17,7 @@ import {
 import { getQueueService } from '../jobs/QueueService';
 import { getOAuthInstallationService } from './OAuthInstallationService';
 import { isAuthenticationFailure } from '../utils/authFailures';
+import { sanitizeLogText } from '../utils/redactSensitive';
 import {
   AdvancedReviewEngine,
   type ReviewFileInput,
@@ -37,19 +38,6 @@ class ReviewCancelledError extends Error {
     super(message);
     this.name = 'ReviewCancelledError';
   }
-}
-
-function truncate(value: string, maxLength = 220): string {
-  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
-}
-
-function sanitizeLogText(value: string): string {
-  return truncate(
-    value
-      .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]')
-      .replace(/("?(token|secret|password|authorization|api[_-]?key)"?\s*[:=]\s*"?)[^",\s]+/gi, '$1[REDACTED]')
-      .replace(/[A-Fa-f0-9]{32,}/g, '[REDACTED_HASH]')
-  );
 }
 
 function severityWeight(severity: ReviewFinding['severity']): number {

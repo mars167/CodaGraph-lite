@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as echarts from 'echarts';
+import type { EChartsOption } from 'echarts';
 import { apiClient } from '@/lib/api-client';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -23,6 +25,8 @@ type LlmMetricKey =
   | 'llmTotalTokens'
   | 'llmFailedRequests';
 
+type TrendWindowKey = '10m' | '30m' | '120m';
+
 type TrendSnapshot = {
   timestamp: number;
   jobsProcessed: number;
@@ -38,7 +42,7 @@ type TrendSnapshot = {
 };
 
 const TREND_HISTORY_STORAGE_KEY = 'codagraph.dashboard.trend-history';
-const MAX_TREND_POINTS = 24;
+const MAX_TREND_POINTS = 240;
 
 function formatMemory(bytes: number) {
   const mb = bytes / (1024 * 1024);
@@ -61,7 +65,20 @@ function formatClock(timestamp?: number | null) {
     return '--:--:--';
   }
 
-  return new Date(timestamp).toLocaleTimeString('zh-CN', { hour12: false });
+  return new Date(timestamp).toLocaleTimeString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' });
+}
+
+function formatClockMinute(timestamp?: number | null) {
+  if (!timestamp) {
+    return '--:--';
+  }
+
+  return new Date(timestamp).toLocaleTimeString('zh-CN', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Asia/Shanghai',
+  });
 }
 
 function readStoredTrendHistory(): TrendSnapshot[] {
@@ -147,36 +164,88 @@ function mergeTrendHistory(history: TrendSnapshot[], snapshot: TrendSnapshot): T
   return next.slice(-MAX_TREND_POINTS);
 }
 
-function buildTrendSeries(values: number[]) {
+function buildSeriesStats(values: number[]) {
   if (values.length === 0) {
     return {
       hasData: false,
-      points: '',
       min: 0,
       max: 0,
       latest: 0,
     };
   }
 
-  const chartValues = values.length === 1 ? [values[0], values[0]] : values;
-  const min = Math.min(...chartValues);
-  const max = Math.max(...chartValues);
-  const range = max - min;
-  const padding = 4;
-  const points = chartValues.map((value, index) => {
-    const normalized = range === 0 ? 0.5 : (value - min) / range;
-    const x = padding + (index / Math.max(chartValues.length - 1, 1)) * (100 - padding * 2);
-    const y = (100 - padding) - normalized * (100 - padding * 2);
-    return `${x},${y}`;
-  }).join(' ');
-
   return {
     hasData: true,
-    points,
-    min,
-    max,
+    min: Math.min(...values),
+    max: Math.max(...values),
     latest: values[values.length - 1] ?? 0,
   };
+}
+
+function formatTrendValue(value: number, withDecimal: boolean, unit?: string) {
+  const normalized = withDecimal ? value.toFixed(1) : value.toLocaleString('zh-CN');
+  return `${normalized}${unit || ''}`;
+}
+
+function buildThroughputValues(history: TrendSnapshot[], metric: ThroughputMetricKey): number[] {
+  if (history.length === 0) {
+    return [];
+  }
+
+  if (metric !== 'jobsProcessed' && metric !== 'jobsFailed') {
+    return history.map((item) => item[metric]);
+  }
+
+  return history.map((item, index) => {
+    if (index === 0) {
+      return 0;
+    }
+
+    const prev = history[index - 1];
+    const delta = Math.max(item[metric] - prev[metric], 0);
+    const elapsedMs = Math.max(item.timestamp - prev.timestamp, 30_000);
+    return delta / (elapsedMs / 60_000);
+  });
+}
+
+function EChartLine({
+  option,
+  heightClassName = 'h-56',
+}: {
+  option: EChartsOption;
+  heightClassName?: string;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const chartInstanceRef = useRef<echarts.ECharts | null>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const instance = echarts.getInstanceByDom(container) || echarts.init(container, undefined, { renderer: 'svg' });
+    chartInstanceRef.current = instance;
+    instance.setOption(option, true);
+
+    const handleResize = () => {
+      instance.resize();
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [option]);
+
+  useEffect(() => {
+    return () => {
+      chartInstanceRef.current?.dispose();
+      chartInstanceRef.current = null;
+    };
+  }, []);
+
+  return <div ref={containerRef} className={`w-full ${heightClassName}`} />;
 }
 
 export default function DashboardPage() {
@@ -189,6 +258,8 @@ export default function DashboardPage() {
   const [resourceStats, setResourceStats] = useState<ResourceStats | null>(null);
   const [activeTrendMetric, setActiveTrendMetric] = useState<ThroughputMetricKey>('jobsProcessed');
   const [activeLlmTrendMetric, setActiveLlmTrendMetric] = useState<LlmMetricKey>('llmTotalTokens');
+  const [activeTrendWindow, setActiveTrendWindow] = useState<TrendWindowKey>('30m');
+  const [activeLlmTrendWindow, setActiveLlmTrendWindow] = useState<TrendWindowKey>('30m');
   const [trendHistory, setTrendHistory] = useState<TrendSnapshot[]>([]);
 
   useEffect(() => {
@@ -383,14 +454,180 @@ export default function DashboardPage() {
 
   const activeMetricMeta = throughputMetrics.find((item) => item.key === activeTrendMetric) || throughputMetrics[0];
   const activeLlmMetricMeta = llmMetrics.find((item) => item.key === activeLlmTrendMetric) || llmMetrics[0];
-  const throughputSeries = useMemo(
-    () => buildTrendSeries(trendHistory.map((item) => item[activeTrendMetric])),
-    [activeTrendMetric, trendHistory]
+  const trendWindows: Array<{ key: TrendWindowKey; label: string; minutes: number }> = [
+    { key: '10m', label: '10 分钟', minutes: 10 },
+    { key: '30m', label: '30 分钟', minutes: 30 },
+    { key: '120m', label: '2 小时', minutes: 120 },
+  ];
+  const activeTrendWindowMeta = trendWindows.find((item) => item.key === activeTrendWindow) || trendWindows[1];
+  const activeLlmTrendWindowMeta = trendWindows.find((item) => item.key === activeLlmTrendWindow) || trendWindows[1];
+  const throughputTrendHistory = useMemo(() => {
+    if (trendHistory.length === 0) {
+      return [];
+    }
+    const latestTimestamp = trendHistory[trendHistory.length - 1]?.timestamp || Date.now();
+    const windowStart = latestTimestamp - (activeTrendWindowMeta.minutes * 60 * 1000);
+    const filtered = trendHistory.filter((item) => item.timestamp >= windowStart);
+    return filtered.length > 0 ? filtered : trendHistory.slice(-1);
+  }, [activeTrendWindowMeta.minutes, trendHistory]);
+  const llmTrendHistory = useMemo(() => {
+    if (trendHistory.length === 0) {
+      return [];
+    }
+    const latestTimestamp = trendHistory[trendHistory.length - 1]?.timestamp || Date.now();
+    const windowStart = latestTimestamp - (activeLlmTrendWindowMeta.minutes * 60 * 1000);
+    const filtered = trendHistory.filter((item) => item.timestamp >= windowStart);
+    return filtered.length > 0 ? filtered : trendHistory.slice(-1);
+  }, [activeLlmTrendWindowMeta.minutes, trendHistory]);
+  const throughputValues = useMemo(
+    () => buildThroughputValues(throughputTrendHistory, activeTrendMetric),
+    [activeTrendMetric, throughputTrendHistory]
   );
-  const llmSeries = useMemo(
-    () => buildTrendSeries(trendHistory.map((item) => item[activeLlmTrendMetric])),
-    [activeLlmTrendMetric, trendHistory]
+  const llmValues = useMemo(
+    () => llmTrendHistory.map((item) => item[activeLlmTrendMetric]),
+    [activeLlmTrendMetric, llmTrendHistory]
   );
+  const throughputStats = useMemo(
+    () => buildSeriesStats(throughputValues),
+    [throughputValues]
+  );
+  const llmStatsSeries = useMemo(
+    () => buildSeriesStats(llmValues),
+    [llmValues]
+  );
+  const isRateMetric = activeTrendMetric === 'jobsProcessed' || activeTrendMetric === 'jobsFailed';
+  const throughputDisplayLabel = activeTrendMetric === 'jobsProcessed'
+    ? '已处理作业速率'
+    : activeTrendMetric === 'jobsFailed'
+      ? '失败作业速率'
+      : activeMetricMeta.label;
+  const throughputDisplayUnit = activeTrendMetric === 'avgProcessingTime'
+    ? activeMetricMeta.unit || 's'
+    : isRateMetric
+      ? '个/分钟'
+      : activeMetricMeta.unit || '';
+  const throughputNeedDecimal = activeTrendMetric === 'avgProcessingTime' || isRateMetric;
+  const throughputOption = useMemo<EChartsOption>(() => {
+    const valueFormatter = (value: number) => (throughputNeedDecimal ? Number(value).toFixed(1) : Number(value).toLocaleString('zh-CN'));
+    return {
+      animationDuration: 360,
+      grid: { left: 44, right: 18, top: 18, bottom: 34 },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'line' },
+        backgroundColor: '#0f172a',
+        borderColor: '#1e293b',
+        textStyle: { color: '#e2e8f0' },
+        formatter: (params: unknown) => {
+          const first = Array.isArray(params) ? params[0] : params;
+          const dataIndex = typeof first === 'object' && first && 'dataIndex' in first ? Number((first as { dataIndex: number }).dataIndex) : 0;
+          const value = typeof first === 'object' && first && 'value' in first ? Number((first as { value: number }).value) : 0;
+          const timestamp = throughputTrendHistory[dataIndex]?.timestamp;
+          return `${formatClock(timestamp)}<br/>${throughputDisplayLabel}：${valueFormatter(value)}${throughputDisplayUnit}`;
+        },
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: throughputTrendHistory.map((item) => formatClockMinute(item.timestamp)),
+        axisLine: { lineStyle: { color: '#94a3b8' } },
+        axisTick: { show: false },
+        axisLabel: { color: '#64748b' },
+      },
+      yAxis: {
+        type: 'value',
+        name: throughputDisplayUnit ? `单位 ${throughputDisplayUnit}` : '数值',
+        nameTextStyle: { color: '#64748b', fontSize: 11, padding: [0, 0, 0, 8] },
+        splitLine: { lineStyle: { color: '#e2e8f0', type: 'dashed' } },
+        axisLabel: {
+          color: '#64748b',
+          formatter: (value: number) => `${valueFormatter(value)}${throughputDisplayUnit}`,
+        },
+      },
+      series: [
+        {
+          type: 'line',
+          smooth: true,
+          showSymbol: false,
+          data: throughputValues,
+          lineStyle: { width: 3, color: '#06b6d4' },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: 'rgba(6,182,212,0.35)' },
+                { offset: 1, color: 'rgba(6,182,212,0.02)' },
+              ],
+            },
+          },
+        },
+      ],
+    };
+  }, [throughputNeedDecimal, throughputTrendHistory, throughputValues, throughputDisplayLabel, throughputDisplayUnit]);
+  const llmOption = useMemo<EChartsOption>(() => {
+    return {
+      animationDuration: 360,
+      grid: { left: 52, right: 18, top: 18, bottom: 34 },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'line' },
+        backgroundColor: '#0f172a',
+        borderColor: '#1e293b',
+        textStyle: { color: '#e2e8f0' },
+        formatter: (params: unknown) => {
+          const first = Array.isArray(params) ? params[0] : params;
+          const dataIndex = typeof first === 'object' && first && 'dataIndex' in first ? Number((first as { dataIndex: number }).dataIndex) : 0;
+          const value = typeof first === 'object' && first && 'value' in first ? Number((first as { value: number }).value) : 0;
+          const timestamp = llmTrendHistory[dataIndex]?.timestamp;
+          return `${formatClock(timestamp)}<br/>${activeLlmMetricMeta.label}：${value.toLocaleString('zh-CN')}`;
+        },
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: llmTrendHistory.map((item) => formatClockMinute(item.timestamp)),
+        axisLine: { lineStyle: { color: '#94a3b8' } },
+        axisTick: { show: false },
+        axisLabel: { color: '#64748b' },
+      },
+      yAxis: {
+        type: 'value',
+        name: 'Token',
+        nameTextStyle: { color: '#64748b', fontSize: 11, padding: [0, 0, 0, 8] },
+        splitLine: { lineStyle: { color: '#e2e8f0', type: 'dashed' } },
+        axisLabel: {
+          color: '#64748b',
+          formatter: (value: number) => Number(value).toLocaleString('zh-CN'),
+        },
+      },
+      series: [
+        {
+          type: 'line',
+          smooth: true,
+          showSymbol: false,
+          data: llmValues,
+          lineStyle: { width: 3, color: '#8b5cf6' },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: 'rgba(139,92,246,0.35)' },
+                { offset: 1, color: 'rgba(139,92,246,0.02)' },
+              ],
+            },
+          },
+        },
+      ],
+    };
+  }, [activeLlmMetricMeta.label, llmTrendHistory, llmValues]);
 
   if (isInitialLoading) {
     return <Loading />;
@@ -582,31 +819,43 @@ export default function DashboardPage() {
               ))}
             </div>
             <div className="overflow-hidden rounded-3xl border border-gray-200/80 bg-white/80 p-4 dark:border-gray-800 dark:bg-gray-950/60">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                  {activeMetricMeta.label} 趋势（最近 {trendHistory.length || 1} 次采样）
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  最新值 {activeTrendMetric === 'avgProcessingTime' ? throughputSeries.latest.toFixed(1) : throughputSeries.latest}{activeMetricMeta.unit || ''} · {formatClock(lastUpdatedAt)}
-                </p>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                    {throughputDisplayLabel} 趋势
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    周期 {activeTrendWindowMeta.label} · 样本 {throughputTrendHistory.length} 条 · 北京时间{isRateMetric ? ' · 由累计值换算为每分钟增量' : ''}
+                  </p>
+                </div>
+                <div className="inline-flex items-center rounded-full bg-slate-100 p-1 dark:bg-slate-900">
+                  {trendWindows.map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => setActiveTrendWindow(option.key)}
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                        activeTrendWindow === option.key
+                          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
+                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              {throughputSeries.hasData ? (
-                <div className="h-52 overflow-hidden">
-                  <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="block h-full w-full">
-                    <polyline
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.4"
-                      className="text-cyan-500"
-                      points={throughputSeries.points}
-                    />
-                  </svg>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
+              {throughputStats.hasData ? (
+                <div className="space-y-3">
+                  <div className="overflow-hidden rounded-2xl border border-cyan-100 bg-gradient-to-b from-cyan-50/80 to-white p-2 dark:border-cyan-900/40 dark:from-cyan-950/40 dark:to-slate-950">
+                    <EChartLine option={throughputOption} />
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 text-xs text-gray-500 dark:text-gray-400 sm:grid-cols-2">
                     <span className="min-w-0 truncate">
-                      最小值 {activeTrendMetric === 'avgProcessingTime' ? throughputSeries.min.toFixed(1) : throughputSeries.min}{activeMetricMeta.unit || ''}
+                      最新值 {formatTrendValue(throughputStats.latest, throughputNeedDecimal, throughputDisplayUnit)} · 更新时间 {formatClock(lastUpdatedAt)}
                     </span>
-                    <span className="min-w-0 truncate text-right">
-                      最大值 {activeTrendMetric === 'avgProcessingTime' ? throughputSeries.max.toFixed(1) : throughputSeries.max}{activeMetricMeta.unit || ''}
+                    <span className="min-w-0 truncate sm:text-right">
+                      最小值 {formatTrendValue(throughputStats.min, throughputNeedDecimal, throughputDisplayUnit)} · 最大值 {formatTrendValue(throughputStats.max, throughputNeedDecimal, throughputDisplayUnit)}
                     </span>
                   </div>
                 </div>
@@ -644,28 +893,40 @@ export default function DashboardPage() {
               ))}
             </div>
             <div className="overflow-hidden rounded-3xl border border-gray-200/80 bg-white/80 p-4 dark:border-gray-800 dark:bg-gray-950/60">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                  {activeLlmMetricMeta.label} 趋势（最近 {trendHistory.length || 1} 次采样）
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  最新值 {formatTokenCount(llmSeries.latest)} · {formatClock(lastUpdatedAt)}
-                </p>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                    {activeLlmMetricMeta.label} 趋势
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    周期 {activeLlmTrendWindowMeta.label} · 样本 {llmTrendHistory.length} 条 · 北京时间
+                  </p>
+                </div>
+                <div className="inline-flex items-center rounded-full bg-slate-100 p-1 dark:bg-slate-900">
+                  {trendWindows.map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => setActiveLlmTrendWindow(option.key)}
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                        activeLlmTrendWindow === option.key
+                          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
+                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              {llmSeries.hasData ? (
-                <div className="h-52 overflow-hidden">
-                  <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="block h-full w-full">
-                    <polyline
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.4"
-                      className="text-violet-500"
-                      points={llmSeries.points}
-                    />
-                  </svg>
+              {llmStatsSeries.hasData ? (
+                <div className="space-y-3">
+                  <div className="overflow-hidden rounded-2xl border border-violet-100 bg-gradient-to-b from-violet-50/80 to-white p-2 dark:border-violet-900/40 dark:from-violet-950/40 dark:to-slate-950">
+                    <EChartLine option={llmOption} />
+                  </div>
                   <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
-                    <span className="min-w-0 truncate">最小值 {formatTokenCount(llmSeries.min)}</span>
-                    <span className="min-w-0 truncate text-right">最大值 {formatTokenCount(llmSeries.max)}</span>
+                    <span className="min-w-0 truncate">最新值 {formatTokenCount(llmStatsSeries.latest)} · {formatClock(lastUpdatedAt)}</span>
+                    <span className="min-w-0 truncate text-right">最小值 {formatTokenCount(llmStatsSeries.min)} · 最大值 {formatTokenCount(llmStatsSeries.max)}</span>
                   </div>
                 </div>
               ) : (

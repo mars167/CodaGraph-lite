@@ -5,6 +5,7 @@
  */
 
 import { getConnection } from '../database/index';
+import { LOCAL_DB_NOW_SQL } from '../utils/time';
 import type {
   Admin,
   CreateAdminDTO,
@@ -91,7 +92,7 @@ export class AdminModel {
       return this.findById(id);
     }
 
-    updates.push('updated_at = CURRENT_TIMESTAMP');
+    updates.push(`updated_at = ${LOCAL_DB_NOW_SQL}`);
     params.push(id);
 
     const sql = `UPDATE admin SET ${updates.join(', ')} WHERE id = ?`;
@@ -123,7 +124,7 @@ export class AdminModel {
    */
   updateLastLogin(id: number): boolean {
     const result = this.db.execute(
-      'UPDATE admin SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?',
+      `UPDATE admin SET last_login_at = ${LOCAL_DB_NOW_SQL} WHERE id = ?`,
       [id]
     );
 

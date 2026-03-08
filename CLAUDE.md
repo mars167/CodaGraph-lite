@@ -252,6 +252,13 @@ This project has agent team rules configured in `.claude/rules/teamwork.md`:
 - Test tasks → test-dev
 - Deployment tasks → devops-dev
 
+## Security Rules
+
+Follow `.claude/rules/SECURITY.md` for:
+- log and error redaction
+- handling authenticated Git URLs and tokens
+- command execution safety checks
+
 ## Key Files
 
 - `README.md` - Comprehensive project documentation

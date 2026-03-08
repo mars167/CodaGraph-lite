@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { formatDateTime } from '@/lib/datetime';
 import type { AnalysisJob } from '@/types';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -108,10 +109,7 @@ export default function JobsPage() {
 
   const totalPages = Math.ceil(total / pageSize);
 
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return '--';
-    return new Date(dateString).toLocaleString('zh-CN');
-  };
+  const formatDate = (dateString?: string) => formatDateTime(dateString);
 
   const formatDuration = (startedAt?: string, completedAt?: string) => {
     if (!startedAt || !completedAt) return '--';

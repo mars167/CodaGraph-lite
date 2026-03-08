@@ -1,4 +1,5 @@
 import { getConnection } from '../database/connection';
+import { LOCAL_DB_NOW_SQL } from '../utils/time';
 
 type AppSettingRow = {
   setting_key: string;
@@ -43,11 +44,11 @@ export class AppSettingModel {
 
   set(key: string, value: unknown): void {
     this.db.execute(
-      `INSERT INTO app_setting (setting_key, setting_value)
-       VALUES (?, ?)
+      `INSERT INTO app_setting (setting_key, setting_value, updated_at)
+       VALUES (?, ?, ${LOCAL_DB_NOW_SQL})
        ON CONFLICT(setting_key) DO UPDATE SET
          setting_value = excluded.setting_value,
-         updated_at = CURRENT_TIMESTAMP`,
+         updated_at = ${LOCAL_DB_NOW_SQL}`,
       [key, JSON.stringify(value)]
     );
   }

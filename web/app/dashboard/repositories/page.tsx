@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { formatOptionalDateTime } from '@/lib/datetime';
 import type { Repository, Platform } from '@/types';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Loading } from '@/components/ui/Loading';
@@ -46,16 +47,7 @@ const platformThemes: Record<Platform, {
 };
 
 function formatDateTime(value?: string) {
-  if (!value) {
-    return null;
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  return date.toLocaleString('zh-CN', { hour12: false });
+  return formatOptionalDateTime(value, { withSeconds: false });
 }
 
 function formatCount(value?: number) {

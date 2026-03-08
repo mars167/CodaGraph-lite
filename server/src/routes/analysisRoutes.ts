@@ -8,7 +8,7 @@ import { getAnalysisJobModel } from '../models/AnalysisJob';
 import { getOAuthInstallationModel } from '../models/OAuthInstallation';
 import { getRepositoryModel } from '../models/Repository';
 import { getQueueService } from '../jobs/QueueService';
-import type { AnalysisStatus, Platform } from '../models/types';
+import type { Analysis, AnalysisStatus, Platform } from '../models/types';
 import { createPlatformClient } from '../platform/client';
 import type { ReviewFinding } from '../review/reviewEngine';
 import {
@@ -24,6 +24,7 @@ import {
   indexJobsByPullRequest,
   pickMostRecentDate,
 } from '../review/pullRequestSummaries';
+import { normalizeApiTimestamp } from '../utils/time';
 import {
   buildReviewReportFileContexts,
   type ReviewReportPatchFile,
@@ -55,6 +56,21 @@ interface PlatformPullRequestFile {
   changes?: number;
   previous_filename?: string;
   patch?: string;
+}
+
+function serializeAnalysis(analysis: Analysis | null) {
+  if (!analysis) {
+    return null;
+  }
+
+  return {
+    ...analysis,
+    created_at: normalizeApiTimestamp(analysis.created_at) || '',
+    started_at: normalizeApiTimestamp(analysis.started_at),
+    completed_at: normalizeApiTimestamp(analysis.completed_at),
+    failed_at: normalizeApiTimestamp(analysis.failed_at),
+    updated_at: normalizeApiTimestamp(analysis.updated_at) || normalizeApiTimestamp(analysis.created_at) || '',
+  };
 }
 
 router.get('/pull-requests', async (req: Request, res: Response) => {
@@ -295,7 +311,7 @@ router.get('/', async (req: Request, res: Response) => {
     const offset = (pageNum - 1) * limitNum;
 
     return res.json({
-      analyses: filtered.slice(offset, offset + limitNum),
+      analyses: filtered.slice(offset, offset + limitNum).map((analysis) => serializeAnalysis(analysis)),
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -325,7 +341,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: '分析记录不存在' });
     }
 
-    return res.json({ analysis });
+    return res.json({ analysis: serializeAnalysis(analysis) });
   } catch (error) {
     console.error('获取分析详情失败:', error);
     return res.status(500).json({
@@ -370,7 +386,15 @@ router.get('/:id/report', async (req: Request, res: Response) => {
       };
     }
 
-    return res.json({ analysis, report });
+    return res.json({
+      analysis: serializeAnalysis(analysis),
+      report: report
+        ? {
+            ...report,
+            generatedAt: normalizeApiTimestamp(report.generatedAt) || report.generatedAt,
+          }
+        : report,
+    });
   } catch (error) {
     console.error('获取分析报告失败:', error);
     return res.status(500).json({
@@ -425,7 +449,7 @@ router.post('/:id/retry', async (req: Request, res: Response) => {
 
     return res.json({
       success: true,
-      analysis: analysisModel.findById(cloned.id),
+      analysis: serializeAnalysis(analysisModel.findById(cloned.id)),
       jobId: queueResult.id,
       message: '分析已重新加入队列',
     });

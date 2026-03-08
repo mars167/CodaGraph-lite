@@ -5,6 +5,8 @@
  */
 
 import { getConnection } from '../database/connection';
+import { sanitizeSensitiveText } from '../utils/redactSensitive';
+import { LOCAL_DB_NOW_SQL } from '../utils/time';
 import type {
   Analysis,
   CreateAnalysisDTO,
@@ -153,8 +155,9 @@ export class AnalysisModel {
       `INSERT INTO analysis (
         platform, owner, repo_name, pr_number,
         pr_title, pr_author, base_commit, head_commit,
-        status, analysis_result, comment_count, file_count, issue_count
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        status, analysis_result, comment_count, file_count, issue_count,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${LOCAL_DB_NOW_SQL}, ${LOCAL_DB_NOW_SQL})`,
       [
         dto.platform,
         dto.owner,
@@ -200,11 +203,11 @@ export class AnalysisModel {
 
       // 根据状态设置时间戳
       if (updates.status === 'processing') {
-        fields.push('started_at = CURRENT_TIMESTAMP');
+        fields.push(`started_at = ${LOCAL_DB_NOW_SQL}`);
       } else if (updates.status === 'completed') {
-        fields.push('completed_at = CURRENT_TIMESTAMP');
+        fields.push(`completed_at = ${LOCAL_DB_NOW_SQL}`);
       } else if (updates.status === 'failed' || updates.status === 'cancelled') {
-        fields.push('failed_at = CURRENT_TIMESTAMP');
+        fields.push(`failed_at = ${LOCAL_DB_NOW_SQL}`);
       }
 
       params.push(updates.status);
@@ -232,14 +235,14 @@ export class AnalysisModel {
 
     if (updates.error_message !== undefined) {
       fields.push('error_message = ?');
-      params.push(updates.error_message);
+      params.push(updates.error_message === null ? null : sanitizeSensitiveText(updates.error_message));
     }
 
     if (fields.length === 0) {
       return this.findById(id);
     }
 
-    fields.push('updated_at = CURRENT_TIMESTAMP');
+    fields.push(`updated_at = ${LOCAL_DB_NOW_SQL}`);
     params.push(id);
 
     const sql = `UPDATE analysis SET ${fields.join(', ')} WHERE id = ?`;

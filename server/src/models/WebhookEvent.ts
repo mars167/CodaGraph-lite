@@ -5,6 +5,7 @@
  */
 
 import { getConnection } from '../database/connection';
+import { sanitizeSensitiveText } from '../utils/redactSensitive';
 import type { WebhookEvent, Platform } from './types';
 
 export class WebhookEventModel {
@@ -111,7 +112,7 @@ export class WebhookEventModel {
 
     if (error !== undefined) {
       fields.push('processing_error = ?');
-      params.push(error);
+      params.push(error === null ? null : sanitizeSensitiveText(error));
     }
 
     const sql = `UPDATE webhook_event SET ${fields.join(', ')} WHERE id = ?`;

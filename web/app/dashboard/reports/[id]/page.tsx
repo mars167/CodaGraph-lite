@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { formatDateTime } from '@/lib/datetime';
 import type { ReviewFinding, ReviewReportCodeLine, ReviewReportDetail, ReviewReportFileContext } from '@/types';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -41,12 +42,7 @@ const lineToneMap: Record<ReviewReportCodeLine['type'], string> = {
   omitted: 'bg-slate-50/80 dark:bg-slate-900/80',
 };
 
-function formatDate(value?: string) {
-  if (!value) return '--';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '--';
-  return date.toLocaleString('zh-CN', { hour12: false });
-}
+const formatDate = (value?: string) => formatDateTime(value);
 
 function getFindingLineLabel(finding: ReviewFinding) {
   const resolved = finding.resolvedLineNumber || finding.lineNumber;

@@ -1,14 +1,17 @@
 import { getConnection } from '../database/connection';
+import { sanitizeSensitiveText } from '../utils/redactSensitive';
+import { LOCAL_DB_NOW_SQL } from '../utils/time';
 import type { JobLog } from './types';
 
 export class JobLogModel {
   private db = getConnection();
 
   create(jobId: number, level: JobLog['level'], message: string): JobLog {
+    const sanitizedMessage = sanitizeSensitiveText(message);
     const result = this.db.execute(
-      `INSERT INTO job_log (job_id, level, message)
-       VALUES (?, ?, ?)`,
-      [jobId, level, message]
+      `INSERT INTO job_log (job_id, level, message, created_at)
+       VALUES (?, ?, ?, ${LOCAL_DB_NOW_SQL})`,
+      [jobId, level, sanitizedMessage]
     );
 
     const created = this.findById(Number(result.lastInsertRowid));

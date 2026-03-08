@@ -20,6 +20,7 @@ import type {
   SystemSettings,
   SystemStatus,
 } from '@/types';
+import { normalizeTimestampInput } from '@/lib/datetime';
 
 // API 基础 URL
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:7900';
@@ -314,18 +315,18 @@ function mapRepository(item: RepositoryApiItem): Repository {
     language: item.language || undefined,
     htmlUrl: item.html_url || undefined,
     webhookUrl: item.webhook_url || undefined,
-    lastSyncedAt: item.last_synced_at || item.last_analyzed_at || undefined,
+    lastSyncedAt: normalizeTimestampInput(item.last_synced_at) || normalizeTimestampInput(item.last_analyzed_at) || undefined,
     watchEnabled: Boolean(item.watch_enabled),
     favorite: Boolean(item.is_favorite),
-    favoritedAt: item.favorited_at || undefined,
-    watchLastCheckedAt: item.watch_last_checked_at || undefined,
+    favoritedAt: normalizeTimestampInput(item.favorited_at) || undefined,
+    watchLastCheckedAt: normalizeTimestampInput(item.watch_last_checked_at) || undefined,
     active: item.is_active,
     stars: item.stars_count ?? 0,
     forks: item.forks_count ?? 0,
     pullRequests: item.pull_requests_count ?? item.pr_count ?? undefined,
-    lastCommitAt: item.last_commit_at || item.pushed_at || undefined,
-    createdAt: item.created_at,
-    updatedAt: item.updated_at,
+    lastCommitAt: normalizeTimestampInput(item.last_commit_at) || normalizeTimestampInput(item.pushed_at) || undefined,
+    createdAt: normalizeTimestampInput(item.created_at) || item.created_at,
+    updatedAt: normalizeTimestampInput(item.updated_at) || item.updated_at,
   };
 }
 
@@ -338,10 +339,10 @@ function mapPullRequestReviewJob(item: PullRequestReviewJobApiItem): PullRequest
     shortHeadCommit: item.shortHeadCommit || undefined,
     analysisId: item.analysisId ? String(item.analysisId) : undefined,
     errorMessage: item.errorMessage || undefined,
-    createdAt: item.createdAt,
-    startedAt: item.startedAt || undefined,
-    completedAt: item.completedAt || undefined,
-    updatedAt: item.updatedAt,
+    createdAt: normalizeTimestampInput(item.createdAt) || item.createdAt,
+    startedAt: normalizeTimestampInput(item.startedAt) || undefined,
+    completedAt: normalizeTimestampInput(item.completedAt) || undefined,
+    updatedAt: normalizeTimestampInput(item.updatedAt) || item.updatedAt,
     report: item.report ? mapReviewReportSummary(item.report) : undefined,
   };
 }
@@ -353,15 +354,15 @@ function mapRepositoryPullRequest(item: RepositoryPullRequestApiItem): Repositor
     author: item.author,
     url: item.url,
     state: item.state,
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt,
+    createdAt: normalizeTimestampInput(item.createdAt) || item.createdAt,
+    updatedAt: normalizeTimestampInput(item.updatedAt) || item.updatedAt,
     reviewStatus: item.reviewStatus,
     reviewProgress: item.reviewProgress,
     latestAnalysisId: item.latestAnalysisId ? String(item.latestAnalysisId) : undefined,
     latestReviewJobId: item.latestReviewJobId ? String(item.latestReviewJobId) : undefined,
     latestReviewJobStatus: item.latestReviewJobStatus || undefined,
-    latestReviewJobCreatedAt: item.latestReviewJobCreatedAt || undefined,
-    lastReviewedAt: item.lastReviewedAt || undefined,
+    latestReviewJobCreatedAt: normalizeTimestampInput(item.latestReviewJobCreatedAt) || undefined,
+    lastReviewedAt: normalizeTimestampInput(item.lastReviewedAt) || undefined,
     latestRiskLevel: item.latestRiskLevel,
     latestRiskSummary: item.latestRiskSummary || undefined,
     commentCount: item.commentCount,
@@ -393,15 +394,15 @@ function mapPullRequestHistoryItem(item: PullRequestHistoryApiItem): PullRequest
     latestAnalysisId: item.latestAnalysisId ? String(item.latestAnalysisId) : undefined,
     latestReviewJobId: item.latestReviewJobId ? String(item.latestReviewJobId) : undefined,
     latestReviewJobStatus: item.latestReviewJobStatus || undefined,
-    latestReviewJobCreatedAt: item.latestReviewJobCreatedAt || undefined,
-    lastReviewedAt: item.lastReviewedAt || undefined,
+    latestReviewJobCreatedAt: normalizeTimestampInput(item.latestReviewJobCreatedAt) || undefined,
+    lastReviewedAt: normalizeTimestampInput(item.lastReviewedAt) || undefined,
     latestRiskLevel: item.latestRiskLevel,
     latestRiskSummary: item.latestRiskSummary || undefined,
     commentCount: item.commentCount,
     issueCount: item.issueCount,
     fileCount: item.fileCount,
     latestHeadCommit: item.latestHeadCommit || undefined,
-    lastActivityAt: item.lastActivityAt,
+    lastActivityAt: normalizeTimestampInput(item.lastActivityAt) || item.lastActivityAt,
     jobCount: item.jobCount ?? item.jobs?.length ?? 0,
     jobs: (item.jobs || []).map(mapPullRequestReviewJob),
     reports: (item.reports || []).map(mapReviewReportSummary),
@@ -418,8 +419,8 @@ function mapReviewReportSummary(item: ReviewReportSummaryApiItem): ReviewReportS
     issueCount: item.issueCount,
     commentCount: item.commentCount,
     fileCount: item.fileCount,
-    createdAt: item.createdAt,
-    completedAt: item.completedAt || undefined,
+    createdAt: normalizeTimestampInput(item.createdAt) || item.createdAt,
+    completedAt: normalizeTimestampInput(item.completedAt) || undefined,
   };
 }
 
@@ -439,10 +440,10 @@ function mapAnalysis(item: AnalysisApiItem): Analysis {
     errorMessage: item.error_message || undefined,
     reviewCommentCount: item.comment_count,
     fileAnalysisCount: item.file_count,
-    startedAt: item.started_at || undefined,
-    completedAt: item.completed_at || undefined,
-    createdAt: item.created_at,
-    updatedAt: item.updated_at,
+    startedAt: normalizeTimestampInput(item.started_at) || undefined,
+    completedAt: normalizeTimestampInput(item.completed_at) || undefined,
+    createdAt: normalizeTimestampInput(item.created_at) || item.created_at,
+    updatedAt: normalizeTimestampInput(item.updated_at) || item.updated_at,
   };
 }
 
@@ -466,9 +467,9 @@ function mapJob(item: JobApiItem): AnalysisJob {
     attempts: item.attempts,
     maxAttempts: item.max_attempts,
     errorMessage: item.error_message || undefined,
-    createdAt: item.created_at,
-    startedAt: item.started_at || undefined,
-    completedAt: item.completed_at || undefined,
+    createdAt: normalizeTimestampInput(item.created_at) || item.created_at,
+    startedAt: normalizeTimestampInput(item.started_at) || undefined,
+    completedAt: normalizeTimestampInput(item.completed_at) || undefined,
   };
 }
 
@@ -477,7 +478,7 @@ function mapJobLog(item: JobLogApiItem): JobLog {
     id: String(item.id),
     level: item.level,
     message: item.message,
-    createdAt: item.created_at,
+    createdAt: normalizeTimestampInput(item.created_at) || item.created_at,
   };
 }
 
@@ -736,9 +737,9 @@ class ApiClient {
       accessToken: item.access_token,
       refreshToken: item.refresh_token || undefined,
       scope: item.permissions || '',
-      expiresAt: item.token_expires_at || undefined,
-      createdAt: item.created_at,
-      updatedAt: item.updated_at,
+      expiresAt: normalizeTimestampInput(item.token_expires_at) || item.token_expires_at || undefined,
+      createdAt: normalizeTimestampInput(item.created_at) || item.created_at,
+      updatedAt: normalizeTimestampInput(item.updated_at) || item.updated_at,
     }));
 
     return {
@@ -1017,7 +1018,7 @@ class ApiClient {
         commentCount: analysis.reviewCommentCount,
         issueCount: response.report?.findings?.length || 0,
         jobId: response.report?.jobId ? String(response.report.jobId) : undefined,
-        generatedAt: response.report?.generatedAt,
+        generatedAt: normalizeTimestampInput(response.report?.generatedAt) || response.report?.generatedAt,
       },
     };
   }
