@@ -64,6 +64,8 @@ export interface Repository {
   webhookUrl?: string;
   lastSyncedAt?: string;
   watchEnabled?: boolean;
+  favorite?: boolean;
+  favoritedAt?: string;
   watchLastCheckedAt?: string;
   active?: boolean;
   stars?: number;

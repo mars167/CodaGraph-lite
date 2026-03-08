@@ -215,11 +215,13 @@ export interface Repository {
   webhook_url?: string | null;
   is_active: boolean;
   watch_enabled?: boolean;
+  is_favorite?: boolean;
   created_at: Date | string;
   updated_at: Date | string;
   last_synced_at?: Date | string | null;
   last_analyzed_at?: Date | string | null;
   watch_last_checked_at?: Date | string | null;
+  favorited_at?: Date | string | null;
 }
 
 /**
@@ -244,6 +246,8 @@ export interface CreateRepositoryDTO {
   webhook_url?: string | null;
   is_active: boolean;
   watch_enabled?: boolean;
+  is_favorite?: boolean;
+  favorited_at?: Date | string | null;
 }
 
 /**

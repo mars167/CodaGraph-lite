@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -22,6 +23,23 @@ type LlmMetricKey =
   | 'llmTotalTokens'
   | 'llmFailedRequests';
 
+type TrendSnapshot = {
+  timestamp: number;
+  jobsProcessed: number;
+  jobsFailed: number;
+  avgProcessingTime: number;
+  workerConfigured: number;
+  workerRunningJobs: number;
+  workerPendingJobs: number;
+  llmPromptTokens: number;
+  llmCompletionTokens: number;
+  llmTotalTokens: number;
+  llmFailedRequests: number;
+};
+
+const TREND_HISTORY_STORAGE_KEY = 'codagraph.dashboard.trend-history';
+const MAX_TREND_POINTS = 24;
+
 function formatMemory(bytes: number) {
   const mb = bytes / (1024 * 1024);
   return `${mb.toFixed(1)} MB`;
@@ -38,81 +56,196 @@ function formatUptime(seconds: number) {
   return `${days}天 ${hours}小时 ${minutes}分钟`;
 }
 
+function formatClock(timestamp?: number | null) {
+  if (!timestamp) {
+    return '--:--:--';
+  }
+
+  return new Date(timestamp).toLocaleTimeString('zh-CN', { hour12: false });
+}
+
+function readStoredTrendHistory(): TrendSnapshot[] {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(TREND_HISTORY_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as TrendSnapshot[];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .filter((item) => item && typeof item.timestamp === 'number')
+      .slice(-MAX_TREND_POINTS);
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredTrendHistory(history: TrendSnapshot[]) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      TREND_HISTORY_STORAGE_KEY,
+      JSON.stringify(history.slice(-MAX_TREND_POINTS))
+    );
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function createTrendSnapshot(statsData: ResourceStats): TrendSnapshot {
+  return {
+    timestamp: Date.now(),
+    jobsProcessed: statsData.jobsProcessed || 0,
+    jobsFailed: statsData.jobsFailed || 0,
+    avgProcessingTime: statsData.avgProcessingTime || 0,
+    workerConfigured: statsData.limits?.workerCount || 0,
+    workerRunningJobs: statsData.queue?.activeCount || 0,
+    workerPendingJobs: statsData.queue?.pendingCount || 0,
+    llmPromptTokens: statsData.llm?.promptTokens || 0,
+    llmCompletionTokens: statsData.llm?.completionTokens || 0,
+    llmTotalTokens: statsData.llm?.totalTokens || 0,
+    llmFailedRequests: statsData.llm?.failedRequests || 0,
+  };
+}
+
+function mergeTrendHistory(history: TrendSnapshot[], snapshot: TrendSnapshot): TrendSnapshot[] {
+  const next = [...history];
+  const last = next[next.length - 1];
+
+  if (
+    last
+    && last.jobsProcessed === snapshot.jobsProcessed
+    && last.jobsFailed === snapshot.jobsFailed
+    && last.avgProcessingTime === snapshot.avgProcessingTime
+    && last.workerConfigured === snapshot.workerConfigured
+    && last.workerRunningJobs === snapshot.workerRunningJobs
+    && last.workerPendingJobs === snapshot.workerPendingJobs
+    && last.llmPromptTokens === snapshot.llmPromptTokens
+    && last.llmCompletionTokens === snapshot.llmCompletionTokens
+    && last.llmTotalTokens === snapshot.llmTotalTokens
+    && last.llmFailedRequests === snapshot.llmFailedRequests
+  ) {
+    next[next.length - 1] = {
+      ...snapshot,
+      timestamp: snapshot.timestamp,
+    };
+    return next.slice(-MAX_TREND_POINTS);
+  }
+
+  next.push(snapshot);
+  return next.slice(-MAX_TREND_POINTS);
+}
+
+function buildTrendSeries(values: number[]) {
+  if (values.length === 0) {
+    return {
+      hasData: false,
+      points: '',
+      min: 0,
+      max: 0,
+      latest: 0,
+    };
+  }
+
+  const chartValues = values.length === 1 ? [values[0], values[0]] : values;
+  const min = Math.min(...chartValues);
+  const max = Math.max(...chartValues);
+  const range = max - min;
+  const padding = 4;
+  const points = chartValues.map((value, index) => {
+    const normalized = range === 0 ? 0.5 : (value - min) / range;
+    const x = padding + (index / Math.max(chartValues.length - 1, 1)) * (100 - padding * 2);
+    const y = (100 - padding) - normalized * (100 - padding * 2);
+    return `${x},${y}`;
+  }).join(' ');
+
+  return {
+    hasData: true,
+    points,
+    min,
+    max,
+    latest: values[values.length - 1] ?? 0,
+  };
+}
+
 export default function DashboardPage() {
   const { error } = useNotificationHelpers();
-  const [isLoading, setIsLoading] = useState(true);
+  const hasLoadedRef = useRef(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [resourceStats, setResourceStats] = useState<ResourceStats | null>(null);
   const [activeTrendMetric, setActiveTrendMetric] = useState<ThroughputMetricKey>('jobsProcessed');
   const [activeLlmTrendMetric, setActiveLlmTrendMetric] = useState<LlmMetricKey>('llmTotalTokens');
-  const [trendHistory, setTrendHistory] = useState<Array<{
-    timestamp: number;
-    jobsProcessed: number;
-    jobsFailed: number;
-    avgProcessingTime: number;
-    workerConfigured: number;
-    workerRunningJobs: number;
-    workerPendingJobs: number;
-    llmPromptTokens: number;
-    llmCompletionTokens: number;
-    llmTotalTokens: number;
-    llmFailedRequests: number;
-  }>>([]);
+  const [trendHistory, setTrendHistory] = useState<TrendSnapshot[]>([]);
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setIsLoading(true);
-        const [statusRes, statsRes] = await Promise.allSettled([
-          apiClient.getSystemStatus(),
-          apiClient.getResourceStats().catch(() => null),
-        ]);
+    setTrendHistory(readStoredTrendHistory());
+  }, []);
 
-        if (statusRes.status === 'fulfilled') {
-          setSystemStatus(statusRes.value);
-        }
-        if (statsRes.status === 'fulfilled') {
-          const statsData = statsRes.value?.data || null;
-          setResourceStats(statsData);
-          if (statsData) {
-            setTrendHistory((prev) => {
-              const next = [
-                ...prev,
-                {
-                  timestamp: Date.now(),
-                  jobsProcessed: statsData.jobsProcessed || 0,
-                  jobsFailed: statsData.jobsFailed || 0,
-                  avgProcessingTime: statsData.avgProcessingTime || 0,
-                  workerConfigured: statsData.limits?.workerCount || 0,
-                  workerRunningJobs: statsData.queue?.activeCount || 0,
-                  workerPendingJobs: statsData.queue?.pendingCount || 0,
-                  llmPromptTokens: statsData.llm?.promptTokens || 0,
-                  llmCompletionTokens: statsData.llm?.completionTokens || 0,
-                  llmTotalTokens: statsData.llm?.totalTokens || 0,
-                  llmFailedRequests: statsData.llm?.failedRequests || 0,
-                },
-              ];
-              return next.slice(-24);
-            });
-          }
-        }
-      } catch {
-        error('加载失败', '无法获取系统状态');
-      } finally {
-        setIsLoading(false);
+  useEffect(() => {
+    if (trendHistory.length > 0) {
+      writeStoredTrendHistory(trendHistory);
+    }
+  }, [trendHistory]);
+
+  const loadData = useCallback(async (silent = false) => {
+    try {
+      if (silent || hasLoadedRef.current) {
+        setIsRefreshing(true);
+      } else {
+        setIsInitialLoading(true);
       }
-    };
 
-    void loadData();
-    const timer = setInterval(() => {
-      void loadData();
-    }, 30000);
-    return () => clearInterval(timer);
+      const [statusRes, statsRes] = await Promise.allSettled([
+        apiClient.getSystemStatus(),
+        apiClient.getResourceStats().catch(() => null),
+      ]);
+
+      if (statusRes.status === 'fulfilled') {
+        setSystemStatus(statusRes.value);
+      }
+
+      if (statsRes.status === 'fulfilled') {
+        const statsData = statsRes.value?.data || null;
+        if (statsData) {
+          setResourceStats(statsData);
+          setTrendHistory((prev) => mergeTrendHistory(prev, createTrendSnapshot(statsData)));
+        }
+      }
+
+      hasLoadedRef.current = true;
+      setLastUpdatedAt(Date.now());
+    } catch {
+      if (!hasLoadedRef.current) {
+        error('加载失败', '无法获取系统状态');
+      }
+    } finally {
+      setIsInitialLoading(false);
+      setIsRefreshing(false);
+    }
   }, [error]);
 
-  if (isLoading) {
-    return <Loading />;
-  }
+  useEffect(() => {
+    void loadData(false);
+    const timer = window.setInterval(() => {
+      void loadData(true);
+    }, 30000);
+
+    return () => window.clearInterval(timer);
+  }, [loadData]);
 
   const statusTextMap = {
     healthy: '正常',
@@ -145,6 +278,7 @@ export default function DashboardPage() {
   const completionShare = llmStats && llmStats.totalTokens > 0
     ? (llmStats.completionTokens / llmStats.totalTokens) * 100
     : 0;
+
   const throughputMetrics: Array<{
     key: ThroughputMetricKey;
     label: string;
@@ -204,23 +338,7 @@ export default function DashboardPage() {
       labelClass: 'text-amber-700 dark:text-amber-300',
     },
   ];
-  const activeMetricMeta = throughputMetrics.find(item => item.key === activeTrendMetric) || throughputMetrics[0];
-  const trendValues = trendHistory.map(item => item[activeTrendMetric]);
-  const hasTrend = trendValues.length > 1;
-  const minTrend = hasTrend ? Math.min(...trendValues) : 0;
-  const maxTrend = hasTrend ? Math.max(...trendValues) : 1;
-  const trendRange = maxTrend - minTrend || 1;
-  const trendPadding = 4;
-  const trendPoints = trendValues.map((value, index) => {
-    const normalized = (value - minTrend) / trendRange;
-    const x = trendPadding + (index / Math.max(trendValues.length - 1, 1)) * (100 - trendPadding * 2);
-    const y = (100 - trendPadding) - normalized * (100 - trendPadding * 2);
-    return `${x},${y}`;
-  }).join(' ');
-  const trendLatestValue = trendValues[trendValues.length - 1] ?? 0;
-  const trendLatestTime = trendHistory.length > 0
-    ? new Date(trendHistory[trendHistory.length - 1].timestamp).toLocaleTimeString('zh-CN', { hour12: false })
-    : '--:--:--';
+
   const llmMetrics: Array<{
     key: LlmMetricKey;
     label: string;
@@ -262,19 +380,21 @@ export default function DashboardPage() {
       labelClass: 'text-rose-700 dark:text-rose-300',
     },
   ];
-  const activeLlmMetricMeta = llmMetrics.find(item => item.key === activeLlmTrendMetric) || llmMetrics[0];
-  const llmTrendValues = trendHistory.map(item => item[activeLlmTrendMetric]);
-  const hasLlmTrend = llmTrendValues.length > 1;
-  const llmMinTrend = hasLlmTrend ? Math.min(...llmTrendValues) : 0;
-  const llmMaxTrend = hasLlmTrend ? Math.max(...llmTrendValues) : 1;
-  const llmTrendRange = llmMaxTrend - llmMinTrend || 1;
-  const llmTrendPoints = llmTrendValues.map((value, index) => {
-    const normalized = (value - llmMinTrend) / llmTrendRange;
-    const x = trendPadding + (index / Math.max(llmTrendValues.length - 1, 1)) * (100 - trendPadding * 2);
-    const y = (100 - trendPadding) - normalized * (100 - trendPadding * 2);
-    return `${x},${y}`;
-  }).join(' ');
-  const llmLatestValue = llmTrendValues[llmTrendValues.length - 1] ?? 0;
+
+  const activeMetricMeta = throughputMetrics.find((item) => item.key === activeTrendMetric) || throughputMetrics[0];
+  const activeLlmMetricMeta = llmMetrics.find((item) => item.key === activeLlmTrendMetric) || llmMetrics[0];
+  const throughputSeries = useMemo(
+    () => buildTrendSeries(trendHistory.map((item) => item[activeTrendMetric])),
+    [activeTrendMetric, trendHistory]
+  );
+  const llmSeries = useMemo(
+    () => buildTrendSeries(trendHistory.map((item) => item[activeLlmTrendMetric])),
+    [activeLlmTrendMetric, trendHistory]
+  );
+
+  if (isInitialLoading) {
+    return <Loading />;
+  }
 
   return (
     <div className="space-y-6">
@@ -289,7 +409,7 @@ export default function DashboardPage() {
                 审查系统正在如何运行，一眼看清
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-                这里集中展示服务健康度、队列处理情况和 LLM token 消耗。所有指标每 30 秒自动刷新。
+                这里集中展示服务健康度、队列处理情况和 LLM token 消耗。指标每 30 秒后台静默刷新，不会再把整页切回加载态。
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -304,6 +424,9 @@ export default function DashboardPage() {
               </Badge>
               <Badge variant={llmStats?.configured ? 'info' : 'warning'}>
                 {llmStats?.configured ? `LLM ${llmStats.model || llmStats.provider}` : 'LLM 未配置'}
+              </Badge>
+              <Badge variant={isRefreshing ? 'info' : 'default'}>
+                {isRefreshing ? '刷新中' : `上次更新 ${formatClock(lastUpdatedAt)}`}
               </Badge>
             </div>
           </div>
@@ -439,7 +562,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {throughputMetrics.map(metric => (
+              {throughputMetrics.map((metric) => (
                 <button
                   key={metric.key}
                   type="button"
@@ -461,13 +584,13 @@ export default function DashboardPage() {
             <div className="overflow-hidden rounded-3xl border border-gray-200/80 bg-white/80 p-4 dark:border-gray-800 dark:bg-gray-950/60">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                  {activeMetricMeta.label} 趋势（最近 {trendHistory.length} 次刷新）
+                  {activeMetricMeta.label} 趋势（最近 {trendHistory.length || 1} 次采样）
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  最新值 {activeTrendMetric === 'avgProcessingTime' ? trendLatestValue.toFixed(1) : trendLatestValue}{activeMetricMeta.unit || ''} · {trendLatestTime}
+                  最新值 {activeTrendMetric === 'avgProcessingTime' ? throughputSeries.latest.toFixed(1) : throughputSeries.latest}{activeMetricMeta.unit || ''} · {formatClock(lastUpdatedAt)}
                 </p>
               </div>
-              {hasTrend ? (
+              {throughputSeries.hasData ? (
                 <div className="h-52 overflow-hidden">
                   <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="block h-full w-full">
                     <polyline
@@ -475,21 +598,21 @@ export default function DashboardPage() {
                       stroke="currentColor"
                       strokeWidth="2.4"
                       className="text-cyan-500"
-                      points={trendPoints}
+                      points={throughputSeries.points}
                     />
                   </svg>
                   <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
                     <span className="min-w-0 truncate">
-                      最小值 {activeTrendMetric === 'avgProcessingTime' ? minTrend.toFixed(1) : minTrend}{activeMetricMeta.unit || ''}
+                      最小值 {activeTrendMetric === 'avgProcessingTime' ? throughputSeries.min.toFixed(1) : throughputSeries.min}{activeMetricMeta.unit || ''}
                     </span>
                     <span className="min-w-0 truncate text-right">
-                      最大值 {activeTrendMetric === 'avgProcessingTime' ? maxTrend.toFixed(1) : maxTrend}{activeMetricMeta.unit || ''}
+                      最大值 {activeTrendMetric === 'avgProcessingTime' ? throughputSeries.max.toFixed(1) : throughputSeries.max}{activeMetricMeta.unit || ''}
                     </span>
                   </div>
                 </div>
               ) : (
                 <div className="flex h-52 items-center justify-center rounded-2xl bg-gray-50 text-sm text-gray-500 dark:bg-gray-900/60 dark:text-gray-400">
-                  至少完成两次刷新后显示折线图
+                  等待首个采样写入
                 </div>
               )}
             </div>
@@ -502,7 +625,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {llmMetrics.map(metric => (
+              {llmMetrics.map((metric) => (
                 <button
                   key={metric.key}
                   type="button"
@@ -523,13 +646,13 @@ export default function DashboardPage() {
             <div className="overflow-hidden rounded-3xl border border-gray-200/80 bg-white/80 p-4 dark:border-gray-800 dark:bg-gray-950/60">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                  {activeLlmMetricMeta.label} 趋势（最近 {trendHistory.length} 次刷新）
+                  {activeLlmMetricMeta.label} 趋势（最近 {trendHistory.length || 1} 次采样）
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  最新值 {formatTokenCount(llmLatestValue)} · {trendLatestTime}
+                  最新值 {formatTokenCount(llmSeries.latest)} · {formatClock(lastUpdatedAt)}
                 </p>
               </div>
-              {hasLlmTrend ? (
+              {llmSeries.hasData ? (
                 <div className="h-52 overflow-hidden">
                   <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="block h-full w-full">
                     <polyline
@@ -537,17 +660,17 @@ export default function DashboardPage() {
                       stroke="currentColor"
                       strokeWidth="2.4"
                       className="text-violet-500"
-                      points={llmTrendPoints}
+                      points={llmSeries.points}
                     />
                   </svg>
                   <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
-                    <span className="min-w-0 truncate">最小值 {formatTokenCount(llmMinTrend)}</span>
-                    <span className="min-w-0 truncate text-right">最大值 {formatTokenCount(llmMaxTrend)}</span>
+                    <span className="min-w-0 truncate">最小值 {formatTokenCount(llmSeries.min)}</span>
+                    <span className="min-w-0 truncate text-right">最大值 {formatTokenCount(llmSeries.max)}</span>
                   </div>
                 </div>
               ) : (
                 <div className="flex h-52 items-center justify-center rounded-2xl bg-gray-50 text-sm text-gray-500 dark:bg-gray-900/60 dark:text-gray-400">
-                  至少完成两次刷新后显示折线图
+                  等待首个采样写入
                 </div>
               )}
             </div>
@@ -584,7 +707,7 @@ export default function DashboardPage() {
           <CardTitle>快捷操作</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
             {[
               {
                 href: '/dashboard/settings',
@@ -599,6 +722,12 @@ export default function DashboardPage() {
                 accent: 'text-emerald-600 dark:text-emerald-400',
               },
               {
+                href: '/dashboard/workspace',
+                title: '我的工作空间',
+                description: '集中进入已收藏的常用仓库',
+                accent: 'text-amber-600 dark:text-amber-400',
+              },
+              {
                 href: '/dashboard/jobs',
                 title: '查看作业',
                 description: '跟踪自动 review 和失败重试',
@@ -608,17 +737,17 @@ export default function DashboardPage() {
                 href: '/dashboard/history',
                 title: '查看历史',
                 description: '进入最近报告和审查结果历史',
-                accent: 'text-amber-600 dark:text-amber-400',
+                accent: 'text-orange-600 dark:text-orange-400',
               },
             ].map((item) => (
-              <a
+              <Link
                 key={item.href}
                 href={item.href}
                 className="rounded-3xl border border-gray-200/80 bg-gray-50/70 px-5 py-5 transition-colors hover:border-gray-300 hover:bg-white dark:border-gray-800 dark:bg-gray-950/60 dark:hover:border-gray-700 dark:hover:bg-gray-950"
               >
                 <p className={`text-sm font-medium ${item.accent}`}>{item.title}</p>
                 <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">{item.description}</p>
-              </a>
+              </Link>
             ))}
           </div>
         </CardContent>

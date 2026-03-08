@@ -32,6 +32,15 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    label: '我的工作空间',
+    href: '/dashboard/workspace',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m11.049 2.927.95 1.927a1 1 0 00.753.548l2.126.309a1 1 0 01.554 1.706l-1.538 1.499a1 1 0 00-.287.886l.363 2.118a1 1 0 01-1.45 1.054l-1.902-.999a1 1 0 00-.93 0l-1.902.999a1 1 0 01-1.45-1.054l.363-2.118a1 1 0 00-.287-.886L2.57 7.417a1 1 0 01.554-1.706l2.126-.309a1 1 0 00.753-.548l.95-1.927a1 1 0 011.793 0z" />
+      </svg>
+    ),
+  },
+  {
     label: '作业状态',
     href: '/dashboard/jobs',
     icon: (

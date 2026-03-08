@@ -84,6 +84,17 @@ export class RepositoryModel {
     );
   }
 
+  findFavorites(limit = 100): Repository[] {
+    return this.db.all<Repository>(
+      `SELECT *
+       FROM repository
+       WHERE is_active = 1 AND is_favorite = 1
+       ORDER BY favorited_at DESC, updated_at DESC
+       LIMIT ?`,
+      [limit]
+    );
+  }
+
   /**
    * 获取所有仓库
    */
@@ -199,8 +210,10 @@ export class RepositoryModel {
         | 'installation_id'
         | 'last_synced_at'
         | 'watch_enabled'
+        | 'is_favorite'
         | 'watch_last_checked_at'
         | 'last_analyzed_at'
+        | 'favorited_at'
       >
     >
   ): Repository | null {
@@ -263,6 +276,10 @@ export class RepositoryModel {
       fields.push('watch_enabled = ?');
       params.push(updates.watch_enabled ? 1 : 0);
     }
+    if (updates.is_favorite !== undefined) {
+      fields.push('is_favorite = ?');
+      params.push(updates.is_favorite ? 1 : 0);
+    }
     if (updates.last_synced_at !== undefined) {
       fields.push('last_synced_at = ?');
       params.push(
@@ -279,6 +296,12 @@ export class RepositoryModel {
       fields.push('last_analyzed_at = ?');
       params.push(
         updates.last_analyzed_at ? toISOString(updates.last_analyzed_at) : null
+      );
+    }
+    if (updates.favorited_at !== undefined) {
+      fields.push('favorited_at = ?');
+      params.push(
+        updates.favorited_at ? toISOString(updates.favorited_at) : null
       );
     }
 
@@ -364,6 +387,13 @@ export class RepositoryModel {
 
   updateWatchCheck(id: number, checkedAt: Date): boolean {
     return this.update(id, { watch_last_checked_at: checkedAt }) !== null;
+  }
+
+  updateFavorite(id: number, enabled: boolean): Repository | null {
+    return this.update(id, {
+      is_favorite: enabled,
+      favorited_at: enabled ? new Date() : null,
+    });
   }
 
   /**

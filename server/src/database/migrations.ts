@@ -343,6 +343,15 @@ export async function runMigrations(): Promise<number> {
           CREATE INDEX IF NOT EXISTS idx_app_setting_updated_at ON app_setting(updated_at DESC);
         `
       },
+      {
+        version: 9,
+        name: 'add_repository_favorite_fields',
+        sql: `
+          ALTER TABLE repository ADD COLUMN is_favorite BOOLEAN DEFAULT 0;
+          ALTER TABLE repository ADD COLUMN favorited_at DATETIME;
+          CREATE INDEX IF NOT EXISTS idx_repository_favorite ON repository(is_favorite, favorited_at DESC);
+        `
+      },
     ];
 
     // 应用未应用的迁移

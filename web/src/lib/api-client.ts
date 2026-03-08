@@ -82,11 +82,13 @@ interface RepositoryApiItem {
   webhook_url?: string | null;
   is_active: boolean;
   watch_enabled?: boolean;
+  is_favorite?: boolean;
   created_at: string;
   updated_at: string;
   last_synced_at?: string | null;
   last_analyzed_at?: string | null;
   watch_last_checked_at?: string | null;
+  favorited_at?: string | null;
   last_commit_at?: string | null;
   pushed_at?: string | null;
 }
@@ -314,6 +316,8 @@ function mapRepository(item: RepositoryApiItem): Repository {
     webhookUrl: item.webhook_url || undefined,
     lastSyncedAt: item.last_synced_at || item.last_analyzed_at || undefined,
     watchEnabled: Boolean(item.watch_enabled),
+    favorite: Boolean(item.is_favorite),
+    favoritedAt: item.favorited_at || undefined,
     watchLastCheckedAt: item.watch_last_checked_at || undefined,
     active: item.is_active,
     stars: item.stars_count ?? 0,
@@ -756,9 +760,10 @@ class ApiClient {
   // ============ 仓库 API ============
 
   // 获取仓库列表
-  async getRepositories(params?: { platform?: string; page?: number; pageSize?: number }): Promise<PaginatedResponse<Repository>> {
+  async getRepositories(params?: { platform?: string; favoritesOnly?: boolean; page?: number; pageSize?: number }): Promise<PaginatedResponse<Repository>> {
     const response = await this.get<RepositoryListResponse>('/api/repositories', {
       platform: params?.platform,
+      favorites: params?.favoritesOnly ? '1' : undefined,
       page: params?.page,
       limit: params?.pageSize,
     });
@@ -829,6 +834,17 @@ class ApiClient {
 
   async setRepositoryWatch(id: string, enabled: boolean): Promise<ApiResponse<Repository>> {
     const response = await this.patch<{ repository: RepositoryApiItem }>(`/api/repositories/${id}/watch`, {
+      enabled,
+    });
+
+    return {
+      success: true,
+      data: mapRepository(response.repository),
+    };
+  }
+
+  async setRepositoryFavorite(id: string, enabled: boolean): Promise<ApiResponse<Repository>> {
+    const response = await this.patch<{ repository: RepositoryApiItem }>(`/api/repositories/${id}/favorite`, {
       enabled,
     });
 

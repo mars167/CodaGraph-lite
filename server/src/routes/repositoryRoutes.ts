@@ -35,6 +35,7 @@ type RepositoryQuery = {
   platform?: Platform;
   page?: string;
   limit?: string;
+  favorites?: string;
 };
 
 type PullRequestReviewSummary = {
@@ -144,7 +145,7 @@ async function hydrateRepositoryCache(platform?: Platform) {
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const { platform, page = '1', limit = '20' } = req.query as RepositoryQuery;
+    const { platform, page = '1', limit = '20', favorites } = req.query as RepositoryQuery;
 
     const installationModel = getOAuthInstallationModel();
     const repositoryModel = getRepositoryModel();
@@ -152,6 +153,26 @@ router.get('/', async (req: Request, res: Response) => {
     const limitNum = parseInt(limit, 10);
     const safePage = Number.isNaN(pageNum) || pageNum < 1 ? 1 : pageNum;
     const safeLimit = Number.isNaN(limitNum) || limitNum < 1 ? 20 : limitNum;
+    const favoritesOnly = favorites === '1' || favorites === 'true';
+
+    if (favoritesOnly) {
+      const allFavoriteRepositories = repositoryModel
+        .findFavorites(1000)
+        .filter((repository) => (platform ? repository.platform === platform : true));
+      const offset = (safePage - 1) * safeLimit;
+      const repositories = allFavoriteRepositories.slice(offset, offset + safeLimit);
+
+      return res.json({
+        repositories,
+        pagination: {
+          page: safePage,
+          limit: safeLimit,
+          total: allFavoriteRepositories.length,
+          totalPages: Math.ceil(allFavoriteRepositories.length / safeLimit),
+        },
+      });
+    }
+
     const activeInstallations = platform
       ? installationModel.findActiveByPlatform(platform)
       : installationModel.findActive();
@@ -164,7 +185,10 @@ router.get('/', async (req: Request, res: Response) => {
       : repositoryModel.findAll({
           sortOrder: 'DESC',
         }))
-      .filter((repository) => activeInstallationIds.has(repository.installation_id));
+      .filter((repository) => activeInstallationIds.has(repository.installation_id))
+      .sort((left, right) => {
+        return compareDateDesc(String(left.updated_at), String(right.updated_at));
+      });
     const offset = (safePage - 1) * safeLimit;
     const repositories = allRepositories.slice(offset, offset + safeLimit);
 
@@ -414,6 +438,41 @@ router.patch('/:id/watch', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('切换仓库 Watch 状态失败:', error);
+    return res.status(500).json({
+      error: '内部服务器错误',
+      details: (error as Error).message,
+    });
+  }
+});
+
+router.patch('/:id/favorite', async (req: Request, res: Response) => {
+  try {
+    const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const id = parseInt(idParam, 10);
+
+    if (isNaN(id)) {
+      return res.status(400).json({ error: '无效的 ID' });
+    }
+
+    const repositoryModel = getRepositoryModel();
+    const repository = repositoryModel.findById(id);
+    if (!repository) {
+      return res.status(404).json({ error: '仓库不存在' });
+    }
+
+    const requestedEnabled = typeof req.body?.enabled === 'boolean'
+      ? req.body.enabled
+      : !repository.is_favorite;
+
+    const updated = repositoryModel.updateFavorite(id, requestedEnabled);
+
+    return res.json({
+      success: true,
+      repository: updated,
+      message: `仓库已${requestedEnabled ? '加入' : '移出'}收藏`,
+    });
+  } catch (error) {
+    console.error('切换仓库收藏状态失败:', error);
     return res.status(500).json({
       error: '内部服务器错误',
       details: (error as Error).message,

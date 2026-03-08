@@ -73,17 +73,20 @@ CREATE TABLE IF NOT EXISTS repository (
   webhook_url TEXT,
   is_active BOOLEAN DEFAULT 1,
   watch_enabled BOOLEAN DEFAULT 0,
+  is_favorite BOOLEAN DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   last_synced_at DATETIME,
   last_analyzed_at DATETIME,
-  watch_last_checked_at DATETIME
+  watch_last_checked_at DATETIME,
+  favorited_at DATETIME
 );
 
 CREATE INDEX IF NOT EXISTS idx_repository_platform ON repository(platform);
 CREATE INDEX IF NOT EXISTS idx_repository_owner ON repository(owner);
 CREATE INDEX IF NOT EXISTS idx_repository_installation ON repository(installation_id);
 CREATE INDEX IF NOT EXISTS idx_repository_watch_enabled ON repository(watch_enabled, is_active);
+CREATE INDEX IF NOT EXISTS idx_repository_favorite ON repository(is_favorite, favorited_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_unique ON repository(platform, owner, name);
 `;
 
