@@ -216,6 +216,10 @@ export class CodeContextRuntime {
     };
   }
 
+  disposeWorkspace(workspacePath: string): void {
+    this.engineCache.delete(workspacePath);
+  }
+
   private buildPathHints(filePath: string): string[] {
     const directory = path.posix.dirname(filePath);
     if (!directory || directory === '.') {

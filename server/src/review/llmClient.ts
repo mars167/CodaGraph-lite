@@ -150,8 +150,8 @@ export class ReviewLLMClient {
   private resolveConfig(): ReviewLLMConfig {
     const stored = getSystemSettingsService().getLlmConfig();
     const provider = this.overrides.provider || stored.provider || process.env.LLM_PROVIDER || 'openai-compatible';
-    const apiKey = this.overrides.apiKey || stored.apiKey || process.env.LLM_API_KEY || '';
-    const model = this.overrides.model || stored.model || process.env.LLM_MODEL || 'gpt-4o-mini';
+    const apiKey = this.overrides.apiKey ?? stored.apiKey ?? process.env.LLM_API_KEY ?? '';
+    const model = this.overrides.model ?? stored.model ?? process.env.LLM_MODEL ?? 'gpt-4o-mini';
     const baseUrl = this.overrides.baseUrl ?? stored.baseUrl ?? process.env.LLM_API_BASE_URL ?? '';
     const maxRetries = this.overrides.maxRetries ?? stored.maxRetries ?? parseInt(process.env.LLM_MAX_RETRIES || '2', 10);
 

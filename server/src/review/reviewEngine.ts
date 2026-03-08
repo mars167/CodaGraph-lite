@@ -884,6 +884,10 @@ export class AdvancedReviewEngine {
   }
 
   private async cleanupWorkspace(workspacePath: string): Promise<void> {
+    this.codeContextRuntime.disposeWorkspace(workspacePath);
+    this.semanticCache.clear();
+    this.contextEngineAvailable = false;
+
     try {
       await fs.rm(workspacePath, { recursive: true, force: true });
     } catch (error) {

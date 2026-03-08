@@ -640,6 +640,7 @@ export class CodeReviewService {
    */
   private async cleanupWorkspace(workspacePath: string): Promise<void> {
     logger.info(`🧹 清理工作区: ${workspacePath}`);
+    this.retrievalRuntime.disposeWorkspace(workspacePath);
 
     try {
       await fs.rm(workspacePath, { recursive: true, force: true });
