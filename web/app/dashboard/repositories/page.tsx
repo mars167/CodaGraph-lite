@@ -154,7 +154,7 @@ export default function RepositoriesPage() {
       )));
       success(
         response.data.favorite ? '已加入工作空间' : '已移出工作空间',
-        `${repo.fullName} ${response.data.favorite ? '已加入收藏仓库列表' : '已从收藏仓库列表移除'}`
+        `${repo.fullName} ${response.data.favorite ? '已加入工作空间列表' : '已从工作空间列表移除'}`
       );
     } catch (err) {
       error('更新失败', err instanceof Error ? err.message : '无法更新仓库收藏状态');
@@ -190,7 +190,7 @@ export default function RepositoriesPage() {
                   {[
                     { label: '平台仓库', value: total.toLocaleString('zh-CN'), tone: 'text-slate-950 dark:text-white' },
                     { label: '当前结果', value: repositoryInsights.visible.toLocaleString('zh-CN'), tone: activeTheme.link },
-                    { label: '收藏仓库', value: repositoryInsights.favoriteCount.toLocaleString('zh-CN'), tone: 'text-amber-700 dark:text-amber-300' },
+                    { label: '工作空间', value: repositoryInsights.favoriteCount.toLocaleString('zh-CN'), tone: 'text-amber-700 dark:text-amber-300' },
                     { label: 'Watch 中', value: repositoryInsights.watchedCount.toLocaleString('zh-CN'), tone: 'text-violet-700 dark:text-violet-300' },
                     { label: 'Webhook 已连', value: repositoryInsights.connectedCount.toLocaleString('zh-CN'), tone: 'text-emerald-700 dark:text-emerald-300' },
                   ].map((item) => (
@@ -218,15 +218,6 @@ export default function RepositoriesPage() {
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center justify-end gap-2">
-                    <Link
-                      href="/dashboard/workspace"
-                      className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:border-amber-300 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:border-amber-800"
-                    >
-                      <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="m9.049 2.927.951 1.927 2.126.309a1 1 0 0 1 .554 1.706l-1.539 1.5.364 2.118a1 1 0 0 1-1.451 1.054L8 10.347l-1.902.999a1 1 0 0 1-1.451-1.054l.364-2.118-1.539-1.5a1 1 0 0 1 .554-1.706l2.126-.309.951-1.927a1 1 0 0 1 1.792 0Z" />
-                      </svg>
-                      我的工作空间
-                    </Link>
                     <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 dark:bg-gray-800 dark:text-gray-300">
                       {platformNames[filter]}
                     </div>
@@ -288,7 +279,7 @@ export default function RepositoriesPage() {
                     活跃语言 {repositoryInsights.languageCount}
                   </span>
                   <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                    收藏 {repositoryInsights.favoriteCount}
+                    工作空间 {repositoryInsights.favoriteCount}
                   </span>
                   {searchKeyword.trim() ? (
                     <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
@@ -359,7 +350,7 @@ export default function RepositoriesPage() {
                               </Badge>
                               {repo.favorite ? (
                                 <Badge variant="warning" size="sm">
-                                  已收藏
+                                  已在工作空间
                                 </Badge>
                               ) : null}
                               {typeof repo.active === 'boolean' ? (
@@ -458,11 +449,11 @@ export default function RepositoriesPage() {
                                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                                 </svg>
                               ) : (
-                                <svg className="h-4 w-4" fill={repo.favorite ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m11.049 2.927.95 1.927a1 1 0 00.753.548l2.126.309a1 1 0 01.554 1.706l-1.538 1.499a1 1 0 00-.287.886l.363 2.118a1 1 0 01-1.45 1.054l-1.902-.999a1 1 0 00-.93 0l-1.902.999a1 1 0 01-1.45-1.054l.363-2.118a1 1 0 00-.287-.886L2.57 7.417a1 1 0 01.554-1.706l2.126-.309a1 1 0 00.753-.548l.95-1.927a1 1 0 011.793 0z" />
+                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                                 </svg>
                               )}
-                              {repo.favorite ? '取消收藏' : '加入收藏'}
+                              {repo.favorite ? '移出工作空间' : '加入工作空间'}
                             </button>
                             <button
                               type="button"

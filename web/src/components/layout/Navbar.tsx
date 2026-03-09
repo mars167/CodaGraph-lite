@@ -23,20 +23,20 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    label: '我的工作空间',
+    href: '/dashboard/workspace',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+      </svg>
+    ),
+  },
+  {
     label: '仓库管理',
     href: '/dashboard/repositories',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-      </svg>
-    ),
-  },
-  {
-    label: '我的工作空间',
-    href: '/dashboard/workspace',
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m11.049 2.927.95 1.927a1 1 0 00.753.548l2.126.309a1 1 0 01.554 1.706l-1.538 1.499a1 1 0 00-.287.886l.363 2.118a1 1 0 01-1.45 1.054l-1.902-.999a1 1 0 00-.93 0l-1.902.999a1 1 0 01-1.45-1.054l.363-2.118a1 1 0 00-.287-.886L2.57 7.417a1 1 0 01.554-1.706l2.126-.309a1 1 0 00.753-.548l.95-1.927a1 1 0 011.793 0z" />
       </svg>
     ),
   },
@@ -63,8 +63,8 @@ const navItems: NavItem[] = [
     href: '/dashboard/settings',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317a1 1 0 011.35-.936l.962.382a1 1 0 00.726 0l.962-.382a1 1 0 011.35.936l.06 1.034a1 1 0 00.445.789l.845.56a1 1 0 01.287 1.386l-.58.857a1 1 0 000 .996l.58.857a1 1 0 01-.287 1.386l-.845.56a1 1 0 00-.446.79l-.059 1.033a1 1 0 01-1.35.936l-.962-.382a1 1 0 00-.726 0l-.962.382a1 1 0 01-1.35-.936l-.06-1.034a1 1 0 00-.445-.789l-.845-.56a1 1 0 01-.287-1.386l.58-.857a1 1 0 000-.996l-.58-.857a1 1 0 01.287-1.386l.845-.56a1 1 0 00.446-.79l.059-1.033z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
       </svg>
     ),
   },
