@@ -28,6 +28,7 @@ interface TriggerReviewOptions {
   priority?: number;
   force?: boolean;
   pullRequest?: PlatformPullRequest;
+  reviewMode?: 'normal' | 'improve';
 }
 
 export interface TriggerReviewResult {
@@ -169,6 +170,7 @@ export class ReviewTriggerService {
           analysis_job_id: String(analysisJob.id),
           head_commit: headCommit,
           trigger_source: options.source,
+          review_mode: options.reviewMode || 'normal',
         },
         options.priority ?? this.defaultPriority(options.source)
       );

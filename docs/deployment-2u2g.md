@@ -91,7 +91,7 @@ export NODE_OPTIONS="--max-old-space-size=200"
 - Node.js Frontend: 200MB
 - Node.js Backend: 200MB
 - Python Context Agent: 300MB
-- Python Review Agent: 300MB
+- In-process Review Runtime: 复用 Backend 预算
 - Code Context Engine runtime: 256MB
 - 系统 + 其他: ~500MB
 - 剩余内存作为缓冲
@@ -184,7 +184,6 @@ npm install
 
 # 安装 Python 依赖
 cd context-agent && pip install -r requirements.txt && cd ..
-cd review-agent && pip install -r requirements.txt && cd ..
 ```
 
 ### 6. 启动服务

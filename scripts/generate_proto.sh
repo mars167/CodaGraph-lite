@@ -23,6 +23,7 @@ if [ ! -f "$PROTO_FILE" ]; then
 fi
 
 # 生成 Python gRPC 代码
+# 注意：独立 review-agent 已退役，Python stubs 只需要同步到 context-agent。
 echo "📝 生成 Python gRPC 代码..."
 
 # Context Agent
@@ -33,16 +34,6 @@ if [ -d "$PROJECT_ROOT/context-agent" ]; then
         --grpc_python_out="$PROJECT_ROOT/context-agent/src" \
         "$PROTO_FILE"
     echo "✅ Context Agent Python 代码生成完成"
-fi
-
-# Review Agent
-if [ -d "$PROJECT_ROOT/review-agent" ]; then
-    python -m grpc_tools.protoc \
-        -I"$PROTO_DIR" \
-        --python_out="$PROJECT_ROOT/review-agent/src" \
-        --grpc_python_out="$PROJECT_ROOT/review-agent/src" \
-        "$PROTO_FILE"
-    echo "✅ Review Agent Python 代码生成完成"
 fi
 
 # 生成 TypeScript gRPC 代码（需要 grpc-tools）

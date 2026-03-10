@@ -130,6 +130,7 @@ describe('ReviewTriggerService', () => {
       source: 'watch',
       force: false,
       pullRequest: pullRequest as any,
+      reviewMode: 'normal',
     });
 
     expect(result.created).toBe(true);
@@ -141,6 +142,7 @@ describe('ReviewTriggerService', () => {
         analysis_job_id: '22',
         head_commit: 'head-sha',
         trigger_source: 'watch',
+        review_mode: 'normal',
       }),
       3
     );
@@ -186,6 +188,7 @@ describe('ReviewTriggerService', () => {
       source: 'manual',
       force: true,
       pullRequest: pullRequest as any,
+      reviewMode: 'improve',
     });
 
     expect(result.created).toBe(true);
@@ -195,6 +198,7 @@ describe('ReviewTriggerService', () => {
       expect.objectContaining({
         analysis_id: '15',
         trigger_source: 'manual',
+        review_mode: 'improve',
       }),
       2
     );

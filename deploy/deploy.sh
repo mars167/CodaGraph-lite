@@ -139,6 +139,8 @@ install_dependencies() {
 
     cd "$INSTALL_DIR"
     npm install --production
+    # Review Runtime 已并入 server，仅需安装 context-agent 的 Python 依赖。
+    python3 -m pip install -r context-agent/requirements.txt
     cd web && npm install --production && npm run build && cd ..
 
     cd server && npm install && npm run build && cd ..

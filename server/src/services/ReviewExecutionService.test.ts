@@ -58,6 +58,21 @@ const GiteeClientMock = jest.fn(() => commentClientMock);
 const GitLabClientMock = jest.fn(() => commentClientMock);
 
 const reviewEngineReviewMock = jest.fn();
+const defaultTrace = {
+  mode: 'improve',
+  promptVersion: '2026-03-10-impact-security-logic-v1',
+  generatedAt: '2026-03-10T00:00:00.000Z',
+  entries: [
+    {
+      kind: 'stage',
+      stage: 'workspace_prepare',
+      status: 'completed',
+      detail: 'ready',
+      durationMs: 120,
+      at: '2026-03-10T00:00:00.000Z',
+    },
+  ],
+};
 
 jest.mock('../models/Analysis', () => ({
   getAnalysisModel: () => analysisModelMock,
@@ -243,6 +258,16 @@ describe('ReviewExecutionService', () => {
       fallbackFindings: [],
       summary: '已完成仓库上下文驱动的 PR review。',
       riskLevel: 'medium',
+      confidence: 'medium',
+      coverage: {
+        totalFiles: 1,
+        reviewedFiles: 1,
+        skippedFiles: [],
+        partialReview: false,
+      },
+      nextActions: ['删除 console.log。'],
+      suppressedFindings: [],
+      trace: defaultTrace,
       mode: 'rule-only',
       metadata: {
         llmEnabled: false,
@@ -250,6 +275,8 @@ describe('ReviewExecutionService', () => {
         contextEngineAvailable: false,
         reviewedFiles: 1,
         inlineCommentLimit: 8,
+        reviewMode: 'normal',
+        promptVersion: '2026-03-10-impact-security-logic-v1',
       },
     });
   });
@@ -277,6 +304,7 @@ describe('ReviewExecutionService', () => {
           status: 'modified',
         }),
       ],
+      reviewMode: 'normal',
     }));
 
     expect(commentClientMock.submitReview).toHaveBeenCalledTimes(1);
@@ -309,6 +337,15 @@ describe('ReviewExecutionService', () => {
     expect(persistedPayload.mode).toBe('rule-only');
     expect(persistedPayload.inlineComments).toEqual({ planned: 1, posted: 1 });
     expect(persistedPayload.fileReviews).toHaveLength(1);
+    expect(persistedPayload.coverage).toEqual({
+      totalFiles: 1,
+      reviewedFiles: 1,
+      skippedFiles: [],
+      partialReview: false,
+    });
+    expect(persistedPayload.trace.entries).toHaveLength(1);
+    expect(persistedPayload.reportMarkdown).toContain('- 置信度: medium');
+    expect(persistedPayload.reportMarkdown).toContain('- Improve Trace: 1');
   });
 
   it('falls back to single inline comments and a summary comment when GitHub batch review fails', async () => {
@@ -407,6 +444,16 @@ describe('ReviewExecutionService', () => {
       fallbackFindings: [],
       summary: '已完成仓库上下文驱动的 PR review，未发现需要处理的问题。',
       riskLevel: 'low',
+      confidence: 'high',
+      coverage: {
+        totalFiles: 1,
+        reviewedFiles: 1,
+        skippedFiles: [],
+        partialReview: false,
+      },
+      nextActions: [],
+      suppressedFindings: [],
+      trace: undefined,
       mode: 'rule-only',
       metadata: {
         llmEnabled: false,
@@ -414,6 +461,8 @@ describe('ReviewExecutionService', () => {
         contextEngineAvailable: false,
         reviewedFiles: 1,
         inlineCommentLimit: 8,
+        reviewMode: 'normal',
+        promptVersion: '2026-03-10-impact-security-logic-v1',
       },
     });
 
@@ -441,5 +490,80 @@ describe('ReviewExecutionService', () => {
 
     const persistedPayload = JSON.parse(analysisModelMock.markComplete.mock.calls[0][1]);
     expect(persistedPayload.inlineComments).toEqual({ planned: 0, posted: 0 });
+  });
+
+  it('persists improve mode metadata and emits trace logs', async () => {
+    reviewEngineReviewMock.mockResolvedValueOnce({
+      fileReviews: [],
+      allFindings: [],
+      summaryFindings: [],
+      inlineComments: [],
+      fallbackFindings: [],
+      summary: 'Improve review summary',
+      riskLevel: 'low',
+      confidence: 'low',
+      coverage: {
+        totalFiles: 2,
+        reviewedFiles: 1,
+        skippedFiles: [{ path: 'assets/logo.png', status: 'modified', reason: 'unsupported_type' }],
+        partialReview: true,
+      },
+      nextActions: ['补充人工检查被跳过的文件。'],
+      suppressedFindings: [
+        {
+          finding: {
+            filePath: 'src/review.ts',
+            lineNumber: 2,
+            severity: 'low',
+            category: 'maintainability',
+            title: '存在调试语句',
+            description: 'console.log 会污染生产日志。',
+            suggestion: '删除 console.log。',
+            source: 'rule',
+          },
+          reason: '低价值样式/清理类提示默认不参与发布，避免 review 噪音',
+        },
+      ],
+      trace: defaultTrace,
+      mode: 'rule-only',
+      metadata: {
+        llmEnabled: false,
+        llmUsed: false,
+        contextEngineAvailable: false,
+        reviewedFiles: 1,
+        inlineCommentLimit: 8,
+        reviewMode: 'improve',
+        promptVersion: '2026-03-10-impact-security-logic-v1',
+      },
+    });
+
+    const service = new ReviewExecutionService();
+
+    await service.execute(1005, JSON.stringify({
+      platform: 'github',
+      repo_name: 'mars/lite',
+      pr_number: '42',
+      repository_id: '7',
+      analysis_id: '13',
+      analysis_job_id: '17',
+      review_mode: 'improve',
+    }));
+
+    expect(reviewEngineReviewMock).toHaveBeenCalledWith(expect.objectContaining({
+      reviewMode: 'improve',
+    }));
+
+    const persistedPayload = JSON.parse(analysisModelMock.markComplete.mock.calls[0][1]);
+    expect(persistedPayload.reviewMode).toBe('improve');
+    expect(persistedPayload.suppressedFindings).toHaveLength(1);
+    expect(persistedPayload.coverage.partialReview).toBe(true);
+    expect(persistedPayload.trace.entries).toHaveLength(1);
+    expect(persistedPayload.reportMarkdown).toContain('- 跳过文件: 1');
+    expect(persistedPayload.reportMarkdown).toContain('- 抑制噪音项: 1');
+    expect(jobLogModelMock.create).toHaveBeenCalledWith(
+      1005,
+      'info',
+      expect.stringContaining('[trace][session]')
+    );
   });
 });

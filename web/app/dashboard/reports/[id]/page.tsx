@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { formatDateTime } from '@/lib/datetime';
-import type { ReviewFinding, ReviewReportCodeLine, ReviewReportDetail, ReviewReportFileContext } from '@/types';
+import type { ReviewFinding, ReviewReportCodeLine, ReviewReportDetail, ReviewReportFileContext, ReviewTraceEntry } from '@/types';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Loading } from '@/components/ui/Loading';
@@ -33,6 +33,12 @@ const severityPanelMap: Record<ReviewFinding['severity'], string> = {
   high: 'border-rose-300/90 bg-rose-50/90 text-rose-950 dark:border-rose-900/60 dark:bg-rose-950/25 dark:text-rose-100',
   medium: 'border-amber-300/90 bg-amber-50/90 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100',
   low: 'border-sky-300/90 bg-sky-50/90 text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100',
+};
+
+const confidenceBadgeMap: Record<NonNullable<ReviewReportDetail['confidence']>, 'success' | 'warning' | 'default'> = {
+  high: 'success',
+  medium: 'warning',
+  low: 'default',
 };
 
 const lineToneMap: Record<ReviewReportCodeLine['type'], string> = {
@@ -148,11 +154,40 @@ function renderFileContext(context: ReviewReportFileContext) {
                 <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
                   {context.language}
                 </span>
+                {context.usedFallback && (
+                  <Badge variant="warning" size="sm">
+                    fallback
+                  </Badge>
+                )}
+                {!context.semanticContext?.contextEngineAvailable && (
+                  <Badge variant="default" size="sm">
+                    limited-context
+                  </Badge>
+                )}
               </div>
               <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{context.filePath}</h3>
               <p className="max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
                 {context.fileSummary || '该文件的 patch 已加载，可查看具体问题与代码位置。'}
               </p>
+              {(context.semanticContext?.changedSymbols.length || context.semanticContext?.impactReferences.length || context.semanticContext?.relatedTests.length) ? (
+                <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                  {context.semanticContext?.changedSymbols.slice(0, 4).map((symbol) => (
+                    <span key={`${context.filePath}-${symbol}`} className="rounded-full bg-white/80 px-2.5 py-1 dark:bg-slate-950/70">
+                      symbol: {symbol}
+                    </span>
+                  ))}
+                  {context.semanticContext?.impactReferences.slice(0, 2).map((reference) => (
+                    <span key={`${context.filePath}-${reference}`} className="rounded-full bg-white/80 px-2.5 py-1 dark:bg-slate-950/70">
+                      impact: {reference}
+                    </span>
+                  ))}
+                  {context.semanticContext?.relatedTests.slice(0, 2).map((testRef) => (
+                    <span key={`${context.filePath}-${testRef}`} className="rounded-full bg-white/80 px-2.5 py-1 dark:bg-slate-950/70">
+                      test: {testRef}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div className="grid min-w-[220px] grid-cols-3 gap-2 text-center">
               <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/80 px-3 py-3 dark:border-emerald-900/60 dark:bg-emerald-950/20">
@@ -208,12 +243,41 @@ function renderFileContext(context: ReviewReportFileContext) {
   );
 }
 
+function renderTraceEntry(entry: ReviewTraceEntry, index: number) {
+  const label = entry.kind === 'tool' ? `${entry.stage}.${entry.tool}` : entry.stage;
+  const badge = entry.kind === 'decision' ? entry.action : entry.status;
+  const detail = entry.kind === 'tool'
+    ? `in=${entry.input}\nout=${entry.output}`
+    : entry.kind === 'decision'
+      ? `${entry.reason}${entry.evidenceRefs?.length ? `\nevidence: ${entry.evidenceRefs.join('; ')}` : ''}`
+      : entry.detail || 'no detail';
+
+  return (
+    <div key={`${entry.kind}-${entry.at}-${index}`} className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-slate-800/80 dark:bg-slate-900/70">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{label}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{formatDate(entry.at)}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant="default" size="sm">{entry.kind}</Badge>
+          <Badge variant="info" size="sm">{badge}</Badge>
+        </div>
+      </div>
+      <pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-[12px] leading-6 text-slate-700 dark:text-slate-200">
+        {detail}
+      </pre>
+    </div>
+  );
+}
+
 export default function ReviewReportPage() {
   const params = useParams<{ id: string }>();
   const reportId = params?.id;
-  const { error } = useNotificationHelpers();
+  const { error, success } = useNotificationHelpers();
   const [report, setReport] = useState<ReviewReportDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [retryMode, setRetryMode] = useState<'normal' | 'improve' | null>(null);
 
   const loadReport = useCallback(async () => {
     if (!reportId) {
@@ -254,6 +318,28 @@ export default function ReviewReportPage() {
     () => report?.fileContexts.filter((context) => context.totalFindings > 0) || [],
     [report?.fileContexts]
   );
+  const traceEntries = report?.trace?.entries || [];
+  const skippedFiles = report?.coverage?.skippedFiles || [];
+  const suppressedCount = report?.suppressedFindings?.length || 0;
+
+  const handleRetry = useCallback(async (mode: 'normal' | 'improve') => {
+    if (!reportId) {
+      return;
+    }
+
+    try {
+      setRetryMode(mode);
+      const response = await apiClient.retryAnalysis(reportId, mode);
+      success(
+        mode === 'improve' ? '已重新触发 Improve Review' : '已重新触发 Review',
+        `分析 #${response.data.id} 已创建${mode === 'improve' ? '，将记录详细 trace' : ''}`
+      );
+    } catch (err) {
+      error('重试失败', err instanceof Error ? err.message : '无法重新触发分析');
+    } finally {
+      setRetryMode(null);
+    }
+  }, [error, reportId, success]);
 
   if (isLoading && !report) {
     return <Loading />;
@@ -285,13 +371,21 @@ export default function ReviewReportPage() {
                 Review 报告 #{report.analysis.id}
               </h1>
               <Badge variant={riskBadgeMap[report.riskLevel]}>{report.riskLevel}</Badge>
+              {report.confidence && (
+                <Badge variant={confidenceBadgeMap[report.confidence]}>{report.confidence} confidence</Badge>
+              )}
+              {report.reviewMode && (
+                <Badge variant="default">{report.reviewMode}</Badge>
+              )}
               <Badge
                 variant={
                   report.analysis.status === 'completed'
                     ? 'success'
                     : report.analysis.status === 'failed'
                       ? 'error'
-                      : 'warning'
+                      : report.analysis.status === 'cancelled'
+                        ? 'default'
+                        : 'warning'
                 }
               >
                 {report.analysis.status}
@@ -335,6 +429,22 @@ export default function ReviewReportPage() {
               >
                 打开 PR
               </a>
+              <button
+                type="button"
+                disabled={retryMode !== null}
+                onClick={() => void handleRetry('normal')}
+                className="inline-flex flex-1 items-center justify-center rounded-2xl border border-slate-300 bg-white/85 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-200 dark:hover:bg-slate-900"
+              >
+                {retryMode === 'normal' ? '重试中...' : '重新审查'}
+              </button>
+              <button
+                type="button"
+                disabled={retryMode !== null}
+                onClick={() => void handleRetry('improve')}
+                className="inline-flex flex-1 items-center justify-center rounded-2xl bg-teal-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {retryMode === 'improve' ? '重试中...' : 'Improve 重跑'}
+              </button>
             </div>
           </div>
         </div>
@@ -402,6 +512,40 @@ export default function ReviewReportPage() {
                   {overallFindings.map((finding, index) => renderFindingCard(finding, `overall-${index}`, true))}
                 </div>
               )}
+
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  Coverage
+                </p>
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-4 text-sm dark:border-slate-800/80 dark:bg-slate-900/70">
+                  <p className="font-medium text-slate-900 dark:text-slate-100">
+                    {report.coverage ? `${report.coverage.reviewedFiles}/${report.coverage.totalFiles} 文件已审查` : '未记录覆盖信息'}
+                  </p>
+                  <p className="mt-2 text-slate-600 dark:text-slate-300">
+                    跳过 {skippedFiles.length} 个文件，抑制 {suppressedCount} 个低价值提示。
+                  </p>
+                </div>
+              </div>
+
+              {(report.nextActions?.length || skippedFiles.length) ? (
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                    Next actions
+                  </p>
+                  <div className="space-y-2">
+                    {(report.nextActions || []).map((action, index) => (
+                      <div key={`${action}-${index}`} className="rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm text-slate-700 dark:border-slate-800/80 dark:bg-slate-900/70 dark:text-slate-200">
+                        {action}
+                      </div>
+                    ))}
+                    {skippedFiles.slice(0, 3).map((item) => (
+                      <div key={`${item.path}-${item.reason}`} className="rounded-2xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+                        skipped: {item.path} ({item.reason})
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -424,6 +568,19 @@ export default function ReviewReportPage() {
               </div>
             </CardContent>
           </Card>
+
+          {traceEntries.length > 0 && (
+            <Card className="rounded-[28px] border-slate-200/80 bg-white/96 dark:border-slate-800/80 dark:bg-slate-950/85">
+              <CardContent className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  Improve Trace
+                </p>
+                <div className="space-y-3">
+                  {traceEntries.slice(0, 18).map(renderTraceEntry)}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 

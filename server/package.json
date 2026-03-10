@@ -20,7 +20,6 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@grpc/grpc-js": "^1.14.3",
     "better-sqlite3": "^12.6.2",
     "body-parser": "^2.2.2",
     "cookie-parser": "^1.4.6",

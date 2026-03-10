@@ -91,7 +91,6 @@ sudo yum install -y python3.11 python3-pip
 |------|------|-----------|
 | 80/443 | 前端（HTTP/HTTPS） | 是 |
 | 7900 | 后端 API | 否（仅前端需要） |
-| 50051 | Review Agent gRPC | 否（仅内部） |
 | 50052 | Context Agent gRPC | 否（仅内部） |
 
 **UFW 防火墙配置**：
@@ -131,7 +130,6 @@ npm install
 
 # 安装 Python 依赖
 cd context-agent && pip install -r requirements.txt && cd ..
-cd review-agent && pip install -r requirements.txt && cd ..
 ```
 
 ### 3. 配置环境
@@ -426,14 +424,12 @@ COPY package*.json ./
 RUN npm ci
 COPY server ./server
 COPY context-agent ./context-agent
-COPY review-agent ./review-agent
 COPY proto ./proto
 COPY .env.example .env
 RUN apk add --no-cache python3 py3-pip && \
-    pip3 install --no-cache-dir -r context-agent/requirements.txt && \
-    pip3 install --no-cache-dir -r review-agent/requirements.txt
+    pip3 install --no-cache-dir -r context-agent/requirements.txt
 ENV NODE_ENV=production
-EXPOSE 7900 50051 50052
+EXPOSE 7900 50052
 CMD ["npm", "run", "start:backend"]
 ```
 
@@ -946,7 +942,7 @@ cd /opt/codagraph-lite
 tar czf ~/codagraph-lite-backup-$(date +%Y%m%d).tar.gz data/
 
 # 删除应用（保留 data 目录）
-rm -rf context-agent review-agent server web deploy
+rm -rf context-agent server web deploy
 ```
 
 ---

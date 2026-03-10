@@ -12,7 +12,7 @@ import { logger } from '../utils/logger';
  */
 export enum AgentType {
   CONTEXT = 'context-agent',
-  REVIEW = 'review-agent',
+  REVIEW = 'review-execution',
 }
 
 /**
@@ -83,7 +83,7 @@ export interface AvailableResources {
   cpuCores: number;
   memoryMB: number;
   canStartContextAgent: boolean;
-  canStartReviewAgent: boolean;
+  canStartReviewExecution: boolean;
 }
 
 /**
@@ -101,8 +101,7 @@ export const RESOURCE_CONFIG = {
 
   // 超时 (ms)
   contextAgentTimeout: 300000,         // Context Agent 5 分钟
-  reviewAgentTimeout: 600000,          // Review Agent 10 分钟
-  grpcRequestTimeout: 60000,           // gRPC 请求 60 秒
+  reviewExecutionTimeout: 600000,      // Review 执行预算 10 分钟
   killGracePeriod: 5000,              // 5 秒优雅关闭
 
   // 缓存配置
@@ -241,7 +240,7 @@ export class ResourceAllocator implements ResourceAllocator {
       cpuCores: RESOURCE_CONFIG.workerCount,
       memoryMB: availableMemoryMB,
       canStartContextAgent: this.canStartAgent(AgentType.CONTEXT),
-      canStartReviewAgent: this.canStartAgent(AgentType.REVIEW),
+      canStartReviewExecution: this.canStartAgent(AgentType.REVIEW),
     };
   }
 

@@ -231,9 +231,15 @@ interface ReviewReportDetailResponse {
   report?: {
     summary?: string;
     riskLevel?: ReviewReportDetail['riskLevel'];
+    confidence?: ReviewReportDetail['confidence'];
+    reviewMode?: ReviewReportDetail['reviewMode'];
     reportMarkdown?: string;
     findings?: ReviewReportDetail['findings'];
     fileContexts?: ReviewReportDetail['fileContexts'];
+    coverage?: ReviewReportDetail['coverage'];
+    nextActions?: ReviewReportDetail['nextActions'];
+    suppressedFindings?: ReviewReportDetail['suppressedFindings'];
+    trace?: ReviewReportDetail['trace'];
     postedCommentCount?: number;
     jobId?: string | number;
     generatedAt?: string;
@@ -436,7 +442,7 @@ function mapAnalysis(item: AnalysisApiItem): Analysis {
     prUrl: buildPrUrl(item.platform, item.owner, item.repo_name, item.pr_number),
     baseBranch: item.base_commit,
     headBranch: item.head_commit,
-    status: item.status === 'cancelled' ? 'failed' : item.status,
+    status: item.status,
     errorMessage: item.error_message || undefined,
     reviewCommentCount: item.comment_count,
     fileAnalysisCount: item.file_count,
@@ -811,7 +817,8 @@ class ApiClient {
 
   async startRepositoryPullRequestReview(
     repositoryId: string,
-    prNumber: number
+    prNumber: number,
+    mode: 'normal' | 'improve' = 'normal'
   ): Promise<ApiResponse<{ jobId?: string; analysisId?: string; created: boolean; message: string }>> {
     const response = await this.post<{
       jobId?: number | null;
@@ -819,7 +826,8 @@ class ApiClient {
       message: string;
       analysis?: { id: number | string } | null;
     }>(
-      `/api/repositories/${repositoryId}/pull-requests/${prNumber}/review`
+      `/api/repositories/${repositoryId}/pull-requests/${prNumber}/review`,
+      { mode }
     );
 
     return {
@@ -924,8 +932,8 @@ class ApiClient {
   }
 
   // 重新触发分析
-  async retryAnalysis(id: string): Promise<ApiResponse<Analysis>> {
-    const response = await this.post<{ analysis: AnalysisApiItem }>(`/api/analyses/${id}/retry`);
+  async retryAnalysis(id: string, mode: 'normal' | 'improve' = 'normal'): Promise<ApiResponse<Analysis>> {
+    const response = await this.post<{ analysis: AnalysisApiItem }>(`/api/analyses/${id}/retry`, { mode });
     return {
       success: true,
       data: mapAnalysis(response.analysis),
@@ -1011,9 +1019,15 @@ class ApiClient {
         analysis,
         summary: response.report?.summary,
         riskLevel: response.report?.riskLevel || 'unknown',
+        confidence: response.report?.confidence,
+        reviewMode: response.report?.reviewMode,
         reportMarkdown: response.report?.reportMarkdown,
         findings: response.report?.findings || [],
         fileContexts: response.report?.fileContexts || [],
+        coverage: response.report?.coverage,
+        nextActions: response.report?.nextActions || [],
+        suppressedFindings: response.report?.suppressedFindings || [],
+        trace: response.report?.trace,
         fileCount: analysis.fileAnalysisCount,
         commentCount: analysis.reviewCommentCount,
         issueCount: response.report?.findings?.length || 0,

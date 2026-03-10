@@ -176,9 +176,8 @@ git pull origin main
 # 安装 Node.js 依赖
 npm install
 
-# 安装 Python 依赖
+# 安装 Python 依赖（仅 Context Agent；Review Runtime 已内置在 server）
 pip install -r context-agent/requirements.txt
-pip install -r review-agent/requirements.txt
 ```
 
 #### 步骤 4：数据库迁移

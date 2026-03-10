@@ -1,5 +1,7 @@
 # Code Context Engine runtime 与 Agents 交互架构设计
 
+> Historical note: the standalone gRPC review-agent path described below is no longer part of the active implementation. The current shipped review flow executes in-process under `server/src/review/*`, with `context-agent` as the only remaining gRPC agent.
+
 ## 1. 架构概述
 
 ### 1.1 设计目标

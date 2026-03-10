@@ -82,9 +82,6 @@ export interface AgentConfig {
   contextAgentPort: number;
   contextAgentHost: string;
   contextAgentTimeout: number;
-  reviewAgentPort: number;
-  reviewAgentHost: string;
-  reviewAgentTimeout: number;
   pythonMemoryLimit: string;
   killGracePeriod: number;
 }
@@ -327,9 +324,6 @@ export function loadConfig(): AppConfig {
       contextAgentPort: getEnvNumber('CONTEXT_AGENT_PORT', 50052),
       contextAgentHost: getEnv('CONTEXT_AGENT_HOST', 'localhost'),
       contextAgentTimeout: getEnvNumber('AGENT_TIMEOUT_CONTEXT', 300000),
-      reviewAgentPort: getEnvNumber('REVIEW_AGENT_PORT', 50051),
-      reviewAgentHost: getEnv('REVIEW_AGENT_HOST', 'localhost'),
-      reviewAgentTimeout: getEnvNumber('AGENT_TIMEOUT_REVIEW', 600000),
       pythonMemoryLimit: getEnv('PYTHON_MEMORY_LIMIT', '300m'),
       killGracePeriod: 5000,
     },

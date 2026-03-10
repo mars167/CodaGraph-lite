@@ -391,10 +391,13 @@ router.post('/:id/pull-requests/:prNumber/review', async (req: Request, res: Res
       return res.status(400).json({ error: '无效的参数' });
     }
 
+    const reviewMode = req.body?.mode === 'improve' ? 'improve' : 'normal';
+
     const result = await getReviewTriggerService().triggerByRepositoryId(id, prNumber, {
       source: 'manual',
       priority: 2,
       force: true,
+      reviewMode,
     });
 
     return res.status(result.created ? 201 : 200).json({
@@ -403,6 +406,7 @@ router.post('/:id/pull-requests/:prNumber/review', async (req: Request, res: Res
       analysis: result.analysis,
       analysisJob: result.analysisJob,
       jobId: result.jobId,
+      reviewMode,
       message: result.message,
     });
   } catch (error) {

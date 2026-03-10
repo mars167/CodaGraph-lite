@@ -78,8 +78,8 @@ main() {
     npm install --production
 
     log_info "安装 Python 依赖..."
+    # Review Runtime 已并入 server，仅需安装 context-agent 依赖。
     cd context-agent && pip install -e . && cd ..
-    cd review-agent && pip install -e . && cd ..
 
     # 构建前端
     log_info "构建前端应用..."
@@ -166,15 +166,6 @@ main() {
 
 # 信号处理
 trap 'log_info "收到中断信号，正在清理..."; exit 130' INT TERM
-
-# 显示最终状态
-echo
-echo "============================================"
-echo "  部署完成"
-echo "============================================"
-
-exit 0
-}
 
 # 执行主程序
 main "$@"

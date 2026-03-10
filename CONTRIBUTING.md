@@ -79,10 +79,6 @@ npm install
 # Context Agent
 cd ../context-agent
 pip install -e ".[dev]"
-
-# Review Agent
-cd ../review-agent
-pip install -e ".[dev]"
 ```
 
 ### 运行开发服务器

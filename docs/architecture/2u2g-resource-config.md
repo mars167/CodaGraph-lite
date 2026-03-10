@@ -1,5 +1,7 @@
 # 2u2g 资源限制和并发配置
 
+> Historical note: this document still references the older agent-based architecture. The active review path now runs in-process without a separate review-agent service; only `context-agent` still runs as a separate Python process.
+
 ## 概述
 
 本文档描述 CodaGraph 在 2u2g 服务器（2 cores, 2GB RAM）上的资源管理和并发策略。

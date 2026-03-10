@@ -242,7 +242,7 @@ export default function JobDetailPage() {
                 </div>
                 <h2 className="mt-4 text-lg font-semibold text-slate-50">实时日志</h2>
                 <p className="mt-1 text-sm text-slate-400">
-                  终端流式视图，展示 worker 生命周期、review-agent 推理节点和工具调用摘要。
+                  终端流式视图，展示 review worker 生命周期、推理节点和工具调用摘要。
                 </p>
               </div>
               <div className="grid min-w-[220px] grid-cols-2 gap-2 font-mono text-[11px] uppercase tracking-[0.18em] text-slate-400">

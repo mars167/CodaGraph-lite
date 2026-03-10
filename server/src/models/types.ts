@@ -416,6 +416,7 @@ export interface JobPayload {
   analysis_job_id?: string;
   head_commit?: string;
   trigger_source?: 'manual' | 'watch' | 'webhook';
+  review_mode?: 'normal' | 'improve';
 }
 
 /**
