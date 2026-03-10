@@ -1,6 +1,6 @@
-# Agent 集成文档
+# Agent 集成历史文档
 
-> Historical note: the legacy gRPC review-agent path has been removed from the active product. This document is retained for historical reference only.
+> Historical note: the legacy gRPC review-agent path has been removed from the active product. This document is retained for historical reference only. The current production review path is `CodeReviewWorker -> ReviewExecutionService -> server/src/review/*`, with only `context-agent` still running as a separate gRPC process.
 
 ## 概述
 
@@ -12,12 +12,12 @@
 
 ### 1.1 组件
 
-| 组件 | 语言 | 端口 | 职责 |
-|------|--------|------|--------|
-| Context Agent | Python 3.11+ | 50052 | 使用 Code Context Engine 收集代码上下文 |
-| Review Agent | Python 3.11+ | 50051 | 使用 LLM 进行代码审查 |
-| Agent Manager | TypeScript (Node.js) | - | 管理子进程生命周期 |
-| Agent Client | TypeScript (Node.js) | - | gRPC 客户端通信 |
+| 组件 | 状态 | 语言 | 端口 | 职责 |
+|------|------|--------|------|--------|
+| Context Agent | 仍在使用 | Python 3.11+ | 50052 | 使用 Code Context Engine 收集代码上下文 |
+| Review Agent | 已移除 | Python 3.11+ | 50051 | 历史上的独立 LLM 审查服务 |
+| Agent Manager | 已移除 | TypeScript (Node.js) | - | 历史上的子进程生命周期管理 |
+| Agent Client | 部分保留 | TypeScript (Node.js) | - | 当前仅保留 Context Agent 的 gRPC 客户端 |
 
 ### 1.2 通信流程
 

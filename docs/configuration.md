@@ -308,19 +308,15 @@ CONTEXT_AGENT_HOST=localhost
 AGENT_TIMEOUT_CONTEXT=300000  # 5分钟
 ```
 
-### Review Agent 配置
+### Review Runtime 配置
 
 | 环境变量 | 默认值 | 说明 |
 |-----------|---------|------|
-| `REVIEW_AGENT_PORT` | `50051` | Review Agent gRPC 服务端口 |
-| `REVIEW_AGENT_HOST` | `localhost` | Review Agent 主机地址 |
-| `AGENT_TIMEOUT_REVIEW` | `600000` | Review Agent 超时（毫秒，10分钟） |
+| `AGENT_TIMEOUT_REVIEW` | `600000` | In-process review runtime 超时（毫秒，10分钟） |
 
 **配置示例**：
 ```bash
-# Review Agent 配置
-REVIEW_AGENT_PORT=50051
-REVIEW_AGENT_HOST=localhost
+# Review Runtime 配置
 AGENT_TIMEOUT_REVIEW=600000  # 10分钟
 ```
 

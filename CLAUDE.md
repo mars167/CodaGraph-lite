@@ -12,7 +12,7 @@ CodaGraph-lite is a lightweight code review platform designed for individual dev
 - OAuth 2.0 authentication
 - SQLite-based job queue (no Redis)
 - Single-admin authentication model
-- Python agents (Context Agent + Review Agent) via gRPC
+- Context Agent via gRPC plus an in-process review runtime
 
 ## Project Structure
 
@@ -115,7 +115,7 @@ pip install -r requirements.txt
 2. Webhook handler validates signature → creates job in SQLite queue
 3. Job queue worker polls for pending jobs
 4. Worker spawns Context Agent (gRPC) → collects code context
-5. Worker spawns Review Agent (gRPC) → analyzes and generates comments
+5. Worker runs the in-process review runtime → analyzes and generates comments
 6. Review comments posted back to platform API
 7. Job status updated in SQLite
 ```
@@ -128,7 +128,7 @@ All components are optimized for 2GB RAM servers:
 |-----------|-------------|------------|
 | Frontend (Next.js) | 200MB | `NODE_OPTIONS=--max-old-space-size=200` |
 | Backend (Express) | 200MB | `NODE_OPTIONS=--max-old-space-size=200` |
-| Python Agents | 300MB | `PYTHON_MEMORY_LIMIT=300m` |
+| Context Agent (Python) | 300MB | `PYTHON_MEMORY_LIMIT=300m` |
 | Code Context Engine runtime | 256MB | `CODE_CONTEXT_ENGINE_MAX_MEMORY=256m` |
 | SQLite Cache | 2MB | `SQLITE_CACHE_SIZE=-2000` |
 | Job Workers | 1 | `WORKER_COUNT=1`, `ENABLE_CONCURRENT_JOBS=false` |
@@ -159,11 +159,10 @@ GITHUB_CLIENT_ID=...
 GITHUB_CLIENT_SECRET=...
 GITHUB_CALLBACK_URL=http://localhost:7900/api/oauth/github/callback
 
-# Agents
+# Context Agent / Review Runtime
 CONTEXT_AGENT_PORT=50052
-REVIEW_AGENT_PORT=50051
 AGENT_TIMEOUT_CONTEXT=300000  # 5 minutes
-AGENT_TIMEOUT_REVIEW=600000   # 10 minutes
+AGENT_TIMEOUT_REVIEW=600000   # review execution timeout
 PYTHON_MEMORY_LIMIT=300m
 
 # Code Context Engine

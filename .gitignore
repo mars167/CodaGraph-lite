@@ -108,3 +108,6 @@ secrets/
 
 # 本地 skills 安装目录
 skills/
+
+# OpenSpec 变更文档仅作本地规划，不纳入新的 Git 追踪
+openspec/changes/*

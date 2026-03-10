@@ -134,7 +134,7 @@ CodaGraph-lite 是 CodaGraph 的轻量级版本，专为个人开发者或小型
 
 ### AI 服务
 - **Context Agent**: Python 3.11+ (gRPC)
-- **Review Agent**: Python 3.11+ (gRPC)
+- **Review Runtime**: `server/src/review/*` 内进程执行
 - **代码分析**: Code Context Engine runtime
 - **LLM 支持**: OpenAI, Anthropic, DeepSeek 等
 
@@ -158,7 +158,7 @@ CodaGraph-lite 专为 2 核 2GB 内存的服务器优化，确保在资源受限
 | Express 后端服务 | 150-200MB | `NODE_OPTIONS=--max-old-space-size=200` |
 | SQLite 数据库 | 50-100MB | `cache_size=-2000` (2MB) |
 | Python Context Agent | 200-300MB | `PYTHON_MEMORY_LIMIT=300m` |
-| Python Review Agent | 200-300MB | `PYTHON_MEMORY_LIMIT=300m` |
+| In-process Review Runtime | 0MB（复用后端进程预算） | `AGENT_TIMEOUT_REVIEW=600000` |
 | Code Context Engine runtime | 100-200MB | `CODE_CONTEXT_ENGINE_MAX_MEMORY=256m` |
 | **峰值总计** | ~1350MB | < 2GB (含 swap) |
 
@@ -418,7 +418,7 @@ codagraph-lite/
 4. Worker 克隆仓库到工作区
 5. 初始化 Code Context Engine runtime 并收集检索上下文
 6. 启动 Context Agent 收集上下文
-7. 启动 Review Agent 执行审查
+7. 在后端进程内运行 Review Runtime 执行审查
 8. 格式化审查评论
 9. 发布评论到原平台
 
@@ -493,6 +493,7 @@ sudo bash deploy/deploy.sh systemd
 # 2. 或手动部署
 npm install
 cd context-agent && pip install -r requirements.txt && cd ..
+# Review Runtime 已内置在 server 中，不需要单独安装 review-agent
 cp .env.example .env
 nano .env  # 编辑配置
 cd web && npm run build && cd ..
@@ -568,18 +569,19 @@ bash deploy/monitor.sh --continuous --interval=5
 │  │ SQLite 数据库 │ 作业队列  │ Auth 中间件│       │
 │  └────────────┴──────────┴───────────┘       │
 │                                                  │
-│  ┌──────────────┬──────────────────────┐          │
-│  │ gRPC 客户端   │ gRPC 客户端        │
-│  └──────┬───────┴───────┬──────┘          │
-│         │                 │                     │
-│  ┌──────▼──────┐   ┌───▼──────────┐          │
-│  │Context Agent  │   │ Review Agent │          │
-│  │Python 3.11+  │   │Python 3.11+ │          │
-│  │ (临时进程)    │   │ (临时进程)    │          │
-│  └──────┬───────┘   └───┬───────┘          │
+│  ┌──────────────┬────────────────────────┐        │
+│  │ gRPC 客户端   │ In-process Review     │        │
+│  │ (Context)    │ Runtime (`src/review`)│        │
+│  └──────┬───────┴───────────┬────────────┘        │
+│         │                   │                     │
+│  ┌──────▼──────┐    ┌──────▼──────────┐          │
+│  │Context Agent │    │ Review Runtime  │          │
+│  │Python 3.11+  │    │ Node.js 进程内  │          │
+│  │ (临时进程)    │    │ 执行与发布评论  │          │
+│  └──────┬───────┘    └──────┬──────────┘          │
 │         │                   │                     │
 │         └─────────┬─────────┘                    │
-│                   ▼                             │
+│                   ▼                              │
 │            Code Context Engine runtime (索引)                    │
 └────────────────────────────────────────────────────────┘
 

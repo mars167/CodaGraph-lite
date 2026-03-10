@@ -491,7 +491,7 @@ grep -E "AGENT_TIMEOUT" .env
 
 # 延长超时时间（单位：毫秒）
 # AGENT_TIMEOUT_CONTEXT=600000    # 10 分钟
-# AGENT_TIMEOUT_REVIEW=1200000   # 20 分钟
+# AGENT_TIMEOUT_REVIEW=1200000    # Review Runtime 20 分钟
 ```
 
 ### 问题：Agent 进程残留（僵尸进程）
@@ -523,11 +523,10 @@ sudo systemctl restart codagraph-lite-backend
 
 ```bash
 # 检查端口监听
-netstat -tulpn | grep -E "50051|50052"
+netstat -tulpn | grep 50052
 
 # 解决方案：确保端口配置正确
 # CONTEXT_AGENT_PORT=50052
-# REVIEW_AGENT_PORT=50051
 ```
 
 ---

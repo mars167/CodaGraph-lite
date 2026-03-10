@@ -91,7 +91,6 @@ sudo yum install -y python3.11 python3-pip
 |------|------|-----------|
 | 80/443 | 前端（HTTP/HTTPS） | 是 |
 | 7900 | 后端 API | 否（仅前端需要） |
-| 50051 | Review Agent gRPC | 否（仅内部） |
 | 50052 | Context Agent gRPC | 否（仅内部） |
 
 **UFW 防火墙配置**：

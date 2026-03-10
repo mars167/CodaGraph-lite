@@ -36,7 +36,7 @@ python -m grpc_tools.protoc \
     --grpc_python_out="$PYTHON_OUT" \
     "$PROTO_FILE"
 
-# Also copy to the context-agent directory
+# The standalone review-agent path is retired; only context-agent receives Python stubs.
 cp "$PYTHON_OUT/agent_pb2.py" "$PROJECT_ROOT/context-agent/src/context_agent/"
 cp "$PYTHON_OUT/agent_pb2_grpc.py" "$PROJECT_ROOT/context-agent/src/context_agent/"
 

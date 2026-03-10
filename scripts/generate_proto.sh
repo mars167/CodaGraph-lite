@@ -23,6 +23,7 @@ if [ ! -f "$PROTO_FILE" ]; then
 fi
 
 # 生成 Python gRPC 代码
+# 注意：独立 review-agent 已退役，Python stubs 只需要同步到 context-agent。
 echo "📝 生成 Python gRPC 代码..."
 
 # Context Agent
