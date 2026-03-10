@@ -25,7 +25,7 @@ type LlmMetricKey =
   | 'llmTotalTokens'
   | 'llmFailedRequests';
 
-type TrendWindowKey = '10m' | '30m' | '120m';
+type TrendWindowKey = '10m' | '30m' | '120m' | '24h' | '3d' | '7d' | 'custom';
 
 type TrendSnapshot = {
   timestamp: number;
@@ -42,7 +42,7 @@ type TrendSnapshot = {
 };
 
 const TREND_HISTORY_STORAGE_KEY = 'codagraph.dashboard.trend-history';
-const MAX_TREND_POINTS = 240;
+const MAX_TREND_POINTS = 20160; // 7 days * 24h * 60m * 2 (30s interval)
 
 function formatMemory(bytes: number) {
   const mb = bytes / (1024 * 1024);
@@ -79,6 +79,17 @@ function formatClockMinute(timestamp?: number | null) {
     minute: '2-digit',
     timeZone: 'Asia/Shanghai',
   });
+}
+
+function toIsoStringLocal(timestamp: number) {
+  const date = new Date(timestamp);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const yyyy = date.getFullYear();
+  const MM = pad(date.getMonth() + 1);
+  const dd = pad(date.getDate());
+  const hh = pad(date.getHours());
+  const mm = pad(date.getMinutes());
+  return `${yyyy}-${MM}-${dd}T${hh}:${mm}`;
 }
 
 function readStoredTrendHistory(): TrendSnapshot[] {
@@ -162,6 +173,53 @@ function mergeTrendHistory(history: TrendSnapshot[], snapshot: TrendSnapshot): T
 
   next.push(snapshot);
   return next.slice(-MAX_TREND_POINTS);
+}
+
+function fillTrendGaps(history: TrendSnapshot[]): TrendSnapshot[] {
+  if (history.length < 2) return history;
+
+  const filled: TrendSnapshot[] = [history[0]];
+  const GAP_THRESHOLD = 65 * 1000; // > 1 minute (allow some jitter)
+
+  for (let i = 1; i < history.length; i++) {
+    const prev = filled[filled.length - 1];
+    const curr = history[i];
+    const diff = curr.timestamp - prev.timestamp;
+
+    if (diff > GAP_THRESHOLD) {
+      filled.push({
+        timestamp: prev.timestamp + 30000,
+        jobsProcessed: prev.jobsProcessed, // Keep cumulative metrics steady
+        jobsFailed: prev.jobsFailed,
+        avgProcessingTime: 0,
+        workerConfigured: 0,
+        workerRunningJobs: 0,
+        workerPendingJobs: 0,
+        llmPromptTokens: prev.llmPromptTokens,
+        llmCompletionTokens: prev.llmCompletionTokens,
+        llmTotalTokens: prev.llmTotalTokens,
+        llmFailedRequests: prev.llmFailedRequests,
+      });
+
+      if (diff > GAP_THRESHOLD * 2) {
+        filled.push({
+          timestamp: curr.timestamp - 30000,
+          jobsProcessed: prev.jobsProcessed,
+          jobsFailed: prev.jobsFailed,
+          avgProcessingTime: 0,
+          workerConfigured: 0,
+          workerRunningJobs: 0,
+          workerPendingJobs: 0,
+          llmPromptTokens: prev.llmPromptTokens,
+          llmCompletionTokens: prev.llmCompletionTokens,
+          llmTotalTokens: prev.llmTotalTokens,
+          llmFailedRequests: prev.llmFailedRequests,
+        });
+      }
+    }
+    filled.push(curr);
+  }
+  return filled;
 }
 
 function buildSeriesStats(values: number[]) {
@@ -260,6 +318,8 @@ export default function DashboardPage() {
   const [activeLlmTrendMetric, setActiveLlmTrendMetric] = useState<LlmMetricKey>('llmTotalTokens');
   const [activeTrendWindow, setActiveTrendWindow] = useState<TrendWindowKey>('30m');
   const [activeLlmTrendWindow, setActiveLlmTrendWindow] = useState<TrendWindowKey>('30m');
+  const [customThroughputRange, setCustomThroughputRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
+  const [customLlmRange, setCustomLlmRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
   const [trendHistory, setTrendHistory] = useState<TrendSnapshot[]>([]);
 
   useEffect(() => {
@@ -454,31 +514,46 @@ export default function DashboardPage() {
 
   const activeMetricMeta = throughputMetrics.find((item) => item.key === activeTrendMetric) || throughputMetrics[0];
   const activeLlmMetricMeta = llmMetrics.find((item) => item.key === activeLlmTrendMetric) || llmMetrics[0];
-  const trendWindows: Array<{ key: TrendWindowKey; label: string; minutes: number }> = [
-    { key: '10m', label: '10 分钟', minutes: 10 },
-    { key: '30m', label: '30 分钟', minutes: 30 },
-    { key: '120m', label: '2 小时', minutes: 120 },
+  const trendWindows: Array<{ key: TrendWindowKey; label: string; minutes?: number }> = [
+    { key: '10m', label: '最近 10 分钟', minutes: 10 },
+    { key: '30m', label: '最近 30 分钟', minutes: 30 },
+    { key: '120m', label: '最近 2 小时', minutes: 120 },
+    { key: '24h', label: '最近 24 小时', minutes: 1440 },
+    { key: '3d', label: '最近 3 天', minutes: 4320 },
+    { key: '7d', label: '最近 7 天', minutes: 10080 },
+    { key: 'custom', label: '自定义范围' },
   ];
   const activeTrendWindowMeta = trendWindows.find((item) => item.key === activeTrendWindow) || trendWindows[1];
   const activeLlmTrendWindowMeta = trendWindows.find((item) => item.key === activeLlmTrendWindow) || trendWindows[1];
+  const getFilteredHistory = (
+    history: TrendSnapshot[],
+    windowKey: TrendWindowKey,
+    windowMeta: { minutes?: number },
+    customRange: { start: string; end: string }
+  ) => {
+    if (history.length === 0) return [];
+
+    if (windowKey === 'custom') {
+      const startTime = customRange.start ? new Date(customRange.start).getTime() : 0;
+      const endTime = customRange.end ? new Date(customRange.end).getTime() : Infinity;
+      const filtered = history.filter((item) => item.timestamp >= startTime && item.timestamp <= endTime);
+      return filtered.length > 0 ? fillTrendGaps(filtered) : [];
+    }
+
+    const latestTimestamp = history[history.length - 1]?.timestamp || Date.now();
+    const minutes = windowMeta.minutes || 30;
+    const windowStart = latestTimestamp - (minutes * 60 * 1000);
+    const filtered = history.filter((item) => item.timestamp >= windowStart);
+    return filtered.length > 0 ? fillTrendGaps(filtered) : history.slice(-1);
+  };
+
   const throughputTrendHistory = useMemo(() => {
-    if (trendHistory.length === 0) {
-      return [];
-    }
-    const latestTimestamp = trendHistory[trendHistory.length - 1]?.timestamp || Date.now();
-    const windowStart = latestTimestamp - (activeTrendWindowMeta.minutes * 60 * 1000);
-    const filtered = trendHistory.filter((item) => item.timestamp >= windowStart);
-    return filtered.length > 0 ? filtered : trendHistory.slice(-1);
-  }, [activeTrendWindowMeta.minutes, trendHistory]);
+    return getFilteredHistory(trendHistory, activeTrendWindow, activeTrendWindowMeta, customThroughputRange);
+  }, [activeTrendWindow, activeTrendWindowMeta, customThroughputRange, trendHistory]);
+
   const llmTrendHistory = useMemo(() => {
-    if (trendHistory.length === 0) {
-      return [];
-    }
-    const latestTimestamp = trendHistory[trendHistory.length - 1]?.timestamp || Date.now();
-    const windowStart = latestTimestamp - (activeLlmTrendWindowMeta.minutes * 60 * 1000);
-    const filtered = trendHistory.filter((item) => item.timestamp >= windowStart);
-    return filtered.length > 0 ? filtered : trendHistory.slice(-1);
-  }, [activeLlmTrendWindowMeta.minutes, trendHistory]);
+    return getFilteredHistory(trendHistory, activeLlmTrendWindow, activeLlmTrendWindowMeta, customLlmRange);
+  }, [activeLlmTrendWindow, activeLlmTrendWindowMeta, customLlmRange, trendHistory]);
   const throughputValues = useMemo(
     () => buildThroughputValues(throughputTrendHistory, activeTrendMetric),
     [activeTrendMetric, throughputTrendHistory]
@@ -508,7 +583,12 @@ export default function DashboardPage() {
       : activeMetricMeta.unit || '';
   const throughputNeedDecimal = activeTrendMetric === 'avgProcessingTime' || isRateMetric;
   const throughputOption = useMemo<EChartsOption>(() => {
-    const valueFormatter = (value: number) => (throughputNeedDecimal ? Number(value).toFixed(1) : Number(value).toLocaleString('zh-CN'));
+    const valueFormatter = (value: number) => {
+      if (throughputNeedDecimal) {
+        return Number(value).toFixed(2);
+      }
+      return Math.floor(value).toLocaleString('zh-CN');
+    };
     return {
       animationDuration: 360,
       grid: { left: 44, right: 18, top: 18, bottom: 34 },
@@ -828,21 +908,48 @@ export default function DashboardPage() {
                     周期 {activeTrendWindowMeta.label} · 样本 {throughputTrendHistory.length} 条 · 北京时间{isRateMetric ? ' · 由累计值换算为每分钟增量' : ''}
                   </p>
                 </div>
-                <div className="inline-flex items-center rounded-full bg-slate-100 p-1 dark:bg-slate-900">
-                  {trendWindows.map((option) => (
-                    <button
-                      key={option.key}
-                      type="button"
-                      onClick={() => setActiveTrendWindow(option.key)}
-                      className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                        activeTrendWindow === option.key
-                          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
-                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+                <div className="flex flex-wrap items-center gap-2">
+                  {activeTrendWindow === 'custom' && (
+                    <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-800 dark:bg-slate-900">
+                      <input
+                        type="datetime-local"
+                        value={customThroughputRange.start}
+                        onChange={(e) => setCustomThroughputRange((prev) => ({ ...prev, start: e.target.value }))}
+                        className="bg-transparent text-slate-900 outline-none dark:text-slate-100"
+                      />
+                      <span className="text-slate-400">-</span>
+                      <input
+                        type="datetime-local"
+                        value={customThroughputRange.end}
+                        onChange={(e) => setCustomThroughputRange((prev) => ({ ...prev, end: e.target.value }))}
+                        className="bg-transparent text-slate-900 outline-none dark:text-slate-100"
+                      />
+                    </div>
+                  )}
+                  <select
+                    value={activeTrendWindow}
+                    onChange={(e) => {
+                      const val = e.target.value as TrendWindowKey;
+                      setActiveTrendWindow(val);
+                      if (val === 'custom' && !customThroughputRange.start && trendHistory.length > 0) {
+                        const first = trendHistory[0];
+                        const last = trendHistory[trendHistory.length - 1];
+                        if (first && last) {
+                          setCustomThroughputRange({
+                            start: toIsoStringLocal(first.timestamp),
+                            end: toIsoStringLocal(last.timestamp),
+                          });
+                        }
+                      }
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 outline-none hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-700"
+                  >
+                    {trendWindows.map((option) => (
+                      <option key={option.key} value={option.key}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
               {throughputStats.hasData ? (
@@ -902,21 +1009,48 @@ export default function DashboardPage() {
                     周期 {activeLlmTrendWindowMeta.label} · 样本 {llmTrendHistory.length} 条 · 北京时间
                   </p>
                 </div>
-                <div className="inline-flex items-center rounded-full bg-slate-100 p-1 dark:bg-slate-900">
-                  {trendWindows.map((option) => (
-                    <button
-                      key={option.key}
-                      type="button"
-                      onClick={() => setActiveLlmTrendWindow(option.key)}
-                      className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                        activeLlmTrendWindow === option.key
-                          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
-                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+                <div className="flex flex-wrap items-center gap-2">
+                  {activeLlmTrendWindow === 'custom' && (
+                    <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-800 dark:bg-slate-900">
+                      <input
+                        type="datetime-local"
+                        value={customLlmRange.start}
+                        onChange={(e) => setCustomLlmRange((prev) => ({ ...prev, start: e.target.value }))}
+                        className="bg-transparent text-slate-900 outline-none dark:text-slate-100"
+                      />
+                      <span className="text-slate-400">-</span>
+                      <input
+                        type="datetime-local"
+                        value={customLlmRange.end}
+                        onChange={(e) => setCustomLlmRange((prev) => ({ ...prev, end: e.target.value }))}
+                        className="bg-transparent text-slate-900 outline-none dark:text-slate-100"
+                      />
+                    </div>
+                  )}
+                  <select
+                    value={activeLlmTrendWindow}
+                    onChange={(e) => {
+                      const val = e.target.value as TrendWindowKey;
+                      setActiveLlmTrendWindow(val);
+                      if (val === 'custom' && !customLlmRange.start && trendHistory.length > 0) {
+                        const first = trendHistory[0];
+                        const last = trendHistory[trendHistory.length - 1];
+                        if (first && last) {
+                          setCustomLlmRange({
+                            start: toIsoStringLocal(first.timestamp),
+                            end: toIsoStringLocal(last.timestamp),
+                          });
+                        }
+                      }
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 outline-none hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-700"
+                  >
+                    {trendWindows.map((option) => (
+                      <option key={option.key} value={option.key}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
               {llmStatsSeries.hasData ? (

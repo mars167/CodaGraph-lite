@@ -159,7 +159,7 @@ export default function JobsPage() {
             <CardContent>
               <p className="text-sm text-gray-600 dark:text-gray-400">等待中</p>
               <p className="mt-1 text-2xl font-bold text-yellow-600 dark:text-yellow-400">
-                {stats.pending}
+                {stats.pending || 0}
               </p>
             </CardContent>
           </Card>
@@ -167,7 +167,7 @@ export default function JobsPage() {
             <CardContent>
               <p className="text-sm text-gray-600 dark:text-gray-400">处理中</p>
               <p className="mt-1 text-2xl font-bold text-blue-600 dark:text-blue-400">
-                {stats.processing}
+                {stats.processing || 0}
               </p>
             </CardContent>
           </Card>
@@ -175,7 +175,7 @@ export default function JobsPage() {
             <CardContent>
               <p className="text-sm text-gray-600 dark:text-gray-400">已完成</p>
               <p className="mt-1 text-2xl font-bold text-green-600 dark:text-green-400">
-                {stats.completed}
+                {stats.completed || 0}
               </p>
             </CardContent>
           </Card>
@@ -183,7 +183,7 @@ export default function JobsPage() {
             <CardContent>
               <p className="text-sm text-gray-600 dark:text-gray-400">失败</p>
               <p className="mt-1 text-2xl font-bold text-red-600 dark:text-red-400">
-                {stats.failed}
+                {stats.failed || 0}
               </p>
             </CardContent>
           </Card>

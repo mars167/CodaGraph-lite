@@ -97,7 +97,7 @@ export default function WorkspacePage() {
       const response = await apiClient.setRepositoryFavorite(repo.id, !repo.favorite);
       setRepositories((current) => current.filter((item) => item.id !== repo.id || response.data.favorite));
       success(
-        response.data.favorite ? '已加入收藏' : '已移出工作空间',
+        response.data.favorite ? '已加入工作空间' : '已移出工作空间',
         `${repo.fullName} ${response.data.favorite ? '仍保留在工作空间中' : '已从工作空间列表移除'}`
       );
     } catch (err) {
@@ -144,17 +144,17 @@ export default function WorkspacePage() {
               这里聚合你最常管理的仓库。页面直接使用本地缓存里的收藏数据，不额外按平台同步或筛选，适合快速进入常用仓库的管理流。
             </p>
             <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
-              <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                <path d="m9.049 2.927.951 1.927 2.126.309a1 1 0 0 1 .554 1.706l-1.539 1.5.364 2.118a1 1 0 0 1-1.451 1.054L8 10.347l-1.902.999a1 1 0 0 1-1.451-1.054l.364-2.118-1.539-1.5a1 1 0 0 1 .554-1.706l2.126-.309.951-1.927a1 1 0 0 1 1.792 0Z" />
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
-              按收藏时间直出全部常用仓库
+              按加入时间直出全部常用仓库
             </div>
           </div>
 
           <div className="rounded-[28px] border border-white/70 bg-white/80 p-5 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-950/60">
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: '收藏仓库', value: workspaceStats.total, tone: 'text-slate-950 dark:text-white' },
+                { label: '工作空间', value: workspaceStats.total, tone: 'text-slate-950 dark:text-white' },
                 { label: 'Watch 已开启', value: workspaceStats.watched, tone: 'text-violet-700 dark:text-violet-300' },
                 { label: 'Webhook 已连', value: workspaceStats.connected, tone: 'text-emerald-700 dark:text-emerald-300' },
                 { label: '语言覆盖', value: workspaceStats.languages, tone: 'text-sky-700 dark:text-sky-300' },
@@ -232,7 +232,7 @@ export default function WorkspacePage() {
                                 <span className="font-medium text-slate-950 dark:text-white">{formatDateTime(repo.lastSyncedAt)}</span>
                               </div>
                               <div className="flex items-center justify-between gap-3">
-                                <span>收藏时间</span>
+                                <span>加入时间</span>
                                 <span className="font-medium text-slate-950 dark:text-white">{formatDateTime(repo.favoritedAt)}</span>
                               </div>
                             </div>
@@ -269,8 +269,8 @@ export default function WorkspacePage() {
                               : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
                           } ${updatingFavoriteId === repo.id ? 'cursor-wait opacity-70' : ''}`}
                         >
-                          <svg className="h-4 w-4" fill={repo.favorite ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m11.049 2.927.95 1.927a1 1 0 00.753.548l2.126.309a1 1 0 01.554 1.706l-1.538 1.499a1 1 0 00-.287.886l.363 2.118a1 1 0 01-1.45 1.054l-1.902-.999a1 1 0 00-.93 0l-1.902.999a1 1 0 01-1.45-1.054l.363-2.118a1 1 0 00-.287-.886L2.57 7.417a1 1 0 01.554-1.706l2.126-.309a1 1 0 00.753-.548l.95-1.927a1 1 0 011.793 0z" />
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                           </svg>
                           {repo.favorite ? '移出工作空间' : '加入工作空间'}
                         </button>
@@ -311,13 +311,13 @@ export default function WorkspacePage() {
         <Card className="overflow-hidden border-dashed border-slate-300 dark:border-slate-700">
           <CardContent className="py-16 text-center">
             <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-amber-50 text-amber-500 dark:bg-amber-950/30 dark:text-amber-300">
-              <svg className="h-10 w-10" fill="currentColor" viewBox="0 0 20 20">
-                <path d="m9.049 2.927.951 1.927 2.126.309a1 1 0 0 1 .554 1.706l-1.539 1.5.364 2.118a1 1 0 0 1-1.451 1.054L8 10.347l-1.902.999a1 1 0 0 1-1.451-1.054l.364-2.118-1.539-1.5a1 1 0 0 1 .554-1.706l2.126-.309.951-1.927a1 1 0 0 1 1.792 0Z" />
+              <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
             </div>
             <p className="mt-6 text-lg font-medium text-slate-900 dark:text-white">工作空间还是空的</p>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              先去仓库列表把常用仓库加入收藏，这里就会形成你的专属管理工作台。
+              先去仓库列表把常用仓库加入工作空间，这里就会形成你的专属管理工作台。
             </p>
             <Link
               href="/dashboard/repositories"
