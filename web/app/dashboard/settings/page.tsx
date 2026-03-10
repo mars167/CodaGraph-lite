@@ -548,8 +548,8 @@ export default function SettingsPage() {
 
           <SettingsSection title="性能优化" description="这部分主要是运行时策略记录，完整生效通常需要重启服务。">
             <ToggleSetting
-              label="启用 2u2g 优化"
-              description="启用后端 2u2g 模式以优化内存和并发占用"
+              label="启用低成本串行模式"
+              description="使用默认单 Worker 策略，减少本地或小团队部署时的资源波动和 review 成本"
               checked={settings.twoU2gEnabled}
               onChange={(value) => setSettings({ ...settings, twoU2gEnabled: value })}
             />
