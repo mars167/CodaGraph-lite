@@ -35,16 +35,6 @@ if [ -d "$PROJECT_ROOT/context-agent" ]; then
     echo "✅ Context Agent Python 代码生成完成"
 fi
 
-# Review Agent
-if [ -d "$PROJECT_ROOT/review-agent" ]; then
-    python -m grpc_tools.protoc \
-        -I"$PROTO_DIR" \
-        --python_out="$PROJECT_ROOT/review-agent/src" \
-        --grpc_python_out="$PROJECT_ROOT/review-agent/src" \
-        "$PROTO_FILE"
-    echo "✅ Review Agent Python 代码生成完成"
-fi
-
 # 生成 TypeScript gRPC 代码（需要 grpc-tools）
 echo "📝 生成 TypeScript gRPC 代码..."
 

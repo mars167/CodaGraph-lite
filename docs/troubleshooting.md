@@ -118,7 +118,6 @@ npm install
 
 # Python 依赖
 pip install -r context-agent/requirements.txt
-pip install -r review-agent/requirements.txt
 ```
 
 #### 4. 配置文件缺失
@@ -476,7 +475,6 @@ pip list | grep -E "grpc|protobuf"
 
 # 解决方案：安装依赖
 pip install -r context-agent/requirements.txt
-pip install -r review-agent/requirements.txt
 ```
 
 ### 问题：Agent 超时

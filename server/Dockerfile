@@ -67,9 +67,8 @@ COPY --from=build /app/server/dist ./server/dist
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/server/node_modules ./server/node_modules
 
-# 复制 Python agents（独立运行）
+# 复制 Python context runtime helpers（如存在）
 COPY --from=build /app/context-agent ./context-agent
-COPY --from=build /app/review-agent ./review-agent
 
 # 安装 Python 3.11 运行时
 RUN apk add --no-cache python3 py3-pip && \
@@ -85,8 +84,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # 暴露端口
 EXPOSE 7900
 
-# 暴露 gRPC 端口（agents 使用的内部端口）
-EXPOSE 50051 50052
+# 暴露内部辅助端口
+EXPOSE 50052
 
 # 启动应用
 CMD ["node", "server/dist/index.js"]

@@ -178,7 +178,6 @@ npm install
 
 # 安装 Python 依赖
 pip install -r context-agent/requirements.txt
-pip install -r review-agent/requirements.txt
 ```
 
 #### 步骤 4：数据库迁移

@@ -24,6 +24,7 @@ import {
   type ReviewFinding,
   type RiskLevel,
 } from '../review/reviewEngine';
+import type { ReviewTracePayload } from '../review/reviewTrace';
 
 type ReviewExecutionResult = {
   analysis: Analysis;
@@ -33,11 +34,26 @@ type ReviewExecutionResult = {
   summary: string;
 };
 
+const PLATFORM_TIMEOUT_MS = parseInt(process.env.REVIEW_PLATFORM_TIMEOUT_MS || '45000', 10);
+const PUBLICATION_TIMEOUT_MS = parseInt(process.env.REVIEW_PUBLICATION_TIMEOUT_MS || '45000', 10);
+
 class ReviewCancelledError extends Error {
   constructor(message = '作业已手动终止') {
     super(message);
     this.name = 'ReviewCancelledError';
   }
+}
+
+function formatTraceEntry(entry: ReviewTracePayload['entries'][number]): string {
+  if (entry.kind === 'stage') {
+    return `[trace][stage] ${entry.stage} ${entry.status}${entry.detail ? ` | ${entry.detail}` : ''}${typeof entry.durationMs === 'number' ? ` | ${entry.durationMs}ms` : ''}`;
+  }
+
+  if (entry.kind === 'tool') {
+    return `[trace][tool] ${entry.stage}.${entry.tool} ${entry.status} ${entry.durationMs}ms | in=${entry.input} | out=${entry.output}`;
+  }
+
+  return `[trace][decision] ${entry.stage} ${entry.action}${entry.filePath ? ` | ${entry.filePath}` : ''}${entry.title ? ` | ${entry.title}` : ''} | ${entry.reason}${entry.evidenceRefs && entry.evidenceRefs.length > 0 ? ` | evidence=${entry.evidenceRefs.join('; ')}` : ''}`;
 }
 
 function severityWeight(severity: ReviewFinding['severity']): number {
@@ -75,8 +91,16 @@ function buildMarkdownReport(
   summary: string,
   options: {
     mode: string;
+    reviewMode: 'normal' | 'improve';
+    confidence: 'high' | 'medium' | 'low';
     inlineCommentCount: number;
     fallbackCommentCount: number;
+    suppressedFindingCount: number;
+    reviewedFiles: number;
+    totalFiles: number;
+    skippedFiles: number;
+    nextActions: string[];
+    traceEntryCount: number;
   }
 ): string {
   const sortedFindings = [...findings].sort((a, b) => severityWeight(b.severity) - severityWeight(a.severity));
@@ -86,12 +110,23 @@ function buildMarkdownReport(
     `- PR: #${pullRequest.number} ${pullRequest.title}`,
     `- 风险等级: ${riskLevel}`,
     `- 审查模式: ${options.mode}`,
+    `- 运行模式: ${options.reviewMode}`,
+    `- 置信度: ${options.confidence}`,
+    `- 覆盖情况: ${options.reviewedFiles}/${options.totalFiles} 文件`,
+    `- 跳过文件: ${options.skippedFiles}`,
     `- 行级评论: ${options.inlineCommentCount}`,
     `- 摘要回退项: ${options.fallbackCommentCount}`,
+    `- 抑制噪音项: ${options.suppressedFindingCount}`,
+    `- Improve Trace: ${options.traceEntryCount}`,
     `- 生成时间: ${new Date().toISOString()}`,
     '',
     '## 摘要',
     summary,
+    '',
+    '## 建议动作',
+    ...(options.nextActions.length > 0
+      ? options.nextActions.map((item) => `- ${item}`)
+      : ['- 当前没有额外建议动作。']),
     '',
     '## 发现的问题',
   ];
@@ -212,13 +247,25 @@ function buildSummaryCommentBody(
   riskLevel: RiskLevel,
   summary: string,
   inlineCommentCount: number,
-  fallbackFindings: ReviewFinding[]
+  fallbackFindings: ReviewFinding[],
+  options: {
+    reviewMode: 'normal' | 'improve';
+    confidence: 'high' | 'medium' | 'low';
+    reviewedFiles: number;
+    totalFiles: number;
+    skippedFiles: number;
+    nextActions: string[];
+  }
 ): string {
   const lines = [
     '## CodaGraph Review 摘要',
     '',
     `- PR: #${pullRequest.number} ${pullRequest.title}`,
     `- 风险等级: **${riskLevel}**`,
+    `- 运行模式: **${options.reviewMode}**`,
+    `- 置信度: **${options.confidence}**`,
+    `- 覆盖情况: **${options.reviewedFiles}/${options.totalFiles} 文件**`,
+    `- 跳过文件: **${options.skippedFiles}**`,
     `- 报告 ID: **${reportId}**`,
     `- 已发布行级评论: **${inlineCommentCount}**`,
     '',
@@ -235,6 +282,13 @@ function buildSummaryCommentBody(
         `  - 描述: ${finding.description}`,
         ...(finding.suggestion ? [`  - 建议: ${finding.suggestion}`] : [])
       );
+    }
+  }
+
+  if (options.nextActions.length > 0) {
+    lines.push('', '### 建议动作');
+    for (const action of options.nextActions.slice(0, 4)) {
+      lines.push('', `- ${action}`);
     }
   }
 
@@ -294,8 +348,37 @@ export class ReviewExecutionService {
     return createCommentClient(platform, installation.access_token);
   }
 
+  private emitImproveTrace(jobId: number, trace?: ReviewTracePayload): void {
+    if (!trace) {
+      return;
+    }
+
+    this.log(jobId, 'info', `[trace][session] mode=${trace.mode} prompt=${trace.promptVersion} entries=${trace.entries.length}`);
+    for (const entry of trace.entries) {
+      this.log(jobId, 'info', formatTraceEntry(entry));
+    }
+  }
+
+  private async withTimeout<T>(timeoutMs: number, label: string, operation: () => Promise<T>): Promise<T> {
+    let timeoutId: NodeJS.Timeout | null = null;
+
+    try {
+      return await Promise.race([
+        operation(),
+        new Promise<T>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error(`${label} 超时 (${timeoutMs}ms)`)), timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
+  }
+
   async execute(jobId: number, rawPayload: string): Promise<ReviewExecutionResult> {
     const payload = this.parsePayload(rawPayload);
+    const reviewMode = payload.review_mode === 'improve' ? 'improve' : 'normal';
     const [owner, repoName] = payload.repo_name.split('/', 2);
     const prNumber = parseInt(payload.pr_number, 10);
 
@@ -332,8 +415,8 @@ export class ReviewExecutionService {
     this.analysisModel.markProcessing(analysis.id);
     this.analysisJobModel.markProcessing(analysisJob.id);
     this.analysisJobModel.updateProgress(analysisJob.id, 0.05, '准备读取 PR 信息');
-    this.log(jobId, 'info', 'review-agent 已启动');
-    this.log(jobId, 'info', 'review-agent 推理开始，已进入实时日志模式');
+    this.log(jobId, 'info', `review-worker 已启动（mode=${reviewMode}）`);
+    this.log(jobId, 'info', reviewMode === 'improve' ? 'review-worker improve 模式已开启，将记录结构化 trace' : 'review-worker 推理开始，已进入实时日志模式');
 
     let activeInstallation = await this.oauthInstallationService.ensureValidAccessToken(installation);
     let platformClient = this.buildPlatformClient(activeInstallation, repository.platform);
@@ -365,33 +448,46 @@ export class ReviewExecutionService {
 
     this.ensureNotCancelled(jobId);
     this.logTool(jobId, 'platform.getPullRequest', `repo=${repository.full_name},pr=${prNumber}`, '读取 PR 元数据');
-    const pullRequest = await withAuthRefresh(
+    const pullRequest = await this.withTimeout(
+      PLATFORM_TIMEOUT_MS,
       '读取 PR 元数据',
-      () => platformClient.getPullRequest(repository.owner, repository.name, prNumber)
+      () => withAuthRefresh(
+        '读取 PR 元数据',
+        () => platformClient.getPullRequest(repository.owner, repository.name, prNumber)
+      )
     );
     this.analysisJobModel.updateProgress(analysisJob.id, 0.15, `已读取 PR #${prNumber} 元数据`);
-    this.log(jobId, 'info', `review-agent 判断：PR 标题为 "${pullRequest.title}"，准备抓取变更文件`);
+    this.log(jobId, 'info', `review-worker 判断：PR 标题为 "${pullRequest.title}"，准备抓取变更文件`);
 
     this.ensureNotCancelled(jobId);
     this.logTool(jobId, 'platform.getRepository', `repo=${repository.full_name}`, '读取仓库克隆信息');
-    const platformRepository: PlatformRepository = await withAuthRefresh(
+    const platformRepository: PlatformRepository = await this.withTimeout(
+      PLATFORM_TIMEOUT_MS,
       '读取仓库克隆信息',
-      () => platformClient.getRepository(repository.owner, repository.name)
+      () => withAuthRefresh(
+        '读取仓库克隆信息',
+        () => platformClient.getRepository(repository.owner, repository.name)
+      )
     );
 
     this.ensureNotCancelled(jobId);
     this.logTool(jobId, 'platform.getPullRequestFiles', `repo=${repository.full_name},pr=${prNumber}`, '拉取 PR diff 文件列表');
     const files = normalizePlatformFiles(
-      await withAuthRefresh(
+      await this.withTimeout(
+        PLATFORM_TIMEOUT_MS,
         '拉取 PR diff 文件列表',
-        () => platformClient.getPullRequestFiles(repository.owner, repository.name, prNumber)
+        () => withAuthRefresh(
+          '拉取 PR diff 文件列表',
+          () => platformClient.getPullRequestFiles(repository.owner, repository.name, prNumber)
+        )
       )
     );
     this.analysisJobModel.updateProgress(analysisJob.id, 0.25, `检测到 ${files.length} 个变更文件`);
-    this.log(jobId, 'info', `review-agent 判断：本次需要分析 ${files.length} 个文件`);
+    this.log(jobId, 'info', `review-worker 判断：本次需要分析 ${files.length} 个文件`);
 
     this.ensureNotCancelled(jobId);
     const advancedReview = await this.reviewEngine.review({
+      jobId: String(jobId),
       platform: repository.platform,
       owner: repository.owner,
       repo: repository.name,
@@ -404,6 +500,8 @@ export class ReviewExecutionService {
       files,
       workspaceRoot: process.env.WORKSPACE_ROOT || '/tmp/repos',
       prTitle: pullRequest.title,
+      reviewMode,
+      isCancellationRequested: () => this.queueService.isCancellationRequested(jobId),
       onProgress: (message, completedFiles, totalFiles) => {
         this.ensureNotCancelled(jobId);
         this.log(jobId, 'info', message);
@@ -422,6 +520,7 @@ export class ReviewExecutionService {
     const riskLevel = advancedReview.riskLevel;
     const summary = advancedReview.summary || summarizeFindings(findings, advancedReview.fileReviews.length);
     let fallbackFindings = dedupeFindings([...advancedReview.fallbackFindings]);
+    this.emitImproveTrace(jobId, advancedReview.trace);
 
     this.analysisJobModel.updateProgress(analysisJob.id, 0.8, '正在发布 PR 评论');
     let postedCommentCount = 0;
@@ -445,7 +544,15 @@ export class ReviewExecutionService {
           riskLevel,
           summary,
           advancedReview.inlineComments.length,
-          fallbackFindings
+          fallbackFindings,
+          {
+            reviewMode,
+            confidence: advancedReview.confidence,
+            reviewedFiles: advancedReview.coverage.reviewedFiles,
+            totalFiles: advancedReview.coverage.totalFiles,
+            skippedFiles: advancedReview.coverage.skippedFiles.length,
+            nextActions: advancedReview.nextActions,
+          }
         );
         this.logTool(
           jobId,
@@ -453,19 +560,23 @@ export class ReviewExecutionService {
           `repo=${repository.full_name},pr=${prNumber},comments=${advancedReview.inlineComments.length}`,
           `fallback=${fallbackFindings.length}`
         );
-        await withAuthRefresh(
+        await this.withTimeout(
+          PUBLICATION_TIMEOUT_MS,
           '发布 GitHub 批量 review',
-          () => commentClient.submitReview!(prInfo, {
-            body: batchSummaryCommentBody,
-            commitId: pullRequest.head.sha,
-            comments: advancedReview.inlineComments.map((inlineComment) => ({
-              body: formatFindingBody(inlineComment.finding),
-              position: {
-                path: inlineComment.finding.filePath,
-                line: inlineComment.position.line,
-              },
-            })),
-          })
+          () => withAuthRefresh(
+            '发布 GitHub 批量 review',
+            () => commentClient.submitReview!(prInfo, {
+              body: batchSummaryCommentBody,
+              commitId: pullRequest.head.sha,
+              comments: advancedReview.inlineComments.map((inlineComment) => ({
+                body: formatFindingBody(inlineComment.finding),
+                position: {
+                  path: inlineComment.finding.filePath,
+                  line: inlineComment.position.line,
+                },
+              })),
+            })
+          )
         );
         inlineCommentCount = advancedReview.inlineComments.length;
         postedCommentCount = inlineCommentCount + 1;
@@ -488,20 +599,24 @@ export class ReviewExecutionService {
             `repo=${repository.full_name},pr=${prNumber},file=${inlineComment.finding.filePath},line=${inlineComment.position.line}`,
             `severity=${inlineComment.finding.severity}`
           );
-          await withAuthRefresh(
+          await this.withTimeout(
+            PUBLICATION_TIMEOUT_MS,
             `发布行级评论 ${inlineComment.finding.filePath}:${inlineComment.position.line}`,
-            () => commentClient.postReviewComment(
-              prInfo,
-              {
-                body: formatFindingBody(inlineComment.finding),
-                filePath: inlineComment.finding.filePath,
-                lineNumber: inlineComment.position.line,
-                commitId: pullRequest.head.sha,
-              },
-              {
-                path: inlineComment.finding.filePath,
-                line: inlineComment.position.line,
-              }
+            () => withAuthRefresh(
+              `发布行级评论 ${inlineComment.finding.filePath}:${inlineComment.position.line}`,
+              () => commentClient.postReviewComment(
+                prInfo,
+                {
+                  body: formatFindingBody(inlineComment.finding),
+                  filePath: inlineComment.finding.filePath,
+                  lineNumber: inlineComment.position.line,
+                  commitId: pullRequest.head.sha,
+                },
+                {
+                  path: inlineComment.finding.filePath,
+                  line: inlineComment.position.line,
+                }
+              )
             )
           );
           postedCommentCount += 1;
@@ -522,7 +637,15 @@ export class ReviewExecutionService {
         riskLevel,
         summary,
         inlineCommentCount,
-        fallbackFindings
+        fallbackFindings,
+        {
+          reviewMode,
+          confidence: advancedReview.confidence,
+          reviewedFiles: advancedReview.coverage.reviewedFiles,
+          totalFiles: advancedReview.coverage.totalFiles,
+          skippedFiles: advancedReview.coverage.skippedFiles.length,
+          nextActions: advancedReview.nextActions,
+        }
       );
 
       this.logTool(
@@ -531,9 +654,13 @@ export class ReviewExecutionService {
         `repo=${repository.full_name},pr=${prNumber}`,
         `comment_length=${fallbackSummaryCommentBody.length}`
       );
-      await withAuthRefresh(
+      await this.withTimeout(
+        PUBLICATION_TIMEOUT_MS,
         '发布摘要评论',
-        () => commentClient.postComment(prInfo, { body: fallbackSummaryCommentBody })
+        () => withAuthRefresh(
+          '发布摘要评论',
+          () => commentClient.postComment(prInfo, { body: fallbackSummaryCommentBody })
+        )
       );
       postedCommentCount += 1;
     }
@@ -542,8 +669,16 @@ export class ReviewExecutionService {
 
     const reportMarkdown = buildMarkdownReport(pullRequest, findings, riskLevel, summary, {
       mode: advancedReview.mode,
+      reviewMode,
+      confidence: advancedReview.confidence,
       inlineCommentCount,
       fallbackCommentCount: fallbackFindings.length,
+      suppressedFindingCount: advancedReview.suppressedFindings.length,
+      reviewedFiles: advancedReview.coverage.reviewedFiles,
+      totalFiles: advancedReview.coverage.totalFiles,
+      skippedFiles: advancedReview.coverage.skippedFiles.length,
+      nextActions: advancedReview.nextActions,
+      traceEntryCount: advancedReview.trace?.entries.length || 0,
     });
     const reportPayload = {
       generatedAt: new Date().toISOString(),
@@ -552,6 +687,8 @@ export class ReviewExecutionService {
       analysisId: analysis.id,
       prNumber,
       riskLevel,
+      confidence: advancedReview.confidence,
+      reviewMode,
       summary,
       reportMarkdown,
       files: files.map((file) => ({
@@ -578,6 +715,10 @@ export class ReviewExecutionService {
         posted: inlineCommentCount,
       },
       fallbackFindings,
+      suppressedFindings: advancedReview.suppressedFindings,
+      coverage: advancedReview.coverage,
+      nextActions: advancedReview.nextActions,
+      trace: advancedReview.trace,
       mode: advancedReview.mode,
       metadata: advancedReview.metadata,
     };
@@ -596,7 +737,7 @@ export class ReviewExecutionService {
     this.analysisJobModel.markComplete(analysisJob.id, 1, 'Review 完成，报告已生成');
     this.repositoryModel.updateLastAnalyzed(repository.id, new Date());
     this.reviewLockModel.releaseByAnalysisId(analysis.id);
-    this.log(jobId, 'info', `review-agent 推理完成，风险等级=${riskLevel}`);
+    this.log(jobId, 'info', `review-worker 推理完成，风险等级=${riskLevel}`);
 
     const completedAnalysis = this.analysisModel.findById(analysis.id);
     if (!completedAnalysis) {

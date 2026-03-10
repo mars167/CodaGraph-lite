@@ -184,7 +184,6 @@ npm install
 
 # 安装 Python 依赖
 cd context-agent && pip install -r requirements.txt && cd ..
-cd review-agent && pip install -r requirements.txt && cd ..
 ```
 
 ### 6. 启动服务

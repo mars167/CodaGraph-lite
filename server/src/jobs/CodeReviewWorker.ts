@@ -24,10 +24,6 @@ const WORKSPACE_ROOT = '/tmp/repos';
  * Worker 配置
  */
 interface WorkerConfig {
-  contextAgentHost: string;
-  contextAgentPort: number;
-  reviewAgentHost: string;
-  reviewAgentPort: number;
   workspaceRoot?: string;
   maxConcurrentJobs?: number;
 }
@@ -55,9 +51,6 @@ export class CodeReviewWorker {
     logger.info('🚀 启动 PR 代码审查 Worker');
     this.isRunning = true;
 
-    // TODO: 连接到 Context Agent 和 Review Agent
-    // TODO: 实现完整的作业处理逻辑
-
     // 开始处理作业
     this.processingLoop();
   }
@@ -72,8 +65,6 @@ export class CodeReviewWorker {
 
     logger.info('⏹️ 停止 Worker...');
     this.isRunning = false;
-
-    // TODO: 断开 Agent 连接和清理资源
 
     logger.info('✅ Worker 已停止');
   }

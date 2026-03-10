@@ -1,5 +1,7 @@
 # CodaGraph-lite 架构文档
 
+> Historical note: sections that mention a standalone gRPC review-agent describe an older design and are not part of the active review pipeline anymore.
+
 本文档详细说明 CodaGraph-lite 的系统架构、数据流和技术实现。
 
 ## 目录

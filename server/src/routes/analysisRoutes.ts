@@ -32,17 +32,25 @@ import {
   type StoredReviewReportFileReview,
 } from '../review/reportPresentation';
 import { getOAuthInstallationService } from '../services/OAuthInstallationService';
+import type { ReviewTracePayload } from '../review/reviewTrace';
+import type { ReviewCoverageSummary, ReviewConfidence, SuppressedFinding } from '../review/reviewPrioritization';
 
 const router = express.Router();
 
 interface StoredReviewReportPayload {
   summary?: string;
   riskLevel?: 'low' | 'medium' | 'high' | 'critical' | 'unknown';
+  confidence?: ReviewConfidence;
+  reviewMode?: 'normal' | 'improve';
   reportMarkdown?: string;
   findings?: ReviewFinding[];
   files?: ReviewReportPatchFile[];
   fileReviews?: StoredReviewReportFileReview[];
   fileContexts?: ReviewReportFileContext[];
+  coverage?: ReviewCoverageSummary;
+  nextActions?: string[];
+  suppressedFindings?: SuppressedFinding[];
+  trace?: ReviewTracePayload;
   postedCommentCount?: number;
   jobId?: string | number;
   generatedAt?: string;
@@ -431,6 +439,7 @@ router.post('/:id/retry', async (req: Request, res: Response) => {
     const analysisJob = getAnalysisJobModel().create(cloned.id, 'cloning');
 
     const queueService = getQueueService();
+    const reviewMode = req.body?.mode === 'improve' ? 'improve' : 'normal';
     const queueResult = await queueService.createJob(
       'pr_analysis',
       {
@@ -439,6 +448,7 @@ router.post('/:id/retry', async (req: Request, res: Response) => {
         pr_number: String(analysis.pr_number),
         analysis_id: String(cloned.id),
         analysis_job_id: String(analysisJob.id),
+        review_mode: reviewMode,
       },
       3
     );
@@ -451,6 +461,7 @@ router.post('/:id/retry', async (req: Request, res: Response) => {
       success: true,
       analysis: serializeAnalysis(analysisModel.findById(cloned.id)),
       jobId: queueResult.id,
+      reviewMode,
       message: '分析已重新加入队列',
     });
   } catch (error) {

@@ -1,5 +1,7 @@
 # Agent 集成文档
 
+> Historical note: the legacy gRPC review-agent path has been removed from the active product. This document is retained for historical reference only.
+
 ## 概述
 
 本文档描述了 CodaGraph 中 Python AI Agents 与 Node.js 后端的集成方式，包括通信协议、生命周期管理和调试工具。

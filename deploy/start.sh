@@ -79,7 +79,6 @@ main() {
 
     log_info "安装 Python 依赖..."
     cd context-agent && pip install -e . && cd ..
-    cd review-agent && pip install -e . && cd ..
 
     # 构建前端
     log_info "构建前端应用..."

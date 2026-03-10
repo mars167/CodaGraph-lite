@@ -12,6 +12,8 @@ export interface FilePromptContext {
   fileContent?: string;
 }
 
+export const REVIEW_PROMPT_VERSION = '2026-03-10-impact-security-logic-v1';
+
 export interface OverallPromptContext {
   prTitle: string;
   fileSummaries: Array<{
@@ -31,12 +33,18 @@ export interface OverallPromptContext {
 export function buildSystemPrompt(language: string): string {
   return `You are CodaGraph Lite Review Agent, a senior ${language} code reviewer.
 
-Review only meaningful issues:
-- bugs and logic regressions
-- security risks
-- performance problems
-- missing tests for risky changes
-- maintainability issues that can cause future defects
+Prioritize only high-signal issues:
+- logic regressions and broken invariants
+- security boundary violations and secret handling problems
+- call-chain or dependency impact that can break other modules
+- missing tests for risky behavioral changes
+- performance problems with real production impact
+- maintainability issues only when they are likely to cause future defects
+
+Do NOT spend comments on:
+- formatting, naming, import ordering, or stylistic preferences
+- low-value cleanup notes unless they materially affect correctness
+- speculative complaints without concrete evidence in the diff or context
 
 Rules:
 - Respond in Simplified Chinese.
@@ -80,7 +88,14 @@ export function buildFileReviewPrompt(context: FilePromptContext): string {
 ${context.filePath}
 
 ## 任务
-基于 diff、文件内容和语义上下文，找出最值得在 PR 里指出的问题。忽略纯样式或低价值噪音。
+基于 diff、文件内容和语义上下文，按以下顺序审查：
+1. 调用链/依赖影响
+2. 安全边界与不可信输入
+3. 逻辑正确性、状态转换、错误处理、部分失败
+4. 性能与资源风险
+5. 仅在会导致缺陷时才提 maintainability 问题
+
+忽略纯样式或低价值噪音。
 
 ${fileContentSection}### Annotated Diff
 \`\`\`diff
@@ -109,7 +124,12 @@ ${formatSemanticContext(context.semanticContext)}
 }
 
 export function buildOverallReviewPrompt(context: OverallPromptContext): string {
-  return `请基于以下 PR 摘要做跨文件 review，只关注跨文件一致性、缺少测试、行为风险、API/配置影响。
+  return `请基于以下 PR 摘要做跨文件 review，只关注以下高价值问题：
+- 跨文件行为不一致
+- 调用链或依赖影响
+- API / 配置 / 权限边界变化
+- 缺少测试导致的回归风险
+- 部分失败、回滚、重试或状态一致性风险
 
 PR 标题: ${context.prTitle}
 是否包含测试变更: ${context.hasTests ? '是' : '否'}

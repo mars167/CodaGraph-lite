@@ -254,7 +254,7 @@ router.get('/resources', (_req: Request, res: Response) => {
           cpuCores: availableResources.cpuCores,
           memoryMB: availableResources.memoryMB,
           canStartContextAgent: availableResources.canStartContextAgent,
-          canStartReviewAgent: availableResources.canStartReviewAgent,
+          canStartReviewExecution: availableResources.canStartReviewExecution,
         },
         // 队列状态
         queue: {
@@ -333,8 +333,6 @@ router.get('/config', (_req: Request, res: Response) => {
         agent: {
           contextAgentPort: config.agent.contextAgentPort,
           contextAgentTimeout: config.agent.contextAgentTimeout,
-          reviewAgentPort: config.agent.reviewAgentPort,
-          reviewAgentTimeout: config.agent.reviewAgentTimeout,
           pythonMemoryLimit: config.agent.pythonMemoryLimit,
         },
         codeContextRuntime: {

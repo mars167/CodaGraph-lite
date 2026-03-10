@@ -40,9 +40,6 @@ codagraph-lite/
 ├── context-agent/          # Python Context Agent (gRPC Port 50052)
 │   ├── src/
 │   └── tests/
-├── review-agent/           # Python Review Agent (gRPC Port 50051)
-│   ├── src/
-│   └── tests/
 ├── proto/                  # gRPC protobuf definitions
 ├── deploy/                 # Deployment scripts (systemd, PM2)
 ├── docs/                   # Documentation
@@ -96,10 +93,6 @@ npm run lint  # ESLint
 # Context Agent
 cd context-agent
 pip install -r requirements.txt
-
-# Review Agent
-cd review-agent
-pip install -r requirements.txt
 ```
 
 ## Architecture Patterns
@@ -109,7 +102,7 @@ pip install -r requirements.txt
 1. **Routes** (`src/routes/`) - Express routers for HTTP endpoints
 2. **Models** (`src/models/`) - SQLite data access layer using better-sqlite3
 3. **Services** (`src/services/`) - Business logic layer
-4. **Agents** (`src/agent/`) - Python subprocess management via gRPC
+4. **Review Runtime** (`src/review/`) - Prompting, prioritization, trace, runtime preparation
 5. **Jobs** (`src/jobs/`) - SQLite-based job queue with polling worker
 6. **Auth** (`src/auth/`) - Session-based authentication with cookies
 7. **OAuth** (`src/oauth/`) - OAuth 2.0 handlers for GitHub/Gitee/GitLab
@@ -199,13 +192,12 @@ JOB_QUEUE_POLL_INTERVAL=2
 2. Update database schema in `src/database/`
 3. Add migration if changing existing schema
 
-### Python Agent Integration
+### Review Runtime Integration
 
-Agents are spawned as subprocesses, not daemon services:
-- Use `src/agent/` module for subprocess management
-- Always terminate agents after job completion
-- Implement SIGTERM handler for graceful shutdown
-- Force kill (SIGKILL) after 5 second timeout
+Review uses the in-process runtime rather than a separate review-agent service:
+- Use `src/review/` and `src/services/ReviewExecutionService.ts` for execution
+- Reuse repository mirrors/worktrees and clean them up after every job
+- Keep improve-mode trace structured and sanitized for auditability
 
 ### Testing
 

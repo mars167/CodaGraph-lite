@@ -239,7 +239,6 @@ npm install
 
 # 安装 Python 依赖
 cd context-agent && pip install -r requirements.txt && cd ..
-cd review-agent && pip install -r requirements.txt && cd ..
 ```
 
 ### 3. 配置环境变量
@@ -371,12 +370,9 @@ codagraph-lite/
 │   │   ├── queue/          # 作业队列
 │   │   ├── routes/         # API 路由
 │   │   ├── services/       # 业务逻辑
-│   │   └── agents/         # Python Agent 集成
+│   │   └── review/         # Review runtime / prompt / report modules
 │   └── tests/            # 单元测试
 ├── context-agent/          # Python Context Agent
-│   ├── src/
-│   └── tests/
-├── review-agent/           # Python Review Agent
 │   ├── src/
 │   └── tests/
 ├── proto/                 # gRPC 协议定义
@@ -497,7 +493,6 @@ sudo bash deploy/deploy.sh systemd
 # 2. 或手动部署
 npm install
 cd context-agent && pip install -r requirements.txt && cd ..
-cd review-agent && pip install -r requirements.txt && cd ..
 cp .env.example .env
 nano .env  # 编辑配置
 cd web && npm run build && cd ..

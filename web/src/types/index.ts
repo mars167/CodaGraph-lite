@@ -170,12 +170,76 @@ export interface ReviewFinding {
   title: string;
   description: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
-  category: 'security' | 'bug' | 'performance' | 'maintainability';
+  category: 'security' | 'bug' | 'logic' | 'impact' | 'performance' | 'maintainability';
   lineNumber?: number;
   resolvedLineNumber?: number;
   suggestion?: string;
   source?: 'rule' | 'llm' | 'summary';
   codeSnippet?: string;
+}
+
+export interface ReviewSemanticContext {
+  changedSymbols: string[];
+  relatedSnippets: string[];
+  impactReferences: string[];
+  relatedTests: string[];
+  contextEngineAvailable: boolean;
+}
+
+export interface ReviewCoverageSummary {
+  totalFiles: number;
+  reviewedFiles: number;
+  skippedFiles: Array<{
+    path: string;
+    status: string;
+    reason: 'missing_patch' | 'unsupported_type' | 'empty_diff';
+  }>;
+  partialReview: boolean;
+}
+
+export interface SuppressedFinding {
+  finding: ReviewFinding;
+  reason: string;
+}
+
+export interface ReviewTraceStageEntry {
+  kind: 'stage';
+  stage: string;
+  status: 'started' | 'completed' | 'failed' | 'timeout' | 'skipped';
+  detail?: string;
+  durationMs?: number;
+  at: string;
+}
+
+export interface ReviewTraceToolEntry {
+  kind: 'tool';
+  stage: string;
+  tool: string;
+  input: string;
+  output: string;
+  status: 'success' | 'failed' | 'timeout' | 'skipped';
+  durationMs: number;
+  at: string;
+}
+
+export interface ReviewTraceDecisionEntry {
+  kind: 'decision';
+  stage: string;
+  filePath?: string;
+  title?: string;
+  action: 'produced' | 'suppressed' | 'fallback';
+  reason: string;
+  evidenceRefs?: string[];
+  at: string;
+}
+
+export type ReviewTraceEntry = ReviewTraceStageEntry | ReviewTraceToolEntry | ReviewTraceDecisionEntry;
+
+export interface ReviewTracePayload {
+  mode: 'normal' | 'improve';
+  promptVersion: string;
+  generatedAt: string;
+  entries: ReviewTraceEntry[];
 }
 
 export interface ReviewReportCodeLine {
@@ -191,6 +255,8 @@ export interface ReviewReportFileContext {
   status?: string;
   language?: string;
   fileSummary?: string;
+  semanticContext?: ReviewSemanticContext;
+  usedFallback?: boolean;
   additions: number;
   deletions: number;
   changes: number;
@@ -204,9 +270,15 @@ export interface ReviewReportDetail {
   analysis: Analysis;
   summary?: string;
   riskLevel: 'low' | 'medium' | 'high' | 'critical' | 'unknown';
+  confidence?: 'high' | 'medium' | 'low';
+  reviewMode?: 'normal' | 'improve';
   reportMarkdown?: string;
   findings: ReviewFinding[];
   fileContexts: ReviewReportFileContext[];
+  coverage?: ReviewCoverageSummary;
+  nextActions?: string[];
+  suppressedFindings?: SuppressedFinding[];
+  trace?: ReviewTracePayload;
   fileCount: number;
   commentCount: number;
   issueCount: number;
@@ -216,7 +288,7 @@ export interface ReviewReportDetail {
 
 // ============ 分析相关类型 ============
 
-export type AnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type AnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
 export interface Analysis {
   id: string;

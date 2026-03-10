@@ -13,6 +13,7 @@ export interface ReviewLLMConfig {
   model: string;
   baseUrl: string;
   maxRetries: number;
+  timeoutMs: number;
 }
 
 export interface ChatCompletionUsage {
@@ -154,6 +155,7 @@ export class ReviewLLMClient {
     const model = this.overrides.model ?? stored.model ?? process.env.LLM_MODEL ?? 'gpt-4o-mini';
     const baseUrl = this.overrides.baseUrl ?? stored.baseUrl ?? process.env.LLM_API_BASE_URL ?? '';
     const maxRetries = this.overrides.maxRetries ?? stored.maxRetries ?? parseInt(process.env.LLM_MAX_RETRIES || '2', 10);
+    const timeoutMs = parseInt(process.env.LLM_REQUEST_TIMEOUT_MS || '45000', 10);
 
     return {
       provider,
@@ -161,6 +163,7 @@ export class ReviewLLMClient {
       model,
       baseUrl,
       maxRetries,
+      timeoutMs,
     };
   }
 
@@ -207,6 +210,8 @@ export class ReviewLLMClient {
     maxTokens = 1600,
     options: {
       trackUsage?: boolean;
+      signal?: AbortSignal;
+      timeoutMs?: number;
     } = {}
   ): Promise<ChatCompletionResult> {
     const config = this.resolveConfig();
@@ -220,19 +225,43 @@ export class ReviewLLMClient {
 
     for (let attempt = 1; attempt <= config.maxRetries + 1; attempt += 1) {
       try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${config.apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: config.model,
-            messages,
-            temperature: 0.1,
-            max_tokens: maxTokens,
-          }),
-        });
+        const controller = new AbortController();
+        const timeoutMs = options.timeoutMs ?? config.timeoutMs;
+        const timeout = setTimeout(() => {
+          controller.abort(new Error(`LLM request timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+        const onAbort = () => controller.abort(options.signal?.reason);
+
+        if (options.signal) {
+          if (options.signal.aborted) {
+            clearTimeout(timeout);
+            throw new Error('LLM request aborted');
+          }
+          options.signal.addEventListener('abort', onAbort, { once: true });
+        }
+
+        let response: Response;
+        try {
+          response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${config.apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            signal: controller.signal,
+            body: JSON.stringify({
+              model: config.model,
+              messages,
+              temperature: 0.1,
+              max_tokens: maxTokens,
+            }),
+          });
+        } finally {
+          clearTimeout(timeout);
+          if (options.signal) {
+            options.signal.removeEventListener('abort', onAbort);
+          }
+        }
 
         if (!response.ok) {
           throw new Error(`LLM request failed: ${response.status} ${await extractErrorMessage(response)}`);
@@ -269,8 +298,16 @@ export class ReviewLLMClient {
     throw lastError ?? new Error('LLM request failed');
   }
 
-  async chat(messages: ChatMessage[], maxTokens = 1600): Promise<string> {
-    const result = await this.chatWithMetadata(messages, maxTokens);
+  async chat(
+    messages: ChatMessage[],
+    maxTokens = 1600,
+    options: {
+      signal?: AbortSignal;
+      timeoutMs?: number;
+      trackUsage?: boolean;
+    } = {}
+  ): Promise<string> {
+    const result = await this.chatWithMetadata(messages, maxTokens, options);
     return result.content;
   }
 }

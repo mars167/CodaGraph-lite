@@ -1,5 +1,5 @@
 import * as path from 'path';
-import type { ReviewFinding } from './reviewEngine';
+import type { FileSemanticContext, ReviewFinding } from './reviewEngine';
 
 export interface StoredReviewReportFile {
   path: string;
@@ -17,6 +17,8 @@ export interface StoredReviewReportFileReview {
   fileSummary?: string;
   findings?: ReviewFinding[];
   patch?: string;
+  semanticContext?: FileSemanticContext;
+  usedFallback?: boolean;
 }
 
 export interface ReviewReportPatchFile extends StoredReviewReportFile {
@@ -40,6 +42,8 @@ export interface ReviewReportFileContext {
   status?: string;
   language?: string;
   fileSummary?: string;
+  semanticContext?: FileSemanticContext;
+  usedFallback?: boolean;
   additions: number;
   deletions: number;
   changes: number;
@@ -328,6 +332,8 @@ export function buildReviewReportFileContexts(params: {
         status: review?.status || patchFile?.status || baseFile?.status,
         language: review?.language || getLanguageFromPath(filePath),
         fileSummary: review?.fileSummary,
+        semanticContext: review?.semanticContext,
+        usedFallback: review?.usedFallback,
         additions: patchFile?.additions ?? baseFile?.additions ?? 0,
         deletions: patchFile?.deletions ?? baseFile?.deletions ?? 0,
         changes: patchFile?.changes ?? baseFile?.changes ?? ((patchFile?.additions ?? 0) + (patchFile?.deletions ?? 0)),

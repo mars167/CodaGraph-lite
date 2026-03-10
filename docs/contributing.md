@@ -61,7 +61,6 @@ npm install
 
 # 安装 Python 依赖
 cd context-agent && pip install -r requirements.txt && cd ..
-cd review-agent && pip install -r requirements.txt && cd ..
 ```
 
 ---
@@ -187,10 +186,10 @@ server/src/
 
 ```bash
 # 格式化所有 Python 文件
-black context-agent/ review-agent/
+black context-agent/
 
 # 检查文件是否符合 Black 格式
-black --check context-agent/review-agent/
+black --check context-agent/
 
 # 设置为 Git pre-commit hook
 pre-commit install --hook-formats 'black -s --'
@@ -202,10 +201,10 @@ pre-commit install --hook-formats 'black -s --'
 
 ```bash
 # 运行 Ruff
-ruff check context-agent review-agent
+ruff check context-agent
 
 # 自动修复可修复的问题
-ruff check --fix context-agent review-agent
+ruff check --fix context-agent
 
 # 检查特定文件
 ruff check context-agent/src/main.py
@@ -217,10 +216,10 @@ ruff check context-agent/src/main.py
 
 ```bash
 # 运行 MyPy 类型检查
-mypy context-agent review-agent
+mypy context-agent
 
 # 生成类型报告
-mypy context-agent review-agent --html-report mypy-report/
+mypy context-agent --html-report mypy-report/
 ```
 
 #### Python 规范

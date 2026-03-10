@@ -84,10 +84,6 @@ async function main() {
 
     // 启动后台作业 worker，消费 pending 队列任务
     const reviewWorker = new CodeReviewWorker({
-      contextAgentHost: config.agent.contextAgentHost,
-      contextAgentPort: config.agent.contextAgentPort,
-      reviewAgentHost: config.agent.reviewAgentHost,
-      reviewAgentPort: config.agent.reviewAgentPort,
       workspaceRoot: config.codeContextRuntime.workspaceRoot,
       maxConcurrentJobs: config.jobQueue.workerCount,
     });
