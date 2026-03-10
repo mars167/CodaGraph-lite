@@ -4,7 +4,7 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { Platform } from '../models/types';
-import { formatCommandForLog, sanitizeSensitiveText } from '../utils/redactSensitive';
+import { formatCommandForLog, sanitizeLogText, sanitizeSensitiveText } from '../utils/redactSensitive';
 import type { ReviewTraceCollector } from './reviewTrace';
 
 const execFileAsync = promisify(execFile);
@@ -110,18 +110,19 @@ async function runCommand(
   } catch (error) {
     const detail = error as Error & { stderr?: string; stdout?: string; killed?: boolean; signal?: string };
     const timedOut = detail.killed || detail.signal === 'SIGTERM';
+    const errorOutput = detail.stderr || detail.stdout || detail.message;
 
     options.trace?.tool(
       options.stage,
       command,
       rendered,
-      sanitizeSensitiveText(detail.stderr || detail.stdout || detail.message),
+      sanitizeSensitiveText(errorOutput),
       timedOut ? 'timeout' : 'failed',
       Date.now() - startedAt
     );
 
     throw new Error(
-      `Command failed: ${rendered}${detail.stderr || detail.message ? `\n${sanitizeSensitiveText(detail.stderr || detail.message)}` : ''}`
+      `Command failed: ${rendered}${errorOutput ? `\n${sanitizeLogText(errorOutput, 400)}` : ''}`
     );
   }
 }

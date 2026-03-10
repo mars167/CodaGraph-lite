@@ -370,24 +370,24 @@ export default function ReviewReportPage() {
               <h1 className="text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">
                 Review 报告 #{report.analysis.id}
               </h1>
-	              <Badge variant={riskBadgeMap[report.riskLevel]}>{report.riskLevel}</Badge>
+              <Badge variant={riskBadgeMap[report.riskLevel]}>{report.riskLevel}</Badge>
               {report.confidence && (
                 <Badge variant={confidenceBadgeMap[report.confidence]}>{report.confidence} confidence</Badge>
               )}
               {report.reviewMode && (
                 <Badge variant="default">{report.reviewMode}</Badge>
               )}
-	              <Badge
-	                variant={
-	                  report.analysis.status === 'completed'
-	                    ? 'success'
-	                    : report.analysis.status === 'failed'
-	                      ? 'error'
-	                      : report.analysis.status === 'cancelled'
-	                        ? 'default'
-	                      : 'warning'
-	                }
-	              >
+              <Badge
+                variant={
+                  report.analysis.status === 'completed'
+                    ? 'success'
+                    : report.analysis.status === 'failed'
+                      ? 'error'
+                      : report.analysis.status === 'cancelled'
+                        ? 'default'
+                        : 'warning'
+                }
+              >
                 {report.analysis.status}
               </Badge>
             </div>
@@ -421,33 +421,33 @@ export default function ReviewReportPage() {
                   查看作业详情
                 </Link>
               )}
-	              <a
-	                href={report.analysis.prUrl}
+              <a
+                href={report.analysis.prUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex flex-1 items-center justify-center rounded-2xl border border-slate-300 bg-white/85 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-white dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-200 dark:hover:bg-slate-900"
-	              >
-	                打开 PR
-	              </a>
-                <button
-                  type="button"
-                  disabled={retryMode !== null}
-                  onClick={() => void handleRetry('normal')}
-                  className="inline-flex flex-1 items-center justify-center rounded-2xl border border-slate-300 bg-white/85 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-200 dark:hover:bg-slate-900"
-                >
-                  {retryMode === 'normal' ? '重试中...' : '重新审查'}
-                </button>
-                <button
-                  type="button"
-                  disabled={retryMode !== null}
-                  onClick={() => void handleRetry('improve')}
-                  className="inline-flex flex-1 items-center justify-center rounded-2xl bg-teal-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {retryMode === 'improve' ? '重试中...' : 'Improve 重跑'}
-                </button>
-	            </div>
-	          </div>
-	        </div>
+              >
+                打开 PR
+              </a>
+              <button
+                type="button"
+                disabled={retryMode !== null}
+                onClick={() => void handleRetry('normal')}
+                className="inline-flex flex-1 items-center justify-center rounded-2xl border border-slate-300 bg-white/85 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-200 dark:hover:bg-slate-900"
+              >
+                {retryMode === 'normal' ? '重试中...' : '重新审查'}
+              </button>
+              <button
+                type="button"
+                disabled={retryMode !== null}
+                onClick={() => void handleRetry('improve')}
+                className="inline-flex flex-1 items-center justify-center rounded-2xl bg-teal-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {retryMode === 'improve' ? '重试中...' : 'Improve 重跑'}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_360px]">
@@ -504,14 +504,14 @@ export default function ReviewReportPage() {
                 </div>
               </div>
 
-	              {overallFindings.length > 0 && (
-	                <div className="space-y-3">
+              {overallFindings.length > 0 && (
+                <div className="space-y-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                     PR 级问题
                   </p>
-	                  {overallFindings.map((finding, index) => renderFindingCard(finding, `overall-${index}`, true))}
-	                </div>
-	              )}
+                  {overallFindings.map((finding, index) => renderFindingCard(finding, `overall-${index}`, true))}
+                </div>
+              )}
 
               <div className="space-y-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
@@ -546,10 +546,10 @@ export default function ReviewReportPage() {
                   </div>
                 </div>
               ) : null}
-	            </CardContent>
-	          </Card>
+            </CardContent>
+          </Card>
 
-	          <Card className="rounded-[28px] border-slate-200/80 bg-white/96 dark:border-slate-800/80 dark:bg-slate-950/85">
+          <Card className="rounded-[28px] border-slate-200/80 bg-white/96 dark:border-slate-800/80 dark:bg-slate-950/85">
             <CardContent className="space-y-3">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                 Raw Findings
@@ -567,7 +567,7 @@ export default function ReviewReportPage() {
                 )}
               </div>
             </CardContent>
-	          </Card>
+          </Card>
 
           {traceEntries.length > 0 && (
             <Card className="rounded-[28px] border-slate-200/80 bg-white/96 dark:border-slate-800/80 dark:bg-slate-950/85">
@@ -581,8 +581,8 @@ export default function ReviewReportPage() {
               </CardContent>
             </Card>
           )}
-	        </div>
-	      </div>
+        </div>
+      </div>
 
       <div className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
