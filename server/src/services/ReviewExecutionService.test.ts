@@ -74,6 +74,94 @@ const defaultTrace = {
   ],
 };
 
+function createDefaultReviewResult() {
+  return {
+    fileReviews: [
+      {
+        filePath: 'src/review.ts',
+        status: 'modified',
+        language: 'typescript',
+        fileSummary: 'review.ts 新增了调试逻辑。',
+        findings: [
+          {
+            filePath: 'src/review.ts',
+            lineNumber: 2,
+            severity: 'medium',
+            category: 'maintainability',
+            title: '存在调试语句',
+            description: 'console.log 会污染生产日志。',
+            suggestion: '删除 console.log。',
+            source: 'rule',
+          },
+        ],
+        semanticContext: {
+          changedSymbols: ['run'],
+          relatedSnippets: [],
+          impactReferences: [],
+          relatedTests: [],
+          contextEngineAvailable: false,
+        },
+        patch: '@@ -1,2 +1,3 @@\n export const run = () => {\n+  console.log("debug")\n }\n',
+        usedFallback: true,
+      },
+    ],
+    allFindings: [
+      {
+        filePath: 'src/review.ts',
+        lineNumber: 2,
+        severity: 'medium',
+        category: 'maintainability',
+        title: '存在调试语句',
+        description: 'console.log 会污染生产日志。',
+        suggestion: '删除 console.log。',
+        source: 'rule',
+      },
+    ],
+    summaryFindings: [],
+    inlineComments: [
+      {
+        finding: {
+          filePath: 'src/review.ts',
+          lineNumber: 2,
+          severity: 'medium',
+          category: 'maintainability',
+          title: '存在调试语句',
+          description: 'console.log 会污染生产日志。',
+          suggestion: '删除 console.log。',
+          source: 'rule',
+        },
+        position: {
+          line: 2,
+          side: 'RIGHT',
+        },
+      },
+    ],
+    fallbackFindings: [],
+    summary: '已完成仓库上下文驱动的 PR review。',
+    riskLevel: 'medium',
+    confidence: 'medium',
+    coverage: {
+      totalFiles: 1,
+      reviewedFiles: 1,
+      skippedFiles: [],
+      partialReview: false,
+    },
+    nextActions: ['删除 console.log。'],
+    suppressedFindings: [],
+    trace: defaultTrace,
+    mode: 'rule-only',
+    metadata: {
+      llmEnabled: false,
+      llmUsed: false,
+      contextEngineAvailable: false,
+      reviewedFiles: 1,
+      inlineCommentLimit: 8,
+      reviewMode: 'normal',
+      promptVersion: '2026-03-10-impact-security-logic-v1',
+    },
+  };
+}
+
 jest.mock('../models/Analysis', () => ({
   getAnalysisModel: () => analysisModelMock,
 }));
@@ -194,91 +282,7 @@ describe('ReviewExecutionService', () => {
       },
     ]);
 
-    reviewEngineReviewMock.mockResolvedValue({
-      fileReviews: [
-        {
-          filePath: 'src/review.ts',
-          status: 'modified',
-          language: 'typescript',
-          fileSummary: 'review.ts 新增了调试逻辑。',
-          findings: [
-            {
-              filePath: 'src/review.ts',
-              lineNumber: 2,
-              severity: 'medium',
-              category: 'maintainability',
-              title: '存在调试语句',
-              description: 'console.log 会污染生产日志。',
-              suggestion: '删除 console.log。',
-              source: 'rule',
-            },
-          ],
-          semanticContext: {
-            changedSymbols: ['run'],
-            relatedSnippets: [],
-            impactReferences: [],
-            relatedTests: [],
-            contextEngineAvailable: false,
-          },
-          patch: '@@ -1,2 +1,3 @@\n export const run = () => {\n+  console.log("debug")\n }\n',
-          usedFallback: true,
-        },
-      ],
-      allFindings: [
-        {
-          filePath: 'src/review.ts',
-          lineNumber: 2,
-          severity: 'medium',
-          category: 'maintainability',
-          title: '存在调试语句',
-          description: 'console.log 会污染生产日志。',
-          suggestion: '删除 console.log。',
-          source: 'rule',
-        },
-      ],
-      summaryFindings: [],
-      inlineComments: [
-        {
-          finding: {
-            filePath: 'src/review.ts',
-            lineNumber: 2,
-            severity: 'medium',
-            category: 'maintainability',
-            title: '存在调试语句',
-            description: 'console.log 会污染生产日志。',
-            suggestion: '删除 console.log。',
-            source: 'rule',
-          },
-          position: {
-            line: 2,
-            side: 'RIGHT',
-          },
-        },
-      ],
-      fallbackFindings: [],
-      summary: '已完成仓库上下文驱动的 PR review。',
-      riskLevel: 'medium',
-      confidence: 'medium',
-      coverage: {
-        totalFiles: 1,
-        reviewedFiles: 1,
-        skippedFiles: [],
-        partialReview: false,
-      },
-      nextActions: ['删除 console.log。'],
-      suppressedFindings: [],
-      trace: defaultTrace,
-      mode: 'rule-only',
-      metadata: {
-        llmEnabled: false,
-        llmUsed: false,
-        contextEngineAvailable: false,
-        reviewedFiles: 1,
-        inlineCommentLimit: 8,
-        reviewMode: 'normal',
-        promptVersion: '2026-03-10-impact-security-logic-v1',
-      },
-    });
+    reviewEngineReviewMock.mockResolvedValue(createDefaultReviewResult());
   });
 
   it('submits a GitHub review with inline comments and persists the richer payload', async () => {
@@ -400,6 +404,62 @@ describe('ReviewExecutionService', () => {
 
     expect(result.postedCommentCount).toBe(2);
     expect(commentClientMock.submitReview).toHaveBeenCalledTimes(2);
+    expect(oauthInstallationServiceMock.ensureValidAccessToken).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        id: 11,
+        access_token: 'old-token',
+      })
+    );
+    expect(oauthInstallationServiceMock.ensureValidAccessToken).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        access_token: 'stale-token',
+      }),
+      true
+    );
+    expect(GitHubClientMock).toHaveBeenNthCalledWith(1, 'stale-token');
+    expect(GitHubClientMock).toHaveBeenNthCalledWith(2, 'fresh-token');
+  });
+
+  it('forces token refresh and retries once when repository pull fails with git auth error', async () => {
+    oauthInstallationServiceMock.ensureValidAccessToken
+      .mockResolvedValueOnce({
+        access_token: 'stale-token',
+        auth_type: 'github_app',
+        github_app_installation_id: '109713665',
+      })
+      .mockResolvedValueOnce({
+        access_token: 'fresh-token',
+        auth_type: 'github_app',
+        github_app_installation_id: '109713665',
+      });
+
+    reviewEngineReviewMock
+      .mockRejectedValueOnce(
+        new Error("Command failed: git fetch --prune\nfatal: Authentication failed for 'https://github.com/mars/lite.git/'")
+      )
+      .mockResolvedValueOnce(createDefaultReviewResult());
+
+    const service = new ReviewExecutionService();
+
+    const result = await service.execute(1006, JSON.stringify({
+      platform: 'github',
+      repo_name: 'mars/lite',
+      pr_number: '42',
+      repository_id: '7',
+      analysis_id: '13',
+      analysis_job_id: '17',
+    }));
+
+    expect(result.postedCommentCount).toBe(2);
+    expect(reviewEngineReviewMock).toHaveBeenCalledTimes(2);
+    expect(reviewEngineReviewMock).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      accessToken: 'stale-token',
+    }));
+    expect(reviewEngineReviewMock).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      accessToken: 'fresh-token',
+    }));
     expect(oauthInstallationServiceMock.ensureValidAccessToken).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({

@@ -486,7 +486,7 @@ export class ReviewExecutionService {
     this.log(jobId, 'info', `review-worker 判断：本次需要分析 ${files.length} 个文件`);
 
     this.ensureNotCancelled(jobId);
-    const advancedReview = await this.reviewEngine.review({
+    const executeAdvancedReview = () => this.reviewEngine.review({
       jobId: String(jobId),
       platform: repository.platform,
       owner: repository.owner,
@@ -515,6 +515,11 @@ export class ReviewExecutionService {
         this.analysisJobModel.updateProgress(analysisJob.id, 0.3, message);
       },
     });
+
+    const advancedReview = await withAuthRefresh(
+      '拉取仓库并执行审查',
+      executeAdvancedReview
+    );
 
     const findings = advancedReview.allFindings;
     const riskLevel = advancedReview.riskLevel;

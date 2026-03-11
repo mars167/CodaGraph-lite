@@ -5,6 +5,8 @@ describe('authFailures', () => {
     expect(isAuthenticationFailureMessage('GitHub API 失败: 401 Bad credentials')).toBe(true);
     expect(isAuthenticationFailureMessage('GET /pulls 失败: 401 Unauthorized')).toBe(true);
     expect(isAuthenticationFailureMessage('OAuth token 已失效，请重新授权')).toBe(true);
+    expect(isAuthenticationFailureMessage("fatal: Authentication failed for 'https://github.com/mars/lite.git/'")).toBe(true);
+    expect(isAuthenticationFailureMessage('remote: Invalid username or password.')).toBe(true);
     expect(isAuthenticationFailure(new Error('Request failed with unauthorized response'))).toBe(true);
   });
 
