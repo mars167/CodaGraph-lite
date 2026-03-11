@@ -112,18 +112,18 @@ export default function RepositoryPullRequestsPage() {
     };
   }, [hasRunningReview, loadPullRequests]);
 
-  const handleStartReview = async (pr: RepositoryPullRequest, mode: 'normal' | 'improve' = 'normal') => {
+  const handleStartReview = async (pr: RepositoryPullRequest) => {
     if (!repositoryId) {
       return;
     }
 
     try {
-      setReviewingPr(`${pr.prNumber}:${mode}`);
-      const response = await apiClient.startRepositoryPullRequestReview(repositoryId, pr.prNumber, mode);
+      setReviewingPr(String(pr.prNumber));
+      const response = await apiClient.startRepositoryPullRequestReview(repositoryId, pr.prNumber);
       success(
-        response.data.created ? (mode === 'improve' ? '已开始 Improve Review' : '已开始 Review') : '未重复触发',
+        response.data.created ? '已开始 Review' : '未重复触发',
         response.data.jobId
-          ? `PR #${pr.prNumber} ${response.data.message}，作业 #${response.data.jobId}${mode === 'improve' ? '，将记录详细 trace' : ''}`
+          ? `PR #${pr.prNumber} ${response.data.message}，作业 #${response.data.jobId}`
           : `PR #${pr.prNumber} ${response.data.message}`
       );
       await loadPullRequests(true);
@@ -470,20 +470,12 @@ export default function RepositoryPullRequestsPage() {
 
                       <div className="flex shrink-0 flex-col gap-2 xl:w-44">
                         <Button
-                          onClick={() => void handleStartReview(pr, 'normal')}
-                          loading={reviewingPr === `${pr.prNumber}:normal`}
+                          onClick={() => void handleStartReview(pr)}
+                          loading={reviewingPr === String(pr.prNumber)}
                           disabled={reviewingPr !== null || pr.reviewStatus === 'processing'}
                         >
                           {pr.reviewStatus === 'not_started' ? '开始 Review' : '重新 Review'}
                         </Button>
-                        <button
-                          type="button"
-                          onClick={() => void handleStartReview(pr, 'improve')}
-                          disabled={reviewingPr !== null || pr.reviewStatus === 'processing'}
-                          className="inline-flex items-center justify-center rounded-lg border border-cyan-300 bg-cyan-50 px-3 py-2 text-sm font-medium text-cyan-700 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-cyan-900/70 dark:bg-cyan-950/40 dark:text-cyan-200 dark:hover:bg-cyan-950/70"
-                        >
-                          Improve Review
-                        </button>
                         <Link
                           href={pr.latestReviewJobId ? `/dashboard/jobs/${pr.latestReviewJobId}` : '/dashboard/jobs'}
                           className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"

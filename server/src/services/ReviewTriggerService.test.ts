@@ -88,9 +88,11 @@ jest.mock('../platform/client', () => ({
   createPlatformClient: createPlatformClientMock,
 }));
 
+import { resetConfig } from '../config';
 import { ReviewTriggerService, ReviewTriggerError } from './ReviewTriggerService';
 
 describe('ReviewTriggerService', () => {
+  const originalReviewDefaultMode = process.env.REVIEW_DEFAULT_MODE;
   const repository = {
     id: 7,
     platform: 'github' as const,
@@ -118,6 +120,8 @@ describe('ReviewTriggerService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.REVIEW_DEFAULT_MODE = 'normal';
+    resetConfig();
     reviewLockModelMock.findActive.mockReturnValue(null);
     jobModelMock.findLatestByAnalysisId.mockReturnValue(null);
     analysisJobModelMock.findByAnalysisId.mockReturnValue([]);
@@ -134,6 +138,15 @@ describe('ReviewTriggerService', () => {
       auth_type: 'oauth',
     });
     getPullRequestMock.mockResolvedValue(pullRequest);
+  });
+
+  afterAll(() => {
+    if (originalReviewDefaultMode === undefined) {
+      delete process.env.REVIEW_DEFAULT_MODE;
+    } else {
+      process.env.REVIEW_DEFAULT_MODE = originalReviewDefaultMode;
+    }
+    resetConfig();
   });
 
   it('queues a new review for watch when the head commit is new', async () => {
@@ -191,6 +204,8 @@ describe('ReviewTriggerService', () => {
   });
 
   it('allows manual force rerun for the same head commit when no active lock exists', async () => {
+    process.env.REVIEW_DEFAULT_MODE = 'improve';
+    resetConfig();
     analysisModelMock.findByPR.mockReturnValue({
       id: 14,
       head_commit: 'head-sha',

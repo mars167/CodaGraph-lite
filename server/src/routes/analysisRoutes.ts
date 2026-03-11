@@ -3,6 +3,7 @@
  */
 
 import express, { Request, Response } from 'express';
+import { getConfig } from '../config';
 import { getAnalysisModel } from '../models/Analysis';
 import { getAnalysisJobModel } from '../models/AnalysisJob';
 import { getOAuthInstallationModel } from '../models/OAuthInstallation';
@@ -439,7 +440,7 @@ router.post('/:id/retry', async (req: Request, res: Response) => {
     const analysisJob = getAnalysisJobModel().create(cloned.id, 'cloning');
 
     const queueService = getQueueService();
-    const reviewMode = req.body?.mode === 'improve' ? 'improve' : 'normal';
+    const reviewMode = getConfig().review.defaultMode;
     const queueResult = await queueService.createJob(
       'pr_analysis',
       {

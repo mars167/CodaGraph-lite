@@ -79,6 +79,9 @@ const defaultSettings: SystemSettings = {
   githubEnabled: false,
   giteeEnabled: false,
   gitlabEnabled: false,
+  githubAuthMode: 'oauth_app',
+  giteeAuthMode: 'oauth_app',
+  gitlabAuthMode: 'oauth_app',
   logLevel: 'info',
   jobTimeout: 300,
   jobMaxRetries: 3,
@@ -119,6 +122,28 @@ function getPlatformAuthType(platform: Platform): 'oauth' | 'github_app' {
   return platform === 'github' ? 'github_app' : 'oauth';
 }
 
+function getPlatformMode(settings: SystemSettings, platform: Platform): 'oauth_app' | 'pat' {
+  switch (platform) {
+    case 'github':
+      return settings.githubAuthMode;
+    case 'gitee':
+      return settings.giteeAuthMode;
+    case 'gitlab':
+      return settings.gitlabAuthMode;
+  }
+}
+
+function setPlatformMode(settings: SystemSettings, platform: Platform, mode: 'oauth_app' | 'pat'): SystemSettings {
+  switch (platform) {
+    case 'github':
+      return { ...settings, githubAuthMode: mode };
+    case 'gitee':
+      return { ...settings, giteeAuthMode: mode };
+    case 'gitlab':
+      return { ...settings, gitlabAuthMode: mode };
+  }
+}
+
 export default function SettingsPage() {
   const { admin } = useAuth();
   const { success, error } = useNotificationHelpers();
@@ -129,6 +154,7 @@ export default function SettingsPage() {
   const [isTestingLlm, setIsTestingLlm] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [isAuthorizing, setIsAuthorizing] = useState<Platform | null>(null);
+  const [isConnectingPat, setIsConnectingPat] = useState<Platform | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [settings, setSettings] = useState<SystemSettings>(defaultSettings);
@@ -136,6 +162,11 @@ export default function SettingsPage() {
   const [installations, setInstallations] = useState<OAuthInstallation[]>([]);
   const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
   const [llmTestResult, setLlmTestResult] = useState<LlmTestResult | null>(null);
+  const [patTokens, setPatTokens] = useState<Record<Platform, string>>({
+    github: '',
+    gitee: '',
+    gitlab: '',
+  });
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
     newPassword: '',
@@ -169,7 +200,7 @@ export default function SettingsPage() {
       const response = await apiClient.getOAuthInstallations();
       setInstallations(response.data.installations);
     } catch (err) {
-      error('加载失败', err instanceof Error ? err.message : '无法获取 OAuth 连接');
+      error('加载失败', err instanceof Error ? err.message : '无法获取认证连接');
     } finally {
       setIsOAuthLoading(false);
     }
@@ -264,16 +295,16 @@ export default function SettingsPage() {
   };
 
   const handleDisconnect = async (id: string) => {
-    if (!confirm('确定要断开此 OAuth 连接吗？')) {
+    if (!confirm('确定要断开此认证连接吗？')) {
       return;
     }
 
     try {
       await apiClient.disconnectOAuth(id);
-      success('断开成功', 'OAuth 连接已断开');
+      success('断开成功', '认证连接已断开');
       await loadInstallations();
     } catch (err) {
-      error('断开失败', err instanceof Error ? err.message : '无法断开 OAuth 连接');
+      error('断开失败', err instanceof Error ? err.message : '无法断开认证连接');
     }
   };
 
@@ -284,6 +315,26 @@ export default function SettingsPage() {
       await loadInstallations();
     } catch (err) {
       error('刷新失败', err instanceof Error ? err.message : '无法刷新 Token');
+    }
+  };
+
+  const handleConnectPat = async (platform: Platform) => {
+    const token = patTokens[platform]?.trim();
+    if (!token) {
+      error('表单错误', '请先填写 PAT Token');
+      return;
+    }
+
+    try {
+      setIsConnectingPat(platform);
+      await apiClient.createPersonalAccessTokenInstallation(platform, token);
+      setPatTokens((current) => ({ ...current, [platform]: '' }));
+      success('连接成功', `${platformNames[platform]} PAT 已保存并启用`);
+      await loadInstallations();
+    } catch (err) {
+      error('连接失败', err instanceof Error ? err.message : '无法保存 PAT 连接');
+    } finally {
+      setIsConnectingPat(null);
     }
   };
 
@@ -355,7 +406,7 @@ export default function SettingsPage() {
   const tabs: Array<{ id: SettingsTab; label: string; accent: string }> = [
     { id: 'general', label: '通用设置', accent: 'from-emerald-500 to-teal-600' },
     { id: 'security', label: '管理员与安全', accent: 'from-rose-500 to-red-600' },
-    { id: 'oauth', label: 'OAuth 连接', accent: 'from-violet-500 to-fuchsia-600' },
+    { id: 'oauth', label: '认证连接', accent: 'from-violet-500 to-fuchsia-600' },
     { id: 'llm', label: 'LLM API', accent: 'from-cyan-500 to-blue-600' },
     { id: 'database', label: '数据库', accent: 'from-amber-500 to-orange-600' },
     { id: 'backup', label: '备份恢复', accent: 'from-slate-500 to-slate-700' },
@@ -459,7 +510,7 @@ export default function SettingsPage() {
                 把管理员、连接和模型配置放到同一个入口
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-                这里统一管理管理员密码、OAuth 平台连接和 LLM API 配置，避免在多个页面之间来回切换。
+                这里统一管理管理员密码、平台认证连接和 LLM API 配置，避免在多个页面之间来回切换。
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -467,7 +518,7 @@ export default function SettingsPage() {
                 管理员 {admin?.username || '未知'}
               </Badge>
               <Badge variant={installations.length > 0 ? 'success' : 'warning'}>
-                OAuth 连接 {installations.length} 个
+                认证连接 {installations.length} 个
               </Badge>
               <Badge variant={llmConfigured ? 'success' : 'warning'}>
                 {llmConfigured ? '已配置 LLM API' : '未配置 LLM API'}
@@ -486,7 +537,7 @@ export default function SettingsPage() {
             </Card>
             <Card className="rounded-3xl border-white/70 bg-white/80 dark:border-slate-800 dark:bg-slate-950/60">
               <CardContent>
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">OAuth 连接</p>
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">认证连接</p>
                 <p className="mt-3 text-xl font-semibold text-slate-950 dark:text-white">
                   {formatCount(installations.length)}
                 </p>
@@ -654,33 +705,92 @@ export default function SettingsPage() {
       {activeTab === 'oauth' && (
         <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
           <div className="space-y-6">
-            <SettingsSection title="平台启用状态">
+            <SettingsSection title="平台启用状态" description="每个平台只能在 OAuth / App 和 PAT 两种接入模式里二选一。PAT 模式更轻量，OAuth / App 模式更适合长期授权和自动刷新。">
               <div className="space-y-3">
-                <ToggleSetting
-                  label="GitHub 集成"
-                  description="启用 GitHub OAuth 登录和 GitHub App 安装"
-                  checked={settings.githubEnabled}
-                  onChange={(value) => setSettings({ ...settings, githubEnabled: value })}
-                />
-                <ToggleSetting
-                  label="Gitee 集成"
-                  description="启用 Gitee OAuth 登录和仓库授权"
-                  checked={settings.giteeEnabled}
-                  onChange={(value) => setSettings({ ...settings, giteeEnabled: value })}
-                />
-                <ToggleSetting
-                  label="GitLab 集成"
-                  description="启用 GitLab OAuth 登录和仓库授权"
-                  checked={settings.gitlabEnabled}
-                  onChange={(value) => setSettings({ ...settings, gitlabEnabled: value })}
-                />
+                {(['github', 'gitee', 'gitlab'] as Platform[]).map((platform) => {
+                  const enabled = platform === 'github'
+                    ? settings.githubEnabled
+                    : platform === 'gitee'
+                      ? settings.giteeEnabled
+                      : settings.gitlabEnabled;
+                  const mode = getPlatformMode(settings, platform);
+
+                  return (
+                    <div
+                      key={platform}
+                      className="rounded-3xl border border-gray-200/80 bg-white/80 p-4 dark:border-gray-800 dark:bg-gray-950/50"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <div className="rounded-2xl bg-gray-100 p-3 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+                            {platformIcons[platform]}
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900 dark:text-white">{platformNames[platform]} 集成</p>
+                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                              {platform === 'github' ? 'OAuth / App 模式会走 GitHub App 安装。' : 'OAuth / App 模式会走平台 OAuth 授权。'}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextValue = !enabled;
+                            if (platform === 'github') {
+                              setSettings({ ...settings, githubEnabled: nextValue });
+                            } else if (platform === 'gitee') {
+                              setSettings({ ...settings, giteeEnabled: nextValue });
+                            } else {
+                              setSettings({ ...settings, gitlabEnabled: nextValue });
+                            }
+                          }}
+                          className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+                            enabled ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                              enabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </button>
+                      </div>
+
+                      <div className="mt-4 flex gap-2">
+                        {[
+                          { value: 'oauth_app' as const, label: 'OAuth / App' },
+                          { value: 'pat' as const, label: 'PAT' },
+                        ].map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setSettings(setPlatformMode(settings, platform, option.value))}
+                            className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                              mode === option.value
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </SettingsSection>
 
-            <SettingsSection title="新增连接" description="GitHub 默认会走 GitHub App 安装，其他平台走 OAuth 授权。">
+            <SettingsSection title="新增连接" description="页面不再区分多套入口，直接根据每个平台当前模式展示对应接入方式。">
               <div className="grid gap-4">
                 {(['github', 'gitee', 'gitlab'] as Platform[]).map((platform) => {
                   const isConnected = installations.some((item) => item.platform === platform);
+                  const authMode = getPlatformMode(settings, platform);
+                  const enabled = platform === 'github'
+                    ? settings.githubEnabled
+                    : platform === 'gitee'
+                      ? settings.giteeEnabled
+                      : settings.gitlabEnabled;
                   return (
                     <div
                       key={platform}
@@ -697,11 +807,29 @@ export default function SettingsPage() {
                         <div>
                           <p className="font-medium text-gray-900 dark:text-white">{platformNames[platform]}</p>
                           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                            {isConnected ? '已存在连接，可继续添加或刷新 token。' : '尚未连接'}
+                            {isConnected
+                              ? `已存在连接，当前模式：${authMode === 'pat' ? 'PAT' : 'OAuth / App'}`
+                              : authMode === 'pat'
+                                ? '尚未连接，直接填写 PAT 即可接入'
+                                : '尚未连接，点击后会跳转到授权页'}
                           </p>
                         </div>
                       </div>
-                      {isConnected ? (
+                      {!enabled ? (
+                        <Badge variant="default">已关闭</Badge>
+                      ) : authMode === 'pat' ? (
+                        <div className="w-full max-w-sm space-y-2">
+                          <PasswordInput
+                            label=""
+                            placeholder="输入 PAT Token"
+                            value={patTokens[platform]}
+                            onChange={(event) => setPatTokens((current) => ({ ...current, [platform]: event.target.value }))}
+                          />
+                          <Button size="sm" onClick={() => handleConnectPat(platform)} loading={isConnectingPat === platform}>
+                            {isConnectingPat === platform ? '保存中...' : isConnected ? '更新 PAT' : '连接 PAT'}
+                          </Button>
+                        </div>
+                      ) : isConnected ? (
                         <Badge variant="success">已连接</Badge>
                       ) : (
                         <Button size="sm" onClick={() => handleAuthorize(platform)} loading={isAuthorizing === platform}>
@@ -716,7 +844,7 @@ export default function SettingsPage() {
           </div>
 
           <div className="space-y-6">
-            <SettingsSection title="当前 OAuth 连接" description="连接管理已经并入系统设置页，不需要再切到独立的 OAuth 页面。">
+            <SettingsSection title="当前认证连接" description="这里只展示当前有效连接，不再把 token 明文返回到前端。">
               <div className="flex items-center justify-between gap-4">
                 <div className="text-sm text-gray-500 dark:text-gray-400">
                   共 {formatCount(installations.length)} 个连接
@@ -728,7 +856,7 @@ export default function SettingsPage() {
 
               {isOAuthLoading ? (
                 <div className="py-10">
-                  <Loading text="正在同步 OAuth 连接..." />
+                  <Loading text="正在同步认证连接..." />
                 </div>
               ) : installations.length > 0 ? (
                 <div className="space-y-4">
@@ -749,6 +877,18 @@ export default function SettingsPage() {
                             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                               {platformNames[installation.platform]} · {installation.platformUserId}
                             </p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <Badge variant={installation.authType === 'pat' ? 'warning' : 'info'}>
+                                {installation.authType === 'pat'
+                                  ? 'PAT'
+                                  : installation.authType === 'github_app'
+                                    ? 'GitHub App'
+                                    : 'OAuth'}
+                              </Badge>
+                              {installation.hasRefreshToken && (
+                                <Badge variant="success">支持刷新</Badge>
+                              )}
+                            </div>
                             {installation.expiresAt && (
                               <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                                 过期时间: {formatDateTime(installation.expiresAt)}
@@ -758,9 +898,11 @@ export default function SettingsPage() {
                         </div>
 
                         <div className="flex flex-wrap gap-2">
-                          <Button variant="outline" size="sm" onClick={() => handleRefreshToken(installation.id)}>
-                            刷新 Token
-                          </Button>
+                          {installation.hasRefreshToken && installation.authType !== 'pat' && (
+                            <Button variant="outline" size="sm" onClick={() => handleRefreshToken(installation.id)}>
+                              刷新 Token
+                            </Button>
+                          )}
                           <Button variant="danger" size="sm" onClick={() => handleDisconnect(installation.id)}>
                             断开连接
                           </Button>
@@ -772,7 +914,7 @@ export default function SettingsPage() {
               ) : (
                 <div className="rounded-3xl border border-dashed border-gray-300 bg-gray-50/80 px-5 py-10 text-center dark:border-gray-700 dark:bg-gray-950/40">
                   <p className="text-sm text-gray-500 dark:text-gray-400">
-                    暂无 OAuth 连接，可以直接在左侧卡片中发起授权。
+                    暂无认证连接，可以直接在左侧卡片中授权或填写 PAT。
                   </p>
                 </div>
               )}

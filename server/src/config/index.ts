@@ -145,6 +145,10 @@ export interface LlmConfig {
   llmMaxRetries: number;
 }
 
+export interface ReviewConfig {
+  defaultMode: 'normal' | 'improve';
+}
+
 /**
  * 备份配置
  */
@@ -169,6 +173,7 @@ export interface AppConfig {
   security: SecurityConfig;
   cors: CorsConfig;
   llm: LlmConfig;
+  review: ReviewConfig;
   backup: BackupConfig;
   timezone: string;
   locale: string;
@@ -227,6 +232,14 @@ function normalizeCorsMethods(methods: string[]): string[] {
   }
 
   return normalized;
+}
+
+function getReviewMode(key: string, defaultValue: ReviewConfig['defaultMode']): ReviewConfig['defaultMode'] {
+  const value = getEnv(key, defaultValue);
+  if (value === 'normal' || value === 'improve') {
+    return value;
+  }
+  throw new ConfigurationError(`环境变量 ${key} 必须是 normal 或 improve: ${value}`, key);
 }
 
 /**
@@ -371,6 +384,10 @@ export function loadConfig(): AppConfig {
       llmMaxRetries: getEnvNumber('LLM_MAX_RETRIES', 3),
     },
 
+    review: {
+      defaultMode: getReviewMode('REVIEW_DEFAULT_MODE', 'normal'),
+    },
+
     backup: {
       backupPath: getEnv('BACKUP_PATH', './backups'),
       enableAutoBackup: getEnvBoolean('ENABLE_AUTO_BACKUP', true),
@@ -445,6 +462,7 @@ export function printConfigSummary(): void {
   console.log(`  SQLite 缓存: ${config.database.sqliteCacheSize} KB`);
   console.log(`  Worker 数量: ${config.jobQueue.workerCount}`);
   console.log(`  并发作业: ${config.jobQueue.enableConcurrentJobs ? '启用' : '禁用'}`);
+  console.log(`  默认 Review 模式: ${config.review.defaultMode}`);
   console.log(`  日志级别: ${config.logging.logLevel}`);
   console.log('============================================');
   console.log('');

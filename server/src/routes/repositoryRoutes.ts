@@ -11,6 +11,7 @@ import { getAnalysisModel } from '../models/Analysis';
 import { getAnalysisJobModel } from '../models/AnalysisJob';
 import { getQueueService } from '../jobs/QueueService';
 import { createPlatformClient } from '../platform/client';
+import { getConfig } from '../config';
 import { getOAuthInstallationService } from '../services/OAuthInstallationService';
 import { getReviewTriggerService } from '../services/ReviewTriggerService';
 import { resolveReviewRouteError } from './reviewRouteErrors';
@@ -463,7 +464,7 @@ router.post('/:id/pull-requests/:prNumber/review', async (req: Request, res: Res
       return res.status(400).json({ error: '无效的参数' });
     }
 
-    const reviewMode = req.body?.mode === 'improve' ? 'improve' : 'normal';
+    const reviewMode = getConfig().review.defaultMode;
 
     const result = await getReviewTriggerService().triggerByRepositoryId(id, prNumber, {
       source: 'manual',
@@ -768,13 +769,18 @@ router.delete('/:id', async (req: Request, res: Response) => {
       try {
         const installationModel = getOAuthInstallationModel();
         const installation = installationModel.findById(existing.installation_id);
+        const repositoryCoordinates = resolveRepositoryCoordinates(existing);
 
         if (installation) {
           const client = createPlatformClient(existing.platform, installation.access_token, {
             authType: installation.auth_type || 'oauth',
             githubAppInstallationId: installation.github_app_installation_id || null,
           });
-          await client.deleteWebhook(existing.owner, existing.name, existing.webhook_id);
+          await client.deleteWebhook(
+            repositoryCoordinates.owner,
+            repositoryCoordinates.repoName,
+            existing.webhook_id
+          );
           console.log(`🪝 删除 Webhook: ${existing.full_name}`);
         }
       } catch (error) {
@@ -911,10 +917,12 @@ router.post('/:id/webhook', async (req: Request, res: Response) => {
     if (!repository) {
       return res.status(404).json({ error: '仓库不存在' });
     }
+    const canonicalRepository = reconcileRepositoryCoordinates(repositoryModel, repository);
+    const repositoryCoordinates = resolveRepositoryCoordinates(canonicalRepository);
 
     // 获取 OAuth 安装
     const installationModel = getOAuthInstallationModel();
-    const installation = installationModel.findById(repository.installation_id);
+    const installation = installationModel.findById(canonicalRepository.installation_id);
 
     if (!installation) {
       return res.status(400).json({
@@ -928,8 +936,8 @@ router.post('/:id/webhook', async (req: Request, res: Response) => {
       githubAppInstallationId: installation.github_app_installation_id || null,
     });
     const webhookResponse = await client.createWebhook(
-      repository.owner,
-      repository.name,
+      repositoryCoordinates.owner,
+      repositoryCoordinates.repoName,
       {
         url: webhook_url,
         content_type: 'json',
@@ -944,7 +952,7 @@ router.post('/:id/webhook', async (req: Request, res: Response) => {
       webhook_url,
     });
 
-    console.log(`🪝 配置 Webhook: ${repository.full_name}`);
+    console.log(`🪝 配置 Webhook: ${canonicalRepository.full_name}`);
 
     return res.json({
       success: true,
@@ -979,8 +987,10 @@ router.delete('/:id/webhook', async (req: Request, res: Response) => {
     if (!repository) {
       return res.status(404).json({ error: '仓库不存在' });
     }
+    const canonicalRepository = reconcileRepositoryCoordinates(repositoryModel, repository);
+    const repositoryCoordinates = resolveRepositoryCoordinates(canonicalRepository);
 
-    if (!repository.webhook_id) {
+    if (!canonicalRepository.webhook_id) {
       return res.status(400).json({
         error: '该仓库没有配置 Webhook',
       });
@@ -988,7 +998,7 @@ router.delete('/:id/webhook', async (req: Request, res: Response) => {
 
     // 获取 OAuth 安装
     const installationModel = getOAuthInstallationModel();
-    const installation = installationModel.findById(repository.installation_id);
+    const installation = installationModel.findById(canonicalRepository.installation_id);
 
     if (!installation) {
       return res.status(400).json({
@@ -1002,9 +1012,9 @@ router.delete('/:id/webhook', async (req: Request, res: Response) => {
       githubAppInstallationId: installation.github_app_installation_id || null,
     });
     await client.deleteWebhook(
-      repository.owner,
-      repository.name,
-      repository.webhook_id
+      repositoryCoordinates.owner,
+      repositoryCoordinates.repoName,
+      canonicalRepository.webhook_id
     );
 
     // 更新仓库记录
@@ -1014,7 +1024,7 @@ router.delete('/:id/webhook', async (req: Request, res: Response) => {
       webhook_url: null,
     });
 
-    console.log(`🪝 删除 Webhook: ${repository.full_name}`);
+    console.log(`🪝 删除 Webhook: ${canonicalRepository.full_name}`);
 
     return res.json({
       success: true,

@@ -9,6 +9,8 @@
 
 import { getJobModel } from '../models/Job';
 import { getJobLogModel } from '../models/JobLog';
+import { getAnalysisModel } from '../models/Analysis';
+import { getAnalysisJobModel } from '../models/AnalysisJob';
 import type { JobType, QueueJobStatus, JobPayload } from '../models/types';
 import { sanitizeSensitiveText } from '../utils/redactSensitive';
 
@@ -24,6 +26,8 @@ export interface QueueServiceConfig {
 export class QueueService {
   private jobModel = getJobModel();
   private jobLogModel = getJobLogModel();
+  private analysisModel = getAnalysisModel();
+  private analysisJobModel = getAnalysisJobModel();
   private config: Required<QueueServiceConfig>;
   private activeJobs: Set<number> = new Set();
   private cancellationRequests: Set<number> = new Set();
@@ -80,6 +84,57 @@ export class QueueService {
     );
     console.log(`📝 创建作业 #${job.id}: ${type} (优先级: ${priority})`);
     return { id: job.id };
+  }
+
+  private parsePayload(rawPayload: string): Partial<JobPayload> {
+    try {
+      return JSON.parse(rawPayload) as Partial<JobPayload>;
+    } catch {
+      return {};
+    }
+  }
+
+  recoverInterruptedJobs(): { recoveredCount: number; recoveredJobIds: number[] } {
+    const processingJobs = this.jobModel.findProcessing();
+    const recoveredJobIds: number[] = [];
+
+    for (const job of processingJobs) {
+      const payload = this.parsePayload(job.payload);
+      const analysisId = typeof payload.analysis_id === 'string'
+        ? parseInt(payload.analysis_id, 10)
+        : typeof payload.analysis_id === 'number'
+          ? payload.analysis_id
+          : NaN;
+      const analysisJobId = typeof payload.analysis_job_id === 'string'
+        ? parseInt(payload.analysis_job_id, 10)
+        : typeof payload.analysis_job_id === 'number'
+          ? payload.analysis_job_id
+          : NaN;
+
+      this.jobModel.markPending(job.id);
+
+      if (!Number.isNaN(analysisId)) {
+        this.analysisModel.markPending(analysisId);
+      }
+
+      if (!Number.isNaN(analysisJobId)) {
+        this.analysisJobModel.markPending(analysisJobId);
+      }
+
+      this.activeJobs.delete(job.id);
+      this.cancellationRequests.delete(job.id);
+      this.jobLogModel.create(job.id, 'warn', '检测到服务重启或进程退出，作业已自动恢复为待处理状态');
+      recoveredJobIds.push(job.id);
+    }
+
+    if (recoveredJobIds.length > 0) {
+      console.warn(`🔄 已恢复中断作业: ${recoveredJobIds.join(', ')}`);
+    }
+
+    return {
+      recoveredCount: recoveredJobIds.length,
+      recoveredJobIds,
+    };
   }
 
   getNextJob(): { id: number; type: JobType; payload: string } | null {

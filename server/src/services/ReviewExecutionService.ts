@@ -16,6 +16,7 @@ import {
 } from '../platform/GitHubClient';
 import { getQueueService } from '../jobs/QueueService';
 import { getOAuthInstallationService } from './OAuthInstallationService';
+import { getConfig } from '../config';
 import { isAuthenticationFailure } from '../utils/authFailures';
 import { resolveRepositoryCoordinates } from '../utils/repositoryCoordinates';
 import { sanitizeLogText } from '../utils/redactSensitive';
@@ -379,7 +380,8 @@ export class ReviewExecutionService {
 
   async execute(jobId: number, rawPayload: string): Promise<ReviewExecutionResult> {
     const payload = this.parsePayload(rawPayload);
-    const reviewMode = payload.review_mode === 'improve' ? 'improve' : 'normal';
+    const requestedReviewMode = payload.review_mode === 'improve' ? 'improve' : 'normal';
+    const reviewMode = getConfig().review.defaultMode;
     const [owner, repoName] = payload.repo_name.split('/', 2);
     const prNumber = parseInt(payload.pr_number, 10);
 
@@ -417,6 +419,9 @@ export class ReviewExecutionService {
     this.analysisModel.markProcessing(analysis.id);
     this.analysisJobModel.markProcessing(analysisJob.id);
     this.analysisJobModel.updateProgress(analysisJob.id, 0.05, '准备读取 PR 信息');
+    if (requestedReviewMode !== reviewMode) {
+      this.log(jobId, 'info', `review-worker 已按环境配置切换运行模式（payload=${requestedReviewMode} -> env=${reviewMode}）`);
+    }
     this.log(jobId, 'info', `review-worker 已启动（mode=${reviewMode}）`);
     this.log(jobId, 'info', reviewMode === 'improve' ? 'review-worker improve 模式已开启，将记录结构化 trace' : 'review-worker 推理开始，已进入实时日志模式');
 

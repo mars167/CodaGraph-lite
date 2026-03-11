@@ -277,7 +277,7 @@ export default function ReviewReportPage() {
   const { error, success } = useNotificationHelpers();
   const [report, setReport] = useState<ReviewReportDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [retryMode, setRetryMode] = useState<'normal' | 'improve' | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
 
   const loadReport = useCallback(async () => {
     if (!reportId) {
@@ -322,22 +322,19 @@ export default function ReviewReportPage() {
   const skippedFiles = report?.coverage?.skippedFiles || [];
   const suppressedCount = report?.suppressedFindings?.length || 0;
 
-  const handleRetry = useCallback(async (mode: 'normal' | 'improve') => {
+  const handleRetry = useCallback(async () => {
     if (!reportId) {
       return;
     }
 
     try {
-      setRetryMode(mode);
-      const response = await apiClient.retryAnalysis(reportId, mode);
-      success(
-        mode === 'improve' ? '已重新触发 Improve Review' : '已重新触发 Review',
-        `分析 #${response.data.id} 已创建${mode === 'improve' ? '，将记录详细 trace' : ''}`
-      );
+      setIsRetrying(true);
+      const response = await apiClient.retryAnalysis(reportId);
+      success('已重新触发 Review', `分析 #${response.data.id} 已创建`);
     } catch (err) {
       error('重试失败', err instanceof Error ? err.message : '无法重新触发分析');
     } finally {
-      setRetryMode(null);
+      setIsRetrying(false);
     }
   }, [error, reportId, success]);
 
@@ -431,19 +428,11 @@ export default function ReviewReportPage() {
               </a>
               <button
                 type="button"
-                disabled={retryMode !== null}
-                onClick={() => void handleRetry('normal')}
+                disabled={isRetrying}
+                onClick={() => void handleRetry()}
                 className="inline-flex flex-1 items-center justify-center rounded-2xl border border-slate-300 bg-white/85 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-200 dark:hover:bg-slate-900"
               >
-                {retryMode === 'normal' ? '重试中...' : '重新审查'}
-              </button>
-              <button
-                type="button"
-                disabled={retryMode !== null}
-                onClick={() => void handleRetry('improve')}
-                className="inline-flex flex-1 items-center justify-center rounded-2xl bg-teal-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {retryMode === 'improve' ? '重试中...' : 'Improve 重跑'}
+                {isRetrying ? '重试中...' : '重新审查'}
               </button>
             </div>
           </div>

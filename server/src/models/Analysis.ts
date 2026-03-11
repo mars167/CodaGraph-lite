@@ -260,6 +260,25 @@ export class AnalysisModel {
   }
 
   /**
+   * 恢复为待处理状态
+   */
+  markPending(id: number): Analysis | null {
+    this.db.execute(
+      `UPDATE analysis
+       SET status = 'pending',
+           error_message = NULL,
+           started_at = NULL,
+           completed_at = NULL,
+           failed_at = NULL,
+           updated_at = ${LOCAL_DB_NOW_SQL}
+       WHERE id = ?`,
+      [id]
+    );
+
+    return this.findById(id);
+  }
+
+  /**
    * 标记为完成
    */
   markComplete(

@@ -54,12 +54,14 @@ interface VerifyResponse {
 interface OAuthInstallationApiItem {
   id: string | number;
   platform: OAuthInstallation['platform'];
+  auth_type?: OAuthInstallation['authType'];
+  github_app_installation_id?: string | null;
   account_id: string;
   account_name?: string | null;
-  access_token: string;
-  refresh_token?: string | null;
   permissions?: string | null;
   token_expires_at?: string | null;
+  has_refresh_token?: boolean;
+  is_active?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -738,12 +740,12 @@ class ApiClient {
     const installations: OAuthInstallation[] = (response.installations || []).map((item) => ({
       id: String(item.id),
       platform: item.platform,
+      authType: item.auth_type || 'oauth',
       platformUserId: item.account_id,
       platformUsername: item.account_name || item.account_id,
-      accessToken: item.access_token,
-      refreshToken: item.refresh_token || undefined,
       scope: item.permissions || '',
       expiresAt: normalizeTimestampInput(item.token_expires_at) || item.token_expires_at || undefined,
+      hasRefreshToken: Boolean(item.has_refresh_token),
       createdAt: normalizeTimestampInput(item.created_at) || item.created_at,
       updatedAt: normalizeTimestampInput(item.updated_at) || item.updated_at,
     }));
@@ -762,6 +764,36 @@ class ApiClient {
   // 刷新 OAuth token
   async refreshOAuthToken(installationId: string): Promise<void> {
     return this.post<void>(`/api/oauth/installations/${installationId}/refresh`);
+  }
+
+  async createPersonalAccessTokenInstallation(
+    platform: OAuthInstallation['platform'],
+    accessToken: string
+  ): Promise<ApiResponse<{ installation: OAuthInstallation }>> {
+    const response = await this.post<{ installation: OAuthInstallationApiItem }>(
+      '/api/oauth/installations/pat',
+      { platform, accessToken }
+    );
+
+    return {
+      success: true,
+      data: {
+        installation: {
+          id: String(response.installation.id),
+          platform: response.installation.platform,
+          authType: response.installation.auth_type || 'pat',
+          platformUserId: response.installation.account_id,
+          platformUsername: response.installation.account_name || response.installation.account_id,
+          scope: response.installation.permissions || '',
+          expiresAt: normalizeTimestampInput(response.installation.token_expires_at)
+            || response.installation.token_expires_at
+            || undefined,
+          hasRefreshToken: Boolean(response.installation.has_refresh_token),
+          createdAt: normalizeTimestampInput(response.installation.created_at) || response.installation.created_at,
+          updatedAt: normalizeTimestampInput(response.installation.updated_at) || response.installation.updated_at,
+        },
+      },
+    };
   }
 
   // ============ 仓库 API ============
@@ -817,8 +849,7 @@ class ApiClient {
 
   async startRepositoryPullRequestReview(
     repositoryId: string,
-    prNumber: number,
-    mode: 'normal' | 'improve' = 'normal'
+    prNumber: number
   ): Promise<ApiResponse<{ jobId?: string; analysisId?: string; created: boolean; message: string }>> {
     const response = await this.post<{
       jobId?: number | null;
@@ -826,8 +857,7 @@ class ApiClient {
       message: string;
       analysis?: { id: number | string } | null;
     }>(
-      `/api/repositories/${repositoryId}/pull-requests/${prNumber}/review`,
-      { mode }
+      `/api/repositories/${repositoryId}/pull-requests/${prNumber}/review`
     );
 
     return {
@@ -932,8 +962,8 @@ class ApiClient {
   }
 
   // 重新触发分析
-  async retryAnalysis(id: string, mode: 'normal' | 'improve' = 'normal'): Promise<ApiResponse<Analysis>> {
-    const response = await this.post<{ analysis: AnalysisApiItem }>(`/api/analyses/${id}/retry`, { mode });
+  async retryAnalysis(id: string): Promise<ApiResponse<Analysis>> {
+    const response = await this.post<{ analysis: AnalysisApiItem }>(`/api/analyses/${id}/retry`);
     return {
       success: true,
       data: mapAnalysis(response.analysis),

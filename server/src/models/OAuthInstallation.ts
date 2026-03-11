@@ -203,6 +203,33 @@ export class OAuthInstallationModel {
     return result?.count ?? 0;
   }
 
+  deactivateByPlatformAndAuthType(
+    platform: Platform,
+    authTypes: Array<NonNullable<OAuthInstallation['auth_type']>>,
+    exceptId?: number
+  ): number {
+    if (authTypes.length === 0) {
+      return 0;
+    }
+
+    const placeholders = authTypes.map(() => '?').join(', ');
+    const params: Array<string | number> = [platform, ...authTypes];
+    let sql = `UPDATE oauth_installations
+      SET is_active = 0,
+          updated_at = ${LOCAL_DB_NOW_SQL}
+      WHERE platform = ?
+        AND is_active = 1
+        AND auth_type IN (${placeholders})`;
+
+    if (exceptId !== undefined) {
+      sql += ' AND id != ?';
+      params.push(exceptId);
+    }
+
+    const result = this.db.execute(sql, params);
+    return result.changes;
+  }
+
   /**
    * 清理过期的 token
    */

@@ -36,6 +36,8 @@ const reviewTriggerServiceMock = {
 
 const platformClientMock = {
   listPullRequests: jest.fn(),
+  createWebhook: jest.fn(),
+  deleteWebhook: jest.fn(),
 };
 
 const createPlatformClientMock = jest.fn(() => platformClientMock);
@@ -98,6 +100,11 @@ describe('repositoryRoutes', () => {
       auth_type: 'oauth',
     });
     platformClientMock.listPullRequests.mockResolvedValue([]);
+    platformClientMock.createWebhook.mockResolvedValue({
+      id: 101,
+      url: 'https://example.com/webhook',
+    });
+    platformClientMock.deleteWebhook.mockResolvedValue(undefined);
     analysisModelMock.findByRepository.mockReturnValue([]);
     analysisJobModelMock.findByAnalysisId.mockReturnValue([]);
     jobModelMock.findByType.mockReturnValue([]);
@@ -147,5 +154,88 @@ describe('repositoryRoutes', () => {
       name: 'api-reivew-pro1',
       full_name: 'api-review-test-group/api-reivew-pro1',
     }));
+  });
+
+  it('uses canonical coordinates from full_name when creating a webhook', async () => {
+    repositoryModelMock.findById.mockReturnValue({
+      id: 9163,
+      platform: 'gitee',
+      owner: 'mars167',
+      name: 'API REIVEW  PRO1',
+      full_name: 'api-review-test-group/api-reivew-pro1',
+      installation_id: 3,
+      is_active: true,
+    });
+    repositoryModelMock.update.mockReturnValue({
+      id: 9163,
+      platform: 'gitee',
+      owner: 'api-review-test-group',
+      name: 'api-reivew-pro1',
+      full_name: 'api-review-test-group/api-reivew-pro1',
+      installation_id: 3,
+      is_active: true,
+      webhook_id: '101',
+      webhook_secret: 'secret',
+      webhook_url: 'https://example.com/webhook',
+    });
+
+    const response = await request(app)
+      .post('/9163/webhook')
+      .send({ webhook_url: 'https://example.com/webhook' });
+
+    expect(response.status).toBe(200);
+    expect(platformClientMock.createWebhook).toHaveBeenCalledWith(
+      'api-review-test-group',
+      'api-reivew-pro1',
+      expect.objectContaining({
+        url: 'https://example.com/webhook',
+        content_type: 'json',
+      })
+    );
+  });
+
+  it('uses canonical coordinates from full_name when deleting a webhook', async () => {
+    repositoryModelMock.findById.mockReturnValue({
+      id: 9163,
+      platform: 'gitee',
+      owner: 'mars167',
+      name: 'API REIVEW  PRO1',
+      full_name: 'api-review-test-group/api-reivew-pro1',
+      installation_id: 3,
+      is_active: true,
+      webhook_id: '101',
+    });
+    repositoryModelMock.update
+      .mockReturnValueOnce({
+        id: 9163,
+        platform: 'gitee',
+        owner: 'api-review-test-group',
+        name: 'api-reivew-pro1',
+        full_name: 'api-review-test-group/api-reivew-pro1',
+        installation_id: 3,
+        is_active: true,
+        webhook_id: '101',
+      })
+      .mockReturnValueOnce({
+        id: 9163,
+        platform: 'gitee',
+        owner: 'api-review-test-group',
+        name: 'api-reivew-pro1',
+        full_name: 'api-review-test-group/api-reivew-pro1',
+        installation_id: 3,
+        is_active: true,
+        webhook_id: null,
+        webhook_secret: null,
+        webhook_url: null,
+      });
+
+    const response = await request(app).delete('/9163/webhook');
+
+    expect(response.status).toBe(200);
+    expect(platformClientMock.deleteWebhook).toHaveBeenCalledWith(
+      'api-review-test-group',
+      'api-reivew-pro1',
+      '101'
+    );
   });
 });

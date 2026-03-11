@@ -21,6 +21,29 @@ interface OAuthConfig {
 
 export type OAuthAuthType = 'oauth' | 'github_app';
 
+const GITEE_FRONTEND_CALLBACK_URL = 'http://localhost:3000/app/gitee/callback';
+const GITLAB_FRONTEND_CALLBACK_URL = 'http://localhost:3000/app/gitlab/callback';
+const GITEE_LEGACY_LOCAL_CALLBACKS = new Set([
+  'http://localhost:7900/api/oauth/gitee/callback',
+  'http://localhost:7900/api/oauth/callback/gitee',
+]);
+const GITLAB_LEGACY_LOCAL_CALLBACKS = new Set([
+  'http://localhost:7900/api/oauth/gitlab/callback',
+  'http://localhost:7900/api/oauth/callback/gitlab',
+]);
+
+function resolveRedirectUri(
+  configured: string | undefined,
+  frontendFallback: string,
+  legacyLocalValues: Set<string>
+): string {
+  if (!configured) {
+    return frontendFallback;
+  }
+
+  return legacyLocalValues.has(configured) ? frontendFallback : configured;
+}
+
 /**
  * GitHub OAuth 配置
  */
@@ -50,7 +73,11 @@ export const GITHUB_APP_CONFIG: OAuthConfig = {
 export const GITEE_CONFIG: OAuthConfig = {
   clientId: process.env.GITEE_CLIENT_ID || '',
   clientSecret: process.env.GITEE_CLIENT_SECRET || '',
-  redirectUri: process.env.GITEE_CALLBACK_URL || process.env.GITEE_REDIRECT_URI || 'http://localhost:7900/api/oauth/gitee/callback',
+  redirectUri: resolveRedirectUri(
+    process.env.GITEE_CALLBACK_URL || process.env.GITEE_REDIRECT_URI,
+    GITEE_FRONTEND_CALLBACK_URL,
+    GITEE_LEGACY_LOCAL_CALLBACKS
+  ),
   scope: ['user_info', 'projects', 'pull_requests'],
   authorizationUrl: 'https://gitee.com/oauth/authorize',
   tokenUrl: 'https://gitee.com/oauth/token',
@@ -63,7 +90,11 @@ export const GITEE_CONFIG: OAuthConfig = {
 export const GITLAB_CONFIG: OAuthConfig = {
   clientId: process.env.GITLAB_CLIENT_ID || '',
   clientSecret: process.env.GITLAB_CLIENT_SECRET || '',
-  redirectUri: process.env.GITLAB_CALLBACK_URL || process.env.GITLAB_REDIRECT_URI || 'http://localhost:7900/api/oauth/callback/gitlab',
+  redirectUri: resolveRedirectUri(
+    process.env.GITLAB_CALLBACK_URL || process.env.GITLAB_REDIRECT_URI,
+    GITLAB_FRONTEND_CALLBACK_URL,
+    GITLAB_LEGACY_LOCAL_CALLBACKS
+  ),
   scope: ['read_user', 'api', 'read_repository'],
   authorizationUrl: 'https://gitlab.com/oauth/authorize',
   tokenUrl: 'https://gitlab.com/oauth/token',
@@ -103,14 +134,22 @@ export function getConfig(platform: Platform, authType: OAuthAuthType = 'oauth')
         ...GITEE_CONFIG,
         clientId: process.env.GITEE_CLIENT_ID || GITEE_CONFIG.clientId,
         clientSecret: process.env.GITEE_CLIENT_SECRET || GITEE_CONFIG.clientSecret,
-        redirectUri: process.env.GITEE_CALLBACK_URL || process.env.GITEE_REDIRECT_URI || GITEE_CONFIG.redirectUri,
+        redirectUri: resolveRedirectUri(
+          process.env.GITEE_CALLBACK_URL || process.env.GITEE_REDIRECT_URI,
+          GITEE_CONFIG.redirectUri,
+          GITEE_LEGACY_LOCAL_CALLBACKS
+        ),
       };
     case 'gitlab':
       return {
         ...GITLAB_CONFIG,
         clientId: process.env.GITLAB_CLIENT_ID || GITLAB_CONFIG.clientId,
         clientSecret: process.env.GITLAB_CLIENT_SECRET || GITLAB_CONFIG.clientSecret,
-        redirectUri: process.env.GITLAB_CALLBACK_URL || process.env.GITLAB_REDIRECT_URI || GITLAB_CONFIG.redirectUri,
+        redirectUri: resolveRedirectUri(
+          process.env.GITLAB_CALLBACK_URL || process.env.GITLAB_REDIRECT_URI,
+          GITLAB_CONFIG.redirectUri,
+          GITLAB_LEGACY_LOCAL_CALLBACKS
+        ),
       };
     default:
       throw new Error(`不支持的 platform: ${platform}`);

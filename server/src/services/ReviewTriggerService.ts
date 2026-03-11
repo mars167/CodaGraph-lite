@@ -7,6 +7,7 @@ import { getRepositoryModel } from '../models/Repository';
 import { getReviewLockModel } from '../models/ReviewLock';
 import type { Repository as CachedRepository, Analysis, AnalysisJob, Job, Platform } from '../models/types';
 import type { PullRequest as PlatformPullRequest } from '../platform/client';
+import { getConfig } from '../config';
 import { createPlatformClient } from '../platform/client';
 import { getQueueService } from '../jobs/QueueService';
 import { getOAuthInstallationService } from './OAuthInstallationService';
@@ -176,6 +177,7 @@ export class ReviewTriggerService {
     this.reviewLockModel.attach(lock.id, { analysisId: analysis.id });
 
     try {
+      const reviewMode = getConfig().review.defaultMode;
       const queueResult = await this.queueService.createJob(
         'pr_analysis',
         {
@@ -189,7 +191,7 @@ export class ReviewTriggerService {
           analysis_job_id: String(analysisJob.id),
           head_commit: headCommit,
           trigger_source: options.source,
-          review_mode: options.reviewMode || 'normal',
+          review_mode: reviewMode,
         },
         options.priority ?? this.defaultPriority(options.source)
       );

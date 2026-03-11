@@ -13,7 +13,7 @@ import type { TokenResponse } from '../oauth/handlers';
 type FetchHeadersInit = Record<string, string>;
 
 export interface PlatformClientOptions {
-  authType?: 'oauth' | 'github_app';
+  authType?: 'oauth' | 'github_app' | 'pat';
   githubAppInstallationId?: string | null;
 }
 
@@ -120,6 +120,98 @@ export interface PaginationOptions {
   page?: number;
   per_page?: number;
   state?: 'open' | 'closed' | 'all';
+}
+
+type GiteeRepositoryResponse = Repository & {
+  clone_url?: string | null;
+  html_url?: string | null;
+  full_name: string;
+};
+
+type GiteePullRequestFileResponse = Record<string, unknown> & {
+  patch?: string | {
+    diff?: string;
+    new_path?: string;
+    old_path?: string;
+    new_file?: boolean;
+    renamed_file?: boolean;
+    deleted_file?: boolean;
+  } | null;
+  diff?: string | null;
+  status?: string | null;
+  new_path?: string;
+  old_path?: string;
+  new_file?: boolean;
+  renamed_file?: boolean;
+  deleted_file?: boolean;
+};
+
+function normalizeGiteeCloneUrl(repository: GiteeRepositoryResponse): string {
+  if (typeof repository.clone_url === 'string' && repository.clone_url.trim()) {
+    return repository.clone_url;
+  }
+
+  if (typeof repository.html_url === 'string' && repository.html_url.trim()) {
+    return repository.html_url.endsWith('.git')
+      ? repository.html_url
+      : `${repository.html_url}.git`;
+  }
+
+  return `https://gitee.com/${repository.full_name}.git`;
+}
+
+function normalizeGiteeRepository(repository: GiteeRepositoryResponse): Repository {
+  return {
+    ...repository,
+    clone_url: normalizeGiteeCloneUrl(repository),
+  };
+}
+
+function normalizeGiteePullRequestFile(
+  file: GiteePullRequestFileResponse
+): Record<string, unknown> {
+  const patchObject = file.patch && typeof file.patch === 'object'
+    ? file.patch as Exclude<GiteePullRequestFileResponse['patch'], string | null>
+    : null;
+  const rawStatus = typeof file.status === 'string'
+    ? file.status
+    : patchObject?.deleted_file
+      ? 'deleted'
+      : patchObject?.renamed_file
+        ? 'renamed'
+        : patchObject?.new_file
+          ? 'added'
+          : 'modified';
+
+  return {
+    ...file,
+    status: rawStatus,
+    diff: typeof file.diff === 'string' && file.diff
+      ? file.diff
+      : typeof patchObject?.diff === 'string'
+        ? patchObject.diff
+        : null,
+    patch: typeof file.patch === 'string'
+      ? file.patch
+      : typeof patchObject?.diff === 'string'
+        ? patchObject.diff
+        : '',
+    new_path: typeof file.new_path === 'string'
+      ? file.new_path
+      : patchObject?.new_path,
+    old_path: typeof file.old_path === 'string'
+      ? file.old_path
+      : patchObject?.old_path,
+    new_file: typeof file.new_file === 'boolean'
+      ? file.new_file
+      : patchObject?.new_file,
+    renamed_file: typeof file.renamed_file === 'boolean'
+      ? file.renamed_file
+      : patchObject?.renamed_file,
+    deleted_file: typeof file.deleted_file === 'boolean'
+      ? file.deleted_file
+      : patchObject?.deleted_file,
+  };
 }
 
 /**
@@ -412,7 +504,8 @@ export class GiteeApiClient extends BaseApiClient {
     const query = params.toString();
     const path = query ? `/user/repos?${query}` : '/user/repos';
 
-    return this.get<Repository[]>(path);
+    const repositories = await this.get<GiteeRepositoryResponse[]>(path);
+    return repositories.map((repository) => normalizeGiteeRepository(repository));
   }
 
   async listPullRequests(owner: string, repo: string, options?: PaginationOptions): Promise<PullRequest[]> {
@@ -428,7 +521,8 @@ export class GiteeApiClient extends BaseApiClient {
   }
 
   async getRepository(owner: string, repo: string): Promise<Repository> {
-    return this.get<Repository>(`/repos/${owner}/${repo}`);
+    const repository = await this.get<GiteeRepositoryResponse>(`/repos/${owner}/${repo}`);
+    return normalizeGiteeRepository(repository);
   }
 
   async getPullRequest(owner: string, repo: string, number: number): Promise<PullRequest> {
@@ -436,7 +530,8 @@ export class GiteeApiClient extends BaseApiClient {
   }
 
   async getPullRequestFiles(owner: string, repo: string, number: number): Promise<unknown[]> {
-    return this.get<unknown[]>(`/repos/${owner}/${repo}/pulls/${number}/files`);
+    const files = await this.get<GiteePullRequestFileResponse[]>(`/repos/${owner}/${repo}/pulls/${number}/files`);
+    return files.map((file) => normalizeGiteePullRequestFile(file));
   }
 
   async createWebhook(
@@ -449,7 +544,7 @@ export class GiteeApiClient extends BaseApiClient {
       content_type: config.content_type || 'json',
       password: config.secret || '',
       push_events: true,
-      pr_events: true,
+      merge_requests_events: true,
       active: true,
     };
 
