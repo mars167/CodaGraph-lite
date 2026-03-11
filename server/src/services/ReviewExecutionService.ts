@@ -17,6 +17,7 @@ import {
 import { getQueueService } from '../jobs/QueueService';
 import { getOAuthInstallationService } from './OAuthInstallationService';
 import { isAuthenticationFailure } from '../utils/authFailures';
+import { resolveRepositoryCoordinates } from '../utils/repositoryCoordinates';
 import { sanitizeLogText } from '../utils/redactSensitive';
 import {
   AdvancedReviewEngine,
@@ -392,6 +393,7 @@ export class ReviewExecutionService {
     if (!repository) {
       throw new Error(`未找到仓库缓存: ${payload.repo_name}`);
     }
+    const repositoryCoordinates = resolveRepositoryCoordinates(repository);
 
     const installation = this.oauthInstallationModel.findById(repository.installation_id);
     if (!installation || !installation.is_active) {
@@ -447,38 +449,38 @@ export class ReviewExecutionService {
     };
 
     this.ensureNotCancelled(jobId);
-    this.logTool(jobId, 'platform.getPullRequest', `repo=${repository.full_name},pr=${prNumber}`, '读取 PR 元数据');
+    this.logTool(jobId, 'platform.getPullRequest', `repo=${repositoryCoordinates.fullName},pr=${prNumber}`, '读取 PR 元数据');
     const pullRequest = await this.withTimeout(
       PLATFORM_TIMEOUT_MS,
       '读取 PR 元数据',
       () => withAuthRefresh(
         '读取 PR 元数据',
-        () => platformClient.getPullRequest(repository.owner, repository.name, prNumber)
+        () => platformClient.getPullRequest(repositoryCoordinates.owner, repositoryCoordinates.repoName, prNumber)
       )
     );
     this.analysisJobModel.updateProgress(analysisJob.id, 0.15, `已读取 PR #${prNumber} 元数据`);
     this.log(jobId, 'info', `review-worker 判断：PR 标题为 "${pullRequest.title}"，准备抓取变更文件`);
 
     this.ensureNotCancelled(jobId);
-    this.logTool(jobId, 'platform.getRepository', `repo=${repository.full_name}`, '读取仓库克隆信息');
+    this.logTool(jobId, 'platform.getRepository', `repo=${repositoryCoordinates.fullName}`, '读取仓库克隆信息');
     const platformRepository: PlatformRepository = await this.withTimeout(
       PLATFORM_TIMEOUT_MS,
       '读取仓库克隆信息',
       () => withAuthRefresh(
         '读取仓库克隆信息',
-        () => platformClient.getRepository(repository.owner, repository.name)
+        () => platformClient.getRepository(repositoryCoordinates.owner, repositoryCoordinates.repoName)
       )
     );
 
     this.ensureNotCancelled(jobId);
-    this.logTool(jobId, 'platform.getPullRequestFiles', `repo=${repository.full_name},pr=${prNumber}`, '拉取 PR diff 文件列表');
+    this.logTool(jobId, 'platform.getPullRequestFiles', `repo=${repositoryCoordinates.fullName},pr=${prNumber}`, '拉取 PR diff 文件列表');
     const files = normalizePlatformFiles(
       await this.withTimeout(
         PLATFORM_TIMEOUT_MS,
         '拉取 PR diff 文件列表',
         () => withAuthRefresh(
           '拉取 PR diff 文件列表',
-          () => platformClient.getPullRequestFiles(repository.owner, repository.name, prNumber)
+          () => platformClient.getPullRequestFiles(repositoryCoordinates.owner, repositoryCoordinates.repoName, prNumber)
         )
       )
     );
@@ -489,8 +491,8 @@ export class ReviewExecutionService {
     const executeAdvancedReview = () => this.reviewEngine.review({
       jobId: String(jobId),
       platform: repository.platform,
-      owner: repository.owner,
-      repo: repository.name,
+      owner: repositoryCoordinates.owner,
+      repo: repositoryCoordinates.repoName,
       prNumber,
       repositoryCloneUrl: platformRepository.clone_url,
       accessToken: activeInstallation.access_token,
@@ -532,8 +534,8 @@ export class ReviewExecutionService {
     let inlineCommentCount = 0;
     const prInfo: PRInfo = {
       platform: repository.platform,
-      owner: repository.owner,
-      repo: repository.name,
+      owner: repositoryCoordinates.owner,
+      repo: repositoryCoordinates.repoName,
       prNumber: String(prNumber),
     };
 

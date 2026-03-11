@@ -7,6 +7,7 @@
 import crypto from 'crypto';
 import type { Request } from 'express';
 import type { Platform } from '../models/types';
+import { parseRepositoryFullName } from '../utils/repositoryCoordinates';
 
 /**
  * Webhook 验证结果
@@ -42,11 +43,15 @@ export function validateGitHubWebhook(
     .createHmac('sha256', secret)
     .update(payload, 'utf8')
     .digest('hex');
+  const receivedBuffer = Buffer.from(receivedHash, 'hex');
+  const expectedBuffer = Buffer.from(expectedHash, 'hex');
 
-  const isValid = crypto.timingSafeEqual(
-    Buffer.from(receivedHash, 'hex'),
-    Buffer.from(expectedHash, 'hex')
-  );
+  if (receivedBuffer.length !== expectedBuffer.length) {
+    console.warn('⚠️ GitHub Webhook 签名长度不匹配');
+    return false;
+  }
+
+  const isValid = crypto.timingSafeEqual(receivedBuffer, expectedBuffer);
 
   if (!isValid) {
     console.warn('⚠️ GitHub Webhook 签名验证失败');
@@ -93,11 +98,15 @@ export function validateGitLabWebhook(
     .createHmac('sha256', secret)
     .update(payload, 'utf8')
     .digest('hex');
+  const receivedBuffer = Buffer.from(receivedHash, 'hex');
+  const tokenBuffer = Buffer.from(token, 'hex');
 
-  const isValid = crypto.timingSafeEqual(
-    Buffer.from(receivedHash, 'hex'),
-    Buffer.from(token, 'hex')
-  );
+  if (receivedBuffer.length !== tokenBuffer.length) {
+    console.warn('⚠️ GitLab Webhook 签名长度不匹配');
+    return false;
+  }
+
+  const isValid = crypto.timingSafeEqual(receivedBuffer, tokenBuffer);
 
   if (!isValid) {
     console.warn('⚠️ GitLab Webhook 签名验证失败');
@@ -450,34 +459,41 @@ export function extractRepositoryInfo(
     case 'github': {
       const ghPayload = payload as GitHubWebhookPayload;
       if (!ghPayload.repository) return null;
+      const fullName = ghPayload.repository.full_name;
+      const parsed = parseRepositoryFullName(fullName);
 
       return {
-        owner: ghPayload.repository.owner.login,
-        repo: ghPayload.repository.name,
-        fullName: ghPayload.repository.full_name,
+        owner: parsed?.owner || ghPayload.repository.owner.login,
+        repo: parsed?.repoName || ghPayload.repository.name,
+        fullName,
       };
     }
 
     case 'gitee': {
       const gtPayload = payload as GiteeWebhookPayload;
       if (!gtPayload.repository) return null;
+      const fullName = gtPayload.repository.full_name;
+      const parsed = parseRepositoryFullName(fullName);
 
       return {
-        owner: gtPayload.repository.owner.login,
-        repo: gtPayload.repository.name,
-        fullName: gtPayload.repository.full_name,
+        owner: parsed?.owner || gtPayload.repository.owner.login,
+        repo: parsed?.repoName || gtPayload.repository.name,
+        fullName,
       };
     }
 
     case 'gitlab': {
       const glPayload = payload as GitLabWebhookPayload;
       if (!glPayload.project) return null;
-
-      const [owner, repo] = glPayload.project.path_with_namespace.split('/').slice(-2);
+      const fullName = glPayload.project.path_with_namespace;
+      const parsed = parseRepositoryFullName(fullName);
+      if (!parsed) {
+        return null;
+      }
       return {
-        owner,
-        repo,
-        fullName: glPayload.project.path_with_namespace,
+        owner: parsed.owner,
+        repo: parsed.repoName,
+        fullName,
       };
     }
 

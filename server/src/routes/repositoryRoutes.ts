@@ -14,7 +14,7 @@ import { createPlatformClient } from '../platform/client';
 import { getOAuthInstallationService } from '../services/OAuthInstallationService';
 import { getReviewTriggerService } from '../services/ReviewTriggerService';
 import { resolveReviewRouteError } from './reviewRouteErrors';
-import type { Platform, CreateRepositoryDTO, Analysis, Job, ReviewReportSummary } from '../models/types';
+import type { Platform, CreateRepositoryDTO, Analysis, Job, ReviewReportSummary, Repository as CachedRepository } from '../models/types';
 import type { Repository as PlatformRepository, PullRequest as PlatformPullRequest } from '../platform/client';
 import {
   buildPullRequestKey,
@@ -30,6 +30,7 @@ import {
   type ReviewRiskLevel,
 } from '../review/pullRequestSummaries';
 import { isAuthenticationFailureMessage } from '../utils/authFailures';
+import { resolveRepositoryCoordinates } from '../utils/repositoryCoordinates';
 
 const router = express.Router();
 
@@ -67,17 +68,90 @@ type PullRequestReviewSummary = {
   reports: ReviewReportSummary[];
 };
 
+function reconcileRepositoryCoordinates(
+  repositoryModel: ReturnType<typeof getRepositoryModel>,
+  repository: CachedRepository
+): CachedRepository {
+  const coordinates = resolveRepositoryCoordinates(repository);
+  if (
+    repository.owner === coordinates.owner
+    && repository.name === coordinates.repoName
+    && repository.full_name === coordinates.fullName
+  ) {
+    return repository;
+  }
+
+  try {
+    return repositoryModel.update(repository.id, {
+      owner: coordinates.owner,
+      name: coordinates.repoName,
+      full_name: coordinates.fullName,
+    }) || repository;
+  } catch (error) {
+    console.warn(
+      `修正仓库坐标失败 ${repository.id}:${repository.full_name}: ${(error as Error).message}`
+    );
+    return repository;
+  }
+}
+
+function findAnalysesForRepository(
+  analysisModel: ReturnType<typeof getAnalysisModel>,
+  repository: CachedRepository,
+  canonicalCoordinates: ReturnType<typeof resolveRepositoryCoordinates>
+): Analysis[] {
+  const options = {
+    limit: 200,
+    sortBy: 'created_at' as const,
+    sortOrder: 'DESC' as const,
+  };
+  const merged = new Map<number, Analysis>();
+  const candidates = [
+    { owner: canonicalCoordinates.owner, repoName: canonicalCoordinates.repoName },
+  ];
+
+  if (
+    repository.owner !== canonicalCoordinates.owner
+    || repository.name !== canonicalCoordinates.repoName
+  ) {
+    candidates.push({ owner: repository.owner, repoName: repository.name });
+  }
+
+  for (const candidate of candidates) {
+    const analyses = analysisModel.findByRepository(
+      repository.platform,
+      candidate.owner,
+      candidate.repoName,
+      options
+    );
+
+    for (const analysis of analyses) {
+      merged.set(analysis.id, analysis);
+    }
+  }
+
+  return Array.from(merged.values()).sort((left, right) =>
+    compareDateDesc(String(left.created_at), String(right.created_at))
+  );
+}
+
 function normalizeRepositoryPayload(
   platform: Platform,
   installationId: number,
   repository: PlatformRepository
 ): CreateRepositoryDTO {
-  return {
-    platform,
-    remote_id: String(repository.id),
+  const coordinates = resolveRepositoryCoordinates({
     owner: repository.owner.login,
     name: repository.name,
     full_name: repository.full_name,
+  });
+
+  return {
+    platform,
+    remote_id: String(repository.id),
+    owner: coordinates.owner,
+    name: coordinates.repoName,
+    full_name: coordinates.fullName,
     description: repository.description,
     is_private: repository.private,
     language: repository.language,
@@ -258,24 +332,26 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
     }
 
     const repositoryModel = getRepositoryModel();
-    const repository = repositoryModel.findById(id);
-    if (!repository) {
+    const storedRepository = repositoryModel.findById(id);
+    if (!storedRepository) {
       return res.status(404).json({ error: '仓库不存在' });
     }
+    const repository = reconcileRepositoryCoordinates(repositoryModel, storedRepository);
+    const repositoryCoordinates = resolveRepositoryCoordinates(repository);
 
-      const installation = getOAuthInstallationModel().findById(repository.installation_id);
-      if (!installation || !installation.is_active) {
-        return res.status(400).json({ error: '仓库关联的 OAuth 安装不可用' });
-      }
+    const installation = getOAuthInstallationModel().findById(repository.installation_id);
+    if (!installation || !installation.is_active) {
+      return res.status(400).json({ error: '仓库关联的 OAuth 安装不可用' });
+    }
 
-      const validInstallation = await getOAuthInstallationService().ensureValidAccessToken(installation);
-      const client = createPlatformClient(repository.platform, validInstallation.access_token, {
-        authType: validInstallation.auth_type || 'oauth',
-        githubAppInstallationId: validInstallation.github_app_installation_id || null,
-      });
-      const remotePullRequests = await client.listPullRequests(
-        repository.owner,
-        repository.name,
+    const validInstallation = await getOAuthInstallationService().ensureValidAccessToken(installation);
+    const client = createPlatformClient(repository.platform, validInstallation.access_token, {
+      authType: validInstallation.auth_type || 'oauth',
+      githubAppInstallationId: validInstallation.github_app_installation_id || null,
+    });
+    const remotePullRequests = await client.listPullRequests(
+      repositoryCoordinates.owner,
+      repositoryCoordinates.repoName,
       {
         state: state === 'all' || state === 'closed' || state === 'open' ? state : 'open',
         page: safePage,
@@ -286,11 +362,7 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
     const analysisModel = getAnalysisModel();
     const analysisJobModel = getAnalysisJobModel();
     const jobModel = getQueueService().getJobModel();
-    const analyses = analysisModel.findByRepository(repository.platform, repository.owner, repository.name, {
-      limit: 200,
-      sortBy: 'created_at',
-      sortOrder: 'DESC',
-    });
+    const analyses = findAnalysesForRepository(analysisModel, storedRepository, repositoryCoordinates);
     const latestAnalysisByPr = new Map<number, Analysis>();
     const analysesByPr = new Map<number, Analysis[]>();
     const analysisById = new Map<number, Analysis>();
@@ -319,8 +391,8 @@ router.get('/:id/pull-requests', async (req: Request, res: Response) => {
         .map(buildReportSummary);
       const prJobs = (jobsByPr.get(buildPullRequestKey({
         platform: repository.platform,
-        owner: repository.owner,
-        repoName: repository.name,
+        owner: repositoryCoordinates.owner,
+        repoName: repositoryCoordinates.repoName,
         prNumber: pullRequest.number,
       })) || [])
         .map((job) => buildPullRequestJobSummary(job, analysisById))
@@ -499,17 +571,15 @@ router.get('/:id/pull-requests/:prNumber/reports', async (req: Request, res: Res
       return res.status(400).json({ error: '无效的参数' });
     }
 
-    const repository = getRepositoryModel().findById(id);
-    if (!repository) {
+    const repositoryModel = getRepositoryModel();
+    const storedRepository = repositoryModel.findById(id);
+    if (!storedRepository) {
       return res.status(404).json({ error: '仓库不存在' });
     }
+    const repository = reconcileRepositoryCoordinates(repositoryModel, storedRepository);
+    const repositoryCoordinates = resolveRepositoryCoordinates(repository);
 
-    const reports = getAnalysisModel()
-      .findByRepository(repository.platform, repository.owner, repository.name, {
-        limit: 200,
-        sortBy: 'created_at',
-        sortOrder: 'DESC',
-      })
+    const reports = findAnalysesForRepository(getAnalysisModel(), storedRepository, repositoryCoordinates)
       .filter((analysis) => analysis.pr_number === prNumber)
       .map(buildReportSummary);
 

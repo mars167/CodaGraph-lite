@@ -1,4 +1,5 @@
 import type { Analysis, Job, ReviewReportSummary, JobPayload, Platform } from '../models/types';
+import { parseRepositoryFullName } from '../utils/repositoryCoordinates';
 import { normalizeApiTimestamp } from '../utils/time';
 
 export type ReviewRiskLevel = 'low' | 'medium' | 'high' | 'critical' | 'unknown';
@@ -80,23 +81,7 @@ export function buildPullRequestKey(target: PullRequestTarget): string {
   return `${buildRepositoryKey(target.platform, target.owner, target.repoName)}#${target.prNumber}`;
 }
 
-export function parseRepositoryFullName(
-  value: string | null | undefined
-): { owner: string; repoName: string } | null {
-  if (!value) {
-    return null;
-  }
-
-  const separatorIndex = value.indexOf('/');
-  if (separatorIndex <= 0 || separatorIndex >= value.length - 1) {
-    return null;
-  }
-
-  return {
-    owner: value.slice(0, separatorIndex),
-    repoName: value.slice(separatorIndex + 1),
-  };
-}
+export { parseRepositoryFullName } from '../utils/repositoryCoordinates';
 
 export function parseJsonObject(value: string | null | undefined): Record<string, unknown> | null {
   if (!value) {
