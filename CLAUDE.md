@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CodaGraph-lite is a lightweight code review platform designed for individual developers or small teams deploying on resource-constrained servers (optimized for 2u2g - 2 core, 2GB RAM). It's a simplified version of CodaGraph, reducing from 5 services to 2 (Frontend + Backend) and replacing PostgreSQL/Redis with SQLite.
+CodaGraph-lite is a local-first code review platform for individual developers and small teams. It keeps the CodaGraph review workflow, but strips deployment and operational overhead down to two services (Frontend + Backend), SQLite storage, and a bring-your-own LLM setup.
 
 **Core Features:**
 - Smart code review via Code Context Engine integration
@@ -120,9 +120,9 @@ pip install -r requirements.txt
 7. Job status updated in SQLite
 ```
 
-### 2u2g Resource Constraints
+### Operational Defaults
 
-All components are optimized for 2GB RAM servers:
+The project defaults to predictable single-worker execution so local or self-hosted review stays simple and cost-conscious:
 
 | Component | Memory Limit | Key Config |
 |-----------|-------------|------------|

@@ -7,9 +7,9 @@
 ![Python](https://img.shields.io/badge/python-3.11%2B-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**轻量级代码审查平台 - 专为 2u2g 服务器优化**
+**本地优先的 AI Code Review 平台**
 
-让代码审查更简单，更高效
+高信号审查、可控成本、可替换 LLM API
 
 </div>
 
@@ -21,7 +21,7 @@
 - [核心特性](#核心特性)
 - [页面预览](#页面预览)
 - [技术栈](#技术栈)
-- [2u2g 服务器适配](#2u2g-服务器适配)
+- [为什么适合日常 Review](#为什么适合日常-review)
 - [快速开始](#快速开始)
 - [系统要求](#系统要求)
 - [项目结构](#项目结构)
@@ -37,7 +37,9 @@
 
 ## 项目简介
 
-CodaGraph-lite 是 CodaGraph 的轻量级版本，专为个人开发者或小型团队在私有云服务器（2u2g）上部署而设计。它保留了核心的智能代码审查功能，同时大幅简化了部署复杂性和基础设施依赖。
+CodaGraph-lite 是一个面向个人开发者和小团队的 local-first 代码审查平台。你可以把它直接部署在本地或私有环境里，用自己的 Git 平台凭据、自己的 LLM API 和自己的运行策略完成日常 PR review，而不需要一套复杂的外部基础设施。
+
+它保留了 CodaGraph 的核心审查能力，但把产品重心从“更重的服务编排”切到“更高信号的审查输出 + 更低的接入和运行成本”。这也更贴近 [Anthropic 在 Code Review with Claude 一文](https://claude.com/blog/code-review) 里强调的方向：真正有价值的 review，重点是快速指出值得人判断的风险，而不是把 diff 再复述一遍。
 
 ### 与完整版 CodaGraph 的区别
 
@@ -47,44 +49,40 @@ CodaGraph-lite 是 CodaGraph 的轻量级版本，专为个人开发者或小型
 | 数据库 | PostgreSQL + Redis | SQLite（单文件） |
 | 消息队列 | Bull Queue + Redis | 自研 SQLite 队列 |
 | 用户系统 | 多用户 + RBAC | 单管理员 |
-| 部署要求 | Docker Compose | 直接运行或 systemd/PM2 |
-| 内存需求 | ≥4GB | 2GB（含 swap） |
-| 适用场景 | 企业 SaaS | 个人/小团队私有部署 |
+| 部署要求 | Docker Compose | 本地直接运行或 systemd/PM2 |
+| 审查模型 | 固定平台配置 | OpenAI / Anthropic / DeepSeek / OpenAI-compatible |
+| 成本控制 | 依赖完整基础设施 | 可自选模型、Base URL 与重试策略 |
+| 适用场景 | 企业 SaaS | 本地 / 私有环境 / 小团队日常 Review |
 
 ---
 
 ## 核心特性
 
-### 智能代码审查
-- 集成 **Code Context Engine** 进行语义代码分析
-- 基于 LLM 的智能审查建议
-- 支持多平台：**GitHub、Gitee、GitLab**
-- 自动 Webhook 触发，无需手动操作
+### 高信号审查
+- 集成 **Code Context Engine** 做语义分析，而不是只看 patch 文本
+- 输出审查摘要、风险等级、覆盖率、置信度和下一步动作
+- 支持行级评论与报告页联动，优先展示真正影响合并决策的问题
 
-### 轻量级架构
+### 本地优先
 - **双服务架构**：前端 (Next.js 14) + 后端 (Express.js)
-- **零配置数据库**：SQLite 单文件存储，无需额外服务
-- **简化的认证**：单管理员模式，无需复杂权限系统
+- **零外部依赖数据库**：SQLite 单文件存储，无需 PostgreSQL / Redis
+- 审查数据、仓库令牌和运行日志都可以留在你自己的环境里
 
-### 2u2g 服务器优化
-- 严格的内存限制和控制
-- 串行作业处理，避免并发内存峰值
-- Ephemeral Agent 进程（用完即销毁）
-- 内置内存监控和 Swap 检测
-- 优化的 SQLite 缓存配置
+### 成本可控
+- 默认单 Worker 串行处理，避免 review 任务把本地机器或小型服务器拖垮
+- 审查运行时内置在后端进程中，减少额外服务和维护成本
+- 可以按仓库和团队习惯选择更便宜、更快或更强的模型
 
-### 易于部署
-- 无需 Docker Compose 编排
-- 支持 systemd 和 PM2 进程管理
-- 提供完整的环境变量配置
-- 一键安装脚本
+### 可替换 LLM API
+- 支持 **OpenAI、Anthropic、DeepSeek**
+- 支持 **OpenAI-compatible Base URL**
+- 可以接自建代理、网关或兼容接口，方便统一成本与权限管理
 
 ### Web 管理界面
 - 直观的仪表板界面
 - OAuth 集成管理（GitHub/Gitee/GitLab）
-- 仓库管理
-- 审查历史和作业状态监控
-- 实时内存和资源使用查看
+- 仓库管理与 Watch 状态查看
+- 审查历史、作业状态和 LLM 调用情况集中展示
 
 ---
 
@@ -145,79 +143,25 @@ CodaGraph-lite 是 CodaGraph 的轻量级版本，专为个人开发者或小型
 
 ---
 
-## 2u2g 服务器适配
+## 为什么适合日常 Review
 
-CodaGraph-lite 专为 2 核 2GB 内存的服务器优化，确保在资源受限环境下稳定运行。
+CodaGraph-lite 的重点不是“让 AI 多说一些”，而是让审查输出更接近真实协作中的高价值反馈：先告诉你哪里危险，再给足够少但足够具体的 comment，最后把是否合并留给人判断。
 
-### 内存预算分配（2GB 总量）
+| 优势 | 具体体现 |
+|------|----------|
+| 本地优先 | 可以跑在本机、内网或私有云中，把代码、令牌和审查记录留在自己的环境里 |
+| 高信号输出 | 报告会展示风险等级、覆盖率、置信度、next actions，并优先发布更有影响的问题 |
+| 成本可控 | SQLite + 内置队列 + 单 Worker 默认策略，基础设施和日常 review 成本都更低 |
+| 模型可替换 | 可在 OpenAI、Anthropic、DeepSeek 和 OpenAI-compatible API 之间切换 |
+| 人机协作 | AI 给 overview、inline comment 和 trace，人负责最终判断与合并 |
 
-| 组件 | 目标内存 | 限制配置 |
-|--------|-----------|-----------|
-| 操作系统 + 基础进程 | ~400MB | 系统预留 |
-| Next.js 前端服务 | 150-200MB | `NODE_OPTIONS=--max-old-space-size=200` |
-| Express 后端服务 | 150-200MB | `NODE_OPTIONS=--max-old-space-size=200` |
-| SQLite 数据库 | 50-100MB | `cache_size=-2000` (2MB) |
-| Python Context Agent | 200-300MB | `PYTHON_MEMORY_LIMIT=300m` |
-| In-process Review Runtime | 0MB（复用后端进程预算） | `AGENT_TIMEOUT_REVIEW=600000` |
-| Code Context Engine runtime | 100-200MB | `CODE_CONTEXT_ENGINE_MAX_MEMORY=256m` |
-| **峰值总计** | ~1350MB | < 2GB (含 swap) |
-
-### 关键配置项（2u2g 必选）
-
-```bash
-# .env 中必须配置以下项
-
-# Node.js 内存限制（各 200MB）
-NODE_OPTIONS=--max-old-space-size=200
-
-# 限制同时只处理 1 个任务（串行处理）
-WORKER_COUNT=1
-ENABLE_CONCURRENT_JOBS=false
-
-# Python 进程内存限制
-PYTHON_MEMORY_LIMIT=300m
-
-# Code Context Engine 内存限制
-CODE_CONTEXT_ENGINE_MAX_MEMORY=256m
-
-# SQLite 缓存限制（2MB）
-SQLITE_CACHE_SIZE=-2000
-
-# 启用 Swap 警告
-ENABLE_SWAP_WARNING=true
-```
-
-### Swap 配置建议
-
-在 2GB 内存服务器上，**强烈建议配置 2GB swap** 作为安全网：
-
-```bash
-# 检查当前 swap 情况
-free -h
-
-# 创建 2GB swap 文件
-sudo fallocate -l 2G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-
-# 持久化配置
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-
-# 验证 swap 生效
-free -h
-```
-
-### 内存监控
+### 运行时可观测性
 
 系统内置以下监控端点：
 
 - `/api/status/memory` - 内存使用报告
 - `/api/status/resources` - 完整资源状态
 - `/health` - 服务健康检查
-
-**警告阈值**：
-- 80% (1.6GB) → 记录警告
 - 95% (1.9GB) → 停止接受新作业
 
 ---
@@ -323,12 +267,12 @@ npm run start
 
 ## 系统要求
 
-### 最低配置（2u2g ）
+### 最低配置（本地 / 单机）
 
 | 资源 | 要求 | 说明 |
 |------|------|------|
 | CPU | 2 核心 | 支持虚拟化云服务器 |
-| 内存 | 2GB RAM | 推荐 +2GB Swap |
+| 内存 | 2GB RAM | 本地调试或小团队使用通常足够 |
 | 磁盘 | 10GB 可用空间 | 包含数据库和日志 |
 | 操作系统 | Linux (Ubuntu 20.04+) | 也支持 macOS / Windows |
 | 网络 | 公网 IP | 用于 Webhook 回调 |
@@ -453,7 +397,7 @@ codagraph-lite/
 |--------|---------|------|
 | `ADMIN_USERNAME` | `admin` | 管理员用户名 |
 | `ADMIN_PASSWORD` | `changeme` | 管理员密码（必须更改） |
-| `WORKER_COUNT` | `1` | 作业 Worker 数量（2u2g 必须为 1） |
+| `WORKER_COUNT` | `1` | 默认单 Worker，运行更可预测、成本更可控 |
 | `LLM_PROVIDER` | `openai` | LLM 提供商 |
 | `LLM_API_KEY` | - | LLM API 密钥 |
 | `CODE_CONTEXT_ENGINE_ROOT` | `../CodeContextEngine` | Code Context Engine runtime 路径 |
@@ -467,7 +411,7 @@ codagraph-lite/
 - [部署指南](docs/deployment.md) - 完整部署步骤
 - [systemd 配置](docs/deployment.md#使用-systemd) - 系统服务部署
 - [PM2 配置](docs/deployment.md#使用-pm2) - 进程管理部署
-- [2u2g 优化](docs/deployment.md#2u2g-服务器优化) - 资源优化配置
+- [低成本部署建议](docs/deployment.md#低成本部署建议) - 本地 / 单机运行建议
 
 ### 部署脚本
 
@@ -519,7 +463,7 @@ bash deploy/monitor.sh --continuous --interval=5
 - 磁盘使用情况
 - 服务状态（前端/后端）
 - 进程信息（Node.js / Python）
-- 2u2g 合规性检查
+- 运行时约束检查
 - 作业队列状态
 - 告警信息
 

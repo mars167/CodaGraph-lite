@@ -14,13 +14,13 @@ export default function Home() {
         <section className={styles.hero}>
           <div className={styles.badge}>
             <span className={styles.badgeDot} />
-            GitHub Style · Semantic PR Review
+            Local-First · High-Signal PR Review
           </div>
           <h1 className={styles.heroTitle}>
             CodaGraph Lite
           </h1>
           <p className={styles.heroSubtitle}>
-            面向 GitHub / Gitee / GitLab 的深色审查控制台，聚焦语义变更、影响范围和合并风险。
+            面向 GitHub / Gitee / GitLab 的本地优先审查控制台，把高信号摘要、行级评论、影响分析和可替换 LLM API 放进同一套 workflow。
           </p>
           <div className={styles.heroActions}>
             <Link
@@ -38,16 +38,16 @@ export default function Home() {
           </div>
           <div className={styles.metrics}>
             <div className={styles.metricCard}>
-              <p className={styles.metricLabel}>分析引擎</p>
-              <p className={styles.metricValue}>Semantic + Dependency Graph</p>
+              <p className={styles.metricLabel}>审查输出</p>
+              <p className={styles.metricValue}>Summary + Inline Comments</p>
             </div>
             <div className={styles.metricCard}>
-              <p className={styles.metricLabel}>运行模式</p>
-              <p className={styles.metricValue}>2u2g 资源友好串行处理</p>
+              <p className={styles.metricLabel}>部署方式</p>
+              <p className={styles.metricValue}>Local-First · Self-Hosted</p>
             </div>
             <div className={styles.metricCard}>
-              <p className={styles.metricLabel}>接入平台</p>
-              <p className={styles.metricValue}>GitHub · Gitee · GitLab</p>
+              <p className={styles.metricLabel}>LLM 接入</p>
+              <p className={styles.metricValue}>Swappable APIs · BYO Model</p>
             </div>
           </div>
         </section>
@@ -59,9 +59,9 @@ export default function Home() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6M9 8h6M7 3h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z" />
               </svg>
             </div>
-            <h2 className={styles.featureTitle}>语义分析</h2>
+            <h2 className={styles.featureTitle}>高信号审查</h2>
             <p className={styles.featureDesc}>
-              基于代码结构识别真实改动，过滤格式噪音并聚焦逻辑变更。
+              先给 overview，再给真正值得看的行级评论，减少“把 diff 再讲一遍”的低价值反馈。
             </p>
           </article>
           <article className={styles.featureCard}>
@@ -81,38 +81,47 @@ export default function Home() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2l7 3v6c0 5-3.5 9-7 11-3.5-2-7-6-7-11V5l7-3z" />
               </svg>
             </div>
-            <h2 className={styles.featureTitle}>自动审查</h2>
+            <h2 className={styles.featureTitle}>可替换 LLM API</h2>
             <p className={styles.featureDesc}>
-              自动识别高风险变更并给出可执行建议，提升合并前质量门槛。
+              可切换 OpenAI、Anthropic、DeepSeek 或 OpenAI-compatible 接口，在质量、速度和成本之间自己取舍。
             </p>
           </article>
         </section>
 
         <section className={styles.deployPanel}>
-          <h2 className={styles.deployTitle}>平台与部署</h2>
+          <h2 className={styles.deployTitle}>为什么更适合日常团队使用</h2>
           <div className={styles.deployGrid}>
             <div className={styles.deployCard}>
-              <p className={styles.deployCardTitle}>代码托管平台</p>
-              <div className={styles.tagGroup}>
-                <span className={styles.tag}>GitHub</span>
-                <span className={styles.tag}>Gitee</span>
-                <span className={styles.tag}>GitLab</span>
-              </div>
-            </div>
-            <div className={styles.deployCard}>
-              <p className={styles.deployCardTitle}>轻量部署能力</p>
+              <p className={styles.deployCardTitle}>本地优先</p>
               <ul className={styles.deployList}>
                 <li className={styles.deployListItem}>
                   <span className={`${styles.dot} ${styles.dotGreen}`} />
-                  SQLite 持久化，免 PostgreSQL
+                  可部署在本机、内网或私有云
                 </li>
                 <li className={styles.deployListItem}>
                   <span className={`${styles.dot} ${styles.dotBlue}`} />
-                  内置队列，免 Redis
+                  SQLite 持久化，免 PostgreSQL
                 </li>
                 <li className={styles.deployListItem}>
                   <span className={`${styles.dot} ${styles.dotGold}`} />
-                  串行任务调度，内存稳定
+                  内置队列，免 Redis
+                </li>
+              </ul>
+            </div>
+            <div className={styles.deployCard}>
+              <p className={styles.deployCardTitle}>成本与模型自由度</p>
+              <ul className={styles.deployList}>
+                <li className={styles.deployListItem}>
+                  <span className={`${styles.dot} ${styles.dotGreen}`} />
+                  默认单 Worker，review 成本更可控
+                </li>
+                <li className={styles.deployListItem}>
+                  <span className={`${styles.dot} ${styles.dotBlue}`} />
+                  OpenAI / Anthropic / DeepSeek 可切换
+                </li>
+                <li className={styles.deployListItem}>
+                  <span className={`${styles.dot} ${styles.dotGold}`} />
+                  支持 OpenAI-compatible Base URL
                 </li>
               </ul>
             </div>

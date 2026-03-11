@@ -18,7 +18,7 @@
 - [安全配置](#安全配置)
 - [Webhook 配置](#webhook-配置)
 - [CORS 配置](#cors-配置)
-- [2u2g 服务器关键配置](#2u2g-服务器关键配置)
+- [默认单机配置](#默认单机配置)
 - [配置验证](#配置验证)
 
 ---
@@ -84,9 +84,9 @@ BACKEND_PORT=7900
 NODE_OPTIONS=--max-old-space-size=200
 ```
 
-**2u2g 服务器要求**：
-- 必须设置为 `200`
-- 超过 200 可能导致 OOM（内存溢出）
+**默认单机建议**：
+- 建议设置为 `200`
+- 如果提高限制，请同时评估本机可用内存与并发负载
 
 ---
 
@@ -110,7 +110,7 @@ SQLITE_CACHE_SIZE=-2000
 
 **缓存大小说明**：
 - `-2000` = 2MB
-- 2u2g 服务器推荐使用 `-2000` (2MB)
+- 单机默认建议使用 `-2000` (2MB)
 - 较大服务器可适当增加
 
 ### 数据库备份配置
@@ -147,25 +147,25 @@ BACKUP_INTERVAL_HOURS=24
 
 **配置示例**：
 ```bash
-# 单 Worker（2u2g 必须为 1）
+# 单 Worker（默认建议为 1）
 WORKER_COUNT=1
 
-# 禁用并发（2u2g 必须为 false）
+# 禁用并发（默认建议为 false）
 ENABLE_CONCURRENT_JOBS=false
 
 # 每 2 秒轮询一次
 JOB_QUEUE_POLL_INTERVAL=2
 ```
 
-### 2u2g 服务器要求
+### 默认单机建议
 
-| 配置项 | 2u2g 要求值 | 说明 |
+| 配置项 | 推荐值 | 说明 |
 |--------|--------------|------|
-| `WORKER_COUNT` | 必须为 `1` | 串行处理，避免并发内存峰值 |
-| `ENABLE_CONCURRENT_JOBS` | 必须为 `false` | 禁用并发作业 |
+| `WORKER_COUNT` | `1` | 串行处理，避免并发内存峰值 |
+| `ENABLE_CONCURRENT_JOBS` | `false` | 禁用并发作业 |
 
 **重要提示**：
-- 在 2u2g 服务器上，违反以上配置可能导致 OOM
+- 偏离以上默认值前，建议先确认机器资源和审查吞吐目标
 - 系统启动时会验证这些配置
 
 ---
@@ -332,9 +332,9 @@ AGENT_TIMEOUT_REVIEW=600000  # 10分钟
 PYTHON_MEMORY_LIMIT=300m
 ```
 
-**2u2g 服务器要求**：
-- 必须设置为 `300m` 或更小
-- 超过 300m 可能导致 OOM
+**默认单机建议**：
+- 建议设置为 `300m` 或更小
+- 如果增大限制，请同步评估 Python 进程峰值占用
 
 ---
 
@@ -367,9 +367,9 @@ CODE_CONTEXT_ENGINE_ROOT=/opt/CodeContextEngine
 CODE_CONTEXT_ENGINE_MAX_MEMORY=256m
 ```
 
-**2u2g 服务器要求**：
-- 必须设置为 `256m` 或更小
-- 超过 256m 可能导致 OOM
+**默认单机建议**：
+- 建议设置为 `256m` 或更小
+- 如果增大限制，请同步评估 Code Context Engine 的峰值占用
 
 ### 工作空间配置
 
@@ -634,11 +634,11 @@ CORS_METHODS=GET,POST,PUT,DELETE,OPTIONS
 
 ---
 
-## 2u2g 服务器关键配置
+## 默认单机配置
 
-### 必须配置项（检查清单）
+### 推荐配置项（检查清单）
 
-以下配置项在 2u2g 服务器上**必须**按以下值设置：
+以下配置项是本地 / 单机 / 小团队部署时的默认推荐值：
 
 | 配置项 | 必须值 | 原因 |
 |--------|---------|------|
@@ -650,11 +650,11 @@ CORS_METHODS=GET,POST,PUT,DELETE,OPTIONS
 | `SQLITE_CACHE_SIZE` | `-2000` | 限制 SQLite 缓存为 2MB |
 | `ENABLE_SWAP_WARNING` | `true` | 启用 Swap 警告 |
 
-### 完整的 2u2g 配置示例
+### 默认单机配置示例
 
 ```bash
 # ============================================
-# 2u2g 服务器优化配置
+# 默认单机运行配置
 # ============================================
 
 # Node.js 内存限制
@@ -700,7 +700,7 @@ CODE_CONTEXT_ENGINE_ROOT=../CodeContextEngine
 启动时系统会验证以下配置：
 
 ```bash
-# 检查 2u2g 配置是否合规
+# 检查默认运行配置
 npm start
 
 # 预期输出：
@@ -712,7 +712,7 @@ npm start
 # ✓ Swap 警告: 启用
 ```
 
-如果配置不符合 2u2g 要求，系统会输出警告并拒绝启动。
+如果配置明显偏离默认运行建议，系统会输出警告并提示你检查资源与并发设置。
 
 ---
 
@@ -727,7 +727,7 @@ npm start
    - LLM 提供商和 API 密钥
    - Code Context Engine runtime 路径
 
-2. **2u2g 配置验证**
+2. **默认运行配置验证**
    - 内存限制配置
    - Worker 数量配置
    - Swap 检测
@@ -771,7 +771,7 @@ npm --prefix ../CodeContextEngine run build
 
 ### 环境变量速查表
 
-| 分类 | 变量 | 默认值 | 2u2g 必须值 |
+| 分类 | 变量 | 默认值 | 推荐值 |
 |------|------|---------|--------------|
 | 服务器 | `FRONTEND_PORT` | `3000` | - |
 | 服务器 | `BACKEND_PORT` | `7900` | - |

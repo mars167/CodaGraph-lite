@@ -1,6 +1,6 @@
-# 2u2g 服务器部署指南
+# 低成本单机部署补充指南
 
-本文档提供在 2 核 2GB 内存服务器上部署 CodaGraph-lite 的详细指南。
+本文档提供在本地、小型云主机或低成本单机环境中部署 CodaGraph-lite 的补充建议。
 
 ## 目录
 
@@ -34,7 +34,7 @@
 
 ## Swap 配置
 
-**关键：** 2u2g 服务器必须配置 Swap，否则在内存峰值时会导致进程被 OOM Killer 终止。
+**建议：** 如果你在低内存机器上运行，最好配置 Swap，避免峰值时被 OOM Killer 终止。
 
 ### 自动配置 Swap
 
@@ -149,7 +149,7 @@ nano .env
 **关键配置项：**
 
 ```bash
-# 2u2g 强制配置（不可更改）
+# 默认单机配置（推荐）
 NODE_OPTIONS=--max-old-space-size=200
 SQLITE_CACHE_SIZE=-2000
 WORKER_COUNT=1
@@ -223,7 +223,7 @@ curl http://localhost:7900/health
 # 内存状态检查
 curl http://localhost:7900/api/status/memory
 
-# 2u2g 配置检查
+# 默认串行配置检查
 curl http://localhost:7900/api/status/2u2g
 ```
 
@@ -396,7 +396,7 @@ sudo crontab -e
 | `GET /api/status/memory` | 内存状态 |
 | `GET /api/status/resources` | 资源使用报告 |
 | `GET /api/status/config` | 配置摘要 |
-| `GET /api/status/2u2g` | 2u2g 配置检查 |
+| `GET /api/status/2u2g` | 默认串行配置检查 |
 | `POST /api/status/memory/cleanup` | 执行内存清理 |
 
 ## 联系支持
