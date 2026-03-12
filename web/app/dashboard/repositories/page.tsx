@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { formatOptionalDateTime } from '@/lib/datetime';
 import type { Repository, Platform } from '@/types';
@@ -54,41 +56,233 @@ function formatCount(value?: number) {
   return typeof value === 'number' ? value.toLocaleString('zh-CN') : '--';
 }
 
+function parsePlatformParam(value: string | null, fallback: Platform = 'github'): Platform {
+  return value === 'github' || value === 'gitee' || value === 'gitlab' ? value : fallback;
+}
+
+function parsePageParam(value: string | null, fallback = 1): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const PAGE_SIZE = 20;
+const REPOSITORY_PAGE_CACHE_KEY = 'codagraph.dashboard.repositories.page-cache.v1';
+
+type RepositoryPageCacheEntry = {
+  repositories: Repository[];
+  total: number;
+  page: number;
+  pageSize: number;
+  platform: Platform;
+  cachedAt: number;
+};
+
+type RepositoryPageCacheStore = Record<string, RepositoryPageCacheEntry>;
+
+function makeRepositoryCacheKey(platform: Platform, page: number, pageSize: number): string {
+  return `${platform}:${page}:${pageSize}`;
+}
+
+function readRepositoryPageCacheStore(): RepositoryPageCacheStore {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(REPOSITORY_PAGE_CACHE_KEY);
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw) as RepositoryPageCacheStore;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeRepositoryPageCacheStore(store: RepositoryPageCacheStore): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(REPOSITORY_PAGE_CACHE_KEY, JSON.stringify(store));
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === 'AbortError'
+    : error instanceof Error && error.name === 'AbortError';
+}
+
 export default function RepositoriesPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { success, error } = useNotificationHelpers();
-  const [isLoading, setIsLoading] = useState(true);
-  const [repositories, setRepositories] = useState<Repository[]>([]);
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [filter, setFilter] = useState<Platform>('github');
+  const initialPlatform = parsePlatformParam(searchParams.get('platform'));
+  const initialPage = parsePageParam(searchParams.get('page'));
+  const cacheRef = useRef<RepositoryPageCacheStore>(readRepositoryPageCacheStore());
+  const inFlightRequestRef = useRef<AbortController | null>(null);
+  const initialCache = cacheRef.current[makeRepositoryCacheKey(initialPlatform, initialPage, PAGE_SIZE)];
+  const [isLoading, setIsLoading] = useState(() => !initialCache);
+  const [isFetching, setIsFetching] = useState(false);
+  const [repositories, setRepositories] = useState<Repository[]>(() => initialCache?.repositories || []);
+  const [page, setPage] = useState(initialPage);
+  const [total, setTotal] = useState(() => initialCache?.total || 0);
+  const [filter, setFilter] = useState<Platform>(initialPlatform);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [updatingWatchId, setUpdatingWatchId] = useState<string | null>(null);
   const [updatingFavoriteId, setUpdatingFavoriteId] = useState<string | null>(null);
-  const pageSize = 20;
 
-  const loadRepositories = useCallback(async (currentPage = 1, platformFilter = filter) => {
-    try {
-      setIsLoading(true);
-      const params: { page: number; pageSize: number; platform?: string } = {
-        page: currentPage,
-        pageSize,
-        platform: platformFilter,
-      };
-      const response = await apiClient.getRepositories(params);
-      setRepositories(response.data);
-      setTotal(response.total);
-      setPage(currentPage);
-      setFilter(platformFilter);
-    } catch (err) {
-      error('加载失败', err instanceof Error ? err.message : '无法获取仓库列表');
-    } finally {
-      setIsLoading(false);
+  const syncCache = useCallback((entry: RepositoryPageCacheEntry) => {
+    cacheRef.current = {
+      ...cacheRef.current,
+      [makeRepositoryCacheKey(entry.platform, entry.page, entry.pageSize)]: entry,
+    };
+    writeRepositoryPageCacheStore(cacheRef.current);
+  }, []);
+
+  const updateRepositoryAcrossCaches = useCallback((updatedRepository: Repository) => {
+    let didChange = false;
+    const nextStore = Object.fromEntries(
+      Object.entries(cacheRef.current).map(([key, entry]) => {
+        if (!entry.repositories.some((repository) => repository.id === updatedRepository.id)) {
+          return [key, entry];
+        }
+
+        didChange = true;
+        return [key, {
+          ...entry,
+          cachedAt: Date.now(),
+          repositories: entry.repositories.map((repository) => (
+            repository.id === updatedRepository.id ? updatedRepository : repository
+          )),
+        }];
+      })
+    ) as RepositoryPageCacheStore;
+
+    if (didChange) {
+      cacheRef.current = nextStore;
+      writeRepositoryPageCacheStore(nextStore);
     }
-  }, [error, filter]);
+  }, []);
+
+  const presentQueryState = useCallback((platformFilter: Platform, currentPage: number) => {
+    const cached = cacheRef.current[makeRepositoryCacheKey(platformFilter, currentPage, PAGE_SIZE)];
+    if (cached) {
+      setRepositories(cached.repositories);
+      setTotal(cached.total);
+      setIsLoading(false);
+      return;
+    }
+
+    setRepositories([]);
+    setTotal(0);
+    setIsLoading(true);
+  }, []);
+
+  const navigateToQuery = useCallback((platformFilter: Platform, currentPage: number) => {
+    inFlightRequestRef.current?.abort();
+    inFlightRequestRef.current = null;
+    setIsFetching(false);
+    setFilter(platformFilter);
+    setPage(currentPage);
+    presentQueryState(platformFilter, currentPage);
+    const nextSearchParams = new URLSearchParams();
+    nextSearchParams.set('platform', platformFilter);
+    nextSearchParams.set('page', String(currentPage));
+    router.replace(`/dashboard/repositories?${nextSearchParams.toString()}`, { scroll: false });
+  }, [presentQueryState, router]);
 
   useEffect(() => {
-    loadRepositories();
-  }, [loadRepositories]);
+    const routePlatform = parsePlatformParam(searchParams.get('platform'));
+    const routePage = parsePageParam(searchParams.get('page'));
+
+    if (routePlatform === filter && routePage === page) {
+      return;
+    }
+
+    inFlightRequestRef.current?.abort();
+    inFlightRequestRef.current = null;
+    setIsFetching(false);
+    setFilter(routePlatform);
+    setPage(routePage);
+    presentQueryState(routePlatform, routePage);
+  }, [filter, page, presentQueryState, searchParams]);
+
+  useEffect(() => {
+    const currentCacheKey = makeRepositoryCacheKey(filter, page, PAGE_SIZE);
+    const cached = cacheRef.current[currentCacheKey];
+
+    inFlightRequestRef.current?.abort();
+    inFlightRequestRef.current = null;
+
+    if (cached) {
+      setIsFetching(false);
+      setRepositories(cached.repositories);
+      setTotal(cached.total);
+      setIsLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    inFlightRequestRef.current = controller;
+    setIsFetching(true);
+
+    void (async () => {
+      try {
+        const response = await apiClient.getRepositories({
+          page,
+          pageSize: PAGE_SIZE,
+          platform: filter,
+          signal: controller.signal,
+        });
+
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        const cacheEntry: RepositoryPageCacheEntry = {
+          repositories: response.data,
+          total: response.total,
+          page,
+          pageSize: PAGE_SIZE,
+          platform: filter,
+          cachedAt: Date.now(),
+        };
+
+        syncCache(cacheEntry);
+        setRepositories(response.data);
+        setTotal(response.total);
+        setIsLoading(false);
+      } catch (err) {
+        if (controller.signal.aborted || isAbortError(err)) {
+          return;
+        }
+
+        setRepositories([]);
+        setTotal(0);
+        setIsLoading(false);
+        error('加载失败', err instanceof Error ? err.message : '无法获取仓库列表');
+      } finally {
+        if (inFlightRequestRef.current === controller) {
+          inFlightRequestRef.current = null;
+          setIsFetching(false);
+        }
+      }
+    })();
+
+    return () => {
+      controller.abort();
+      if (inFlightRequestRef.current === controller) {
+        inFlightRequestRef.current = null;
+      }
+    };
+  }, [error, filter, page, syncCache]);
 
   const filteredRepositories = useMemo(() => {
     const keyword = searchKeyword.trim().toLowerCase();
@@ -124,7 +318,7 @@ export default function RepositoriesPage() {
     };
   }, [filteredRepositories]);
 
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const activeTheme = platformThemes[filter];
 
   const handleToggleWatch = useCallback(async (repo: Repository) => {
@@ -134,6 +328,7 @@ export default function RepositoriesPage() {
       setRepositories((current) => current.map((item) => (
         item.id === repo.id ? response.data : item
       )));
+      updateRepositoryAcrossCaches(response.data);
       success(
         response.data.watchEnabled ? 'Watch 已开启' : 'Watch 已关闭',
         `${repo.fullName} ${response.data.watchEnabled ? '现在会每分钟检查 PR 更新' : '已停止自动检查 PR 更新'}`
@@ -143,7 +338,7 @@ export default function RepositoriesPage() {
     } finally {
       setUpdatingWatchId(null);
     }
-  }, [error, success]);
+  }, [error, success, updateRepositoryAcrossCaches]);
 
   const handleToggleFavorite = useCallback(async (repo: Repository) => {
     try {
@@ -152,6 +347,7 @@ export default function RepositoriesPage() {
       setRepositories((current) => current.map((item) => (
         item.id === repo.id ? response.data : item
       )));
+      updateRepositoryAcrossCaches(response.data);
       success(
         response.data.favorite ? '已加入工作空间' : '已移出工作空间',
         `${repo.fullName} ${response.data.favorite ? '已加入工作空间列表' : '已从工作空间列表移除'}`
@@ -161,7 +357,7 @@ export default function RepositoriesPage() {
     } finally {
       setUpdatingFavoriteId(null);
     }
-  }, [error, success]);
+  }, [error, success, updateRepositoryAcrossCaches]);
 
   return (
     <div className="space-y-6">
@@ -214,13 +410,18 @@ export default function RepositoriesPage() {
                   <div>
                     <p className="text-sm font-semibold text-slate-900 dark:text-white">筛选器</p>
                     <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">
-                      平台切换会重新读取列表，搜索在当前平台结果内即时过滤。
+                      平台切换优先命中页面缓存；没有缓存时会立即切换高亮并展示加载态，未完成请求会自动取消。
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 dark:bg-gray-800 dark:text-gray-300">
                       {platformNames[filter]}
                     </div>
+                    {isFetching && !isLoading ? (
+                      <div className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                        正在更新
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
@@ -230,7 +431,7 @@ export default function RepositoriesPage() {
                     return (
                       <button
                         key={platform}
-                        onClick={() => loadRepositories(1, platform)}
+                        onClick={() => navigateToQuery(platform, 1)}
                         className={[
                           'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-all duration-200',
                           isActive
@@ -293,7 +494,7 @@ export default function RepositoriesPage() {
         </CardContent>
       </Card>
 
-      {isLoading && repositories.length === 0 ? (
+      {isLoading ? (
         <Card>
           <CardContent className="py-16">
             <Loading size="lg" text="正在读取仓库列表..." />
@@ -366,7 +567,7 @@ export default function RepositoriesPage() {
                                 <span className="text-slate-300 dark:text-gray-600">/</span>
                               </div>
                               <Link
-                                href={`/dashboard/repositories/${repo.id}`}
+                                href={`/dashboard/repositories/${repo.id}?platform=${filter}&page=${page}`}
                                 className="mt-1 block truncate text-2xl font-semibold tracking-tight text-slate-950 transition-colors hover:text-blue-700 dark:text-white dark:hover:text-blue-300"
                               >
                                 {repo.name}
@@ -512,7 +713,7 @@ export default function RepositoriesPage() {
                             </p>
                           </div>
                           <Link
-                            href={`/dashboard/repositories/${repo.id}`}
+                            href={`/dashboard/repositories/${repo.id}?platform=${filter}&page=${page}`}
                             className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:border-slate-400 hover:bg-slate-100 hover:text-slate-950 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-600 dark:hover:bg-gray-800 dark:hover:text-white"
                           >
                             进入
@@ -536,14 +737,14 @@ export default function RepositoriesPage() {
               </p>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => loadRepositories(page - 1, filter)}
+                  onClick={() => navigateToQuery(filter, page - 1)}
                   disabled={page === 1}
                   className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:border-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-600 dark:hover:bg-gray-800"
                 >
                   上一页
                 </button>
                 <button
-                  onClick={() => loadRepositories(page + 1, filter)}
+                  onClick={() => navigateToQuery(filter, page + 1)}
                   disabled={page === totalPages}
                   className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
                 >

@@ -1,4 +1,4 @@
-import { GiteeApiClient } from './client';
+import { GiteeApiClient, GitLabApiClient } from './client';
 
 describe('GiteeApiClient', () => {
   afterEach(() => {
@@ -110,5 +110,62 @@ describe('GiteeApiClient', () => {
         }),
       })
     );
+  });
+});
+
+describe('GitLabApiClient', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('normalizes GitLab repository list responses into the shared repository shape', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ([
+        {
+          id: 68555849,
+          name: 'Tsete9',
+          path: 'tsete9',
+          path_with_namespace: 'com-test2/tsete9',
+          visibility: 'private',
+          description: null,
+          language: null,
+          star_count: 0,
+          forks_count: 0,
+          open_issues_count: 0,
+          created_at: '2025-04-01T07:35:26.021Z',
+          updated_at: '2025-04-01T07:35:31.862Z',
+          last_activity_at: '2025-04-01T07:35:25.927Z',
+          web_url: 'https://gitlab.com/com-test2/tsete9',
+          http_url_to_repo: 'https://gitlab.com/com-test2/tsete9.git',
+          ssh_url_to_repo: 'git@gitlab.com:com-test2/tsete9.git',
+          default_branch: 'main',
+          namespace: {
+            id: 55725839,
+            full_path: 'com-test2',
+          },
+        },
+      ]),
+    } as Response);
+
+    const client = new GitLabApiClient('token');
+    const repositories = await client.getRepositories({ per_page: 20 });
+
+    expect(repositories).toEqual([
+      expect.objectContaining({
+        id: 68555849,
+        name: 'tsete9',
+        full_name: 'com-test2/tsete9',
+        owner: expect.objectContaining({
+          login: 'com-test2',
+          id: 55725839,
+        }),
+        private: true,
+        html_url: 'https://gitlab.com/com-test2/tsete9',
+        clone_url: 'https://gitlab.com/com-test2/tsete9.git',
+        ssh_url: 'git@gitlab.com:com-test2/tsete9.git',
+        default_branch: 'main',
+      }),
+    ]);
   });
 });

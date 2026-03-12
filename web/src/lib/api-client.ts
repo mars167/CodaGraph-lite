@@ -492,27 +492,47 @@ function mapJobLog(item: JobLogApiItem): JobLog {
 
 // 创建带超时的 fetch
 async function fetchWithTimeout(url: string, options: RequestInit & { timeout?: number } = {}): Promise<Response> {
-  const { timeout = 30000, ...fetchOptions } = options;
+  const { timeout = 30000, signal, ...fetchOptions } = options;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  let didTimeout = false;
+  const forwardAbort = () => controller.abort();
+
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener('abort', forwardAbort, { once: true });
+    }
+  }
+
+  const timeoutHandle = setTimeout(() => {
+    didTimeout = true;
+    controller.abort();
+  }, timeout);
 
   try {
     const response = await fetch(url, {
       ...fetchOptions,
       signal: controller.signal,
     });
-    clearTimeout(timeoutId);
     return response;
   } catch (error) {
-    clearTimeout(timeoutId);
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error(`请求超时 (${timeout}ms)`);
+      if (didTimeout) {
+        throw new Error(`请求超时 (${timeout}ms)`);
+      }
+      throw error;
     }
     if (error instanceof TypeError && isNetworkErrorMessage(error.message)) {
       throw new Error(`无法连接到后端服务: ${url}`);
     }
     throw error;
+  } finally {
+    clearTimeout(timeoutHandle);
+    if (signal) {
+      signal.removeEventListener('abort', forwardAbort);
+    }
   }
 }
 
@@ -647,8 +667,12 @@ class ApiClient {
   }
 
   // GET 请求
-  async get<T>(path: string, params?: RequestConfig['params']): Promise<T> {
-    return this.request<T>(path, { method: 'GET', params });
+  async get<T>(
+    path: string,
+    params?: RequestConfig['params'],
+    config?: Omit<RequestConfig, 'params' | 'method'>
+  ): Promise<T> {
+    return this.request<T>(path, { method: 'GET', params, ...config });
   }
 
   // POST 请求
@@ -799,13 +823,25 @@ class ApiClient {
   // ============ 仓库 API ============
 
   // 获取仓库列表
-  async getRepositories(params?: { platform?: string; favoritesOnly?: boolean; page?: number; pageSize?: number }): Promise<PaginatedResponse<Repository>> {
-    const response = await this.get<RepositoryListResponse>('/api/repositories', {
-      platform: params?.platform,
-      favorites: params?.favoritesOnly ? '1' : undefined,
-      page: params?.page,
-      limit: params?.pageSize,
-    });
+  async getRepositories(params?: {
+    platform?: string;
+    favoritesOnly?: boolean;
+    page?: number;
+    pageSize?: number;
+    signal?: AbortSignal;
+  }): Promise<PaginatedResponse<Repository>> {
+    const response = await this.get<RepositoryListResponse>(
+      '/api/repositories',
+      {
+        platform: params?.platform,
+        favorites: params?.favoritesOnly ? '1' : undefined,
+        page: params?.page,
+        limit: params?.pageSize,
+      },
+      {
+        signal: params?.signal,
+      }
+    );
     return {
       success: true,
       data: response.repositories.map(mapRepository),

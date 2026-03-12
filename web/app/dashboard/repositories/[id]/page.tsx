@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import type { Repository, RepositoryPullRequest } from '@/types';
+import type { Platform, Repository, RepositoryPullRequest } from '@/types';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -49,8 +49,18 @@ const triggerSourceLabel: Record<NonNullable<RepositoryPullRequest['jobs'][numbe
   unknown: '未知',
 };
 
+function parsePlatformParam(value: string | null, fallback: Platform = 'github'): Platform {
+  return value === 'github' || value === 'gitee' || value === 'gitlab' ? value : fallback;
+}
+
+function parsePageParam(value: string | null, fallback = 1): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export default function RepositoryPullRequestsPage() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const repositoryId = params?.id;
   const { success, error } = useNotificationHelpers();
   const [repository, setRepository] = useState<Repository | null>(null);
@@ -60,6 +70,9 @@ export default function RepositoryPullRequestsPage() {
   const [reviewingPr, setReviewingPr] = useState<string | null>(null);
   const [stateFilter, setStateFilter] = useState<'open' | 'closed' | 'all'>('open');
   const [isUpdatingWatch, setIsUpdatingWatch] = useState(false);
+  const backPlatform = parsePlatformParam(searchParams.get('platform'), repository?.platform ?? 'github');
+  const backPage = parsePageParam(searchParams.get('page'));
+  const backToListHref = `/dashboard/repositories?platform=${backPlatform}&page=${backPage}`;
 
   const loadPullRequests = useCallback(async (silent = false) => {
     if (!repositoryId) {
@@ -182,7 +195,7 @@ export default function RepositoryPullRequestsPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-2">
-          <Link href="/dashboard/repositories" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">
+          <Link href={backToListHref} className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
