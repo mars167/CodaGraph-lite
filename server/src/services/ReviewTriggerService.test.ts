@@ -43,6 +43,11 @@ const reviewLockModelMock = {
   release: jest.fn(),
 };
 
+const getPullRequestMock = jest.fn();
+const createPlatformClientMock = jest.fn(() => ({
+  getPullRequest: getPullRequestMock,
+}));
+
 jest.mock('../models/Analysis', () => ({
   getAnalysisModel: () => analysisModelMock,
 }));
@@ -80,12 +85,14 @@ jest.mock('./OAuthInstallationService', () => ({
 }));
 
 jest.mock('../platform/client', () => ({
-  createPlatformClient: jest.fn(),
+  createPlatformClient: createPlatformClientMock,
 }));
 
+import { resetConfig } from '../config';
 import { ReviewTriggerService, ReviewTriggerError } from './ReviewTriggerService';
 
 describe('ReviewTriggerService', () => {
+  const originalReviewDefaultMode = process.env.REVIEW_DEFAULT_MODE;
   const repository = {
     id: 7,
     platform: 'github' as const,
@@ -113,9 +120,33 @@ describe('ReviewTriggerService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.REVIEW_DEFAULT_MODE = 'normal';
+    resetConfig();
     reviewLockModelMock.findActive.mockReturnValue(null);
     jobModelMock.findLatestByAnalysisId.mockReturnValue(null);
     analysisJobModelMock.findByAnalysisId.mockReturnValue([]);
+    oauthInstallationModelMock.findById.mockReturnValue({
+      id: 11,
+      is_active: true,
+      access_token: 'token',
+      auth_type: 'oauth',
+    });
+    oauthInstallationServiceMock.ensureValidAccessToken.mockResolvedValue({
+      id: 11,
+      is_active: true,
+      access_token: 'token',
+      auth_type: 'oauth',
+    });
+    getPullRequestMock.mockResolvedValue(pullRequest);
+  });
+
+  afterAll(() => {
+    if (originalReviewDefaultMode === undefined) {
+      delete process.env.REVIEW_DEFAULT_MODE;
+    } else {
+      process.env.REVIEW_DEFAULT_MODE = originalReviewDefaultMode;
+    }
+    resetConfig();
   });
 
   it('queues a new review for watch when the head commit is new', async () => {
@@ -173,6 +204,8 @@ describe('ReviewTriggerService', () => {
   });
 
   it('allows manual force rerun for the same head commit when no active lock exists', async () => {
+    process.env.REVIEW_DEFAULT_MODE = 'improve';
+    resetConfig();
     analysisModelMock.findByPR.mockReturnValue({
       id: 14,
       head_commit: 'head-sha',
@@ -233,5 +266,49 @@ describe('ReviewTriggerService', () => {
       message: '仓库关联的 OAuth 安装不可用',
       statusCode: 400,
     });
+  });
+
+  it('uses canonical repository coordinates derived from full_name', async () => {
+    const misalignedRepository = {
+      id: 7,
+      platform: 'gitee' as const,
+      owner: 'mars167',
+      name: 'API REIVEW  PRO1',
+      full_name: 'api-review-test-group/api-reivew-pro1',
+      installation_id: 11,
+    };
+
+    repositoryModelMock.findById.mockReturnValue(misalignedRepository);
+    reviewLockModelMock.acquire.mockReturnValue({ id: 92 });
+    analysisModelMock.findByPR.mockReturnValue(null);
+    analysisModelMock.create.mockReturnValue({ id: 16, head_commit: 'head-sha' });
+    analysisJobModelMock.create.mockReturnValue({ id: 24, analysis_id: 16 });
+    queueServiceMock.createJob.mockResolvedValue({ id: 303 });
+
+    const service = new ReviewTriggerService();
+
+    const result = await service.triggerByRepositoryId(7, 42, {
+      source: 'manual',
+      force: true,
+      reviewMode: 'normal',
+    });
+
+    expect(result.created).toBe(true);
+    expect(getPullRequestMock).toHaveBeenCalledWith(
+      'api-review-test-group',
+      'api-reivew-pro1',
+      42
+    );
+    expect(analysisModelMock.create).toHaveBeenCalledWith(expect.objectContaining({
+      owner: 'api-review-test-group',
+      repo_name: 'api-reivew-pro1',
+    }));
+    expect(queueServiceMock.createJob).toHaveBeenCalledWith(
+      'pr_analysis',
+      expect.objectContaining({
+        repo_name: 'api-review-test-group/api-reivew-pro1',
+      }),
+      2
+    );
   });
 });

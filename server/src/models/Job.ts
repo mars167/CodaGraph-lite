@@ -210,6 +210,25 @@ export class JobModel {
   }
 
   /**
+   * 恢复为待处理状态
+   */
+  markPending(id: number): Job | null {
+    this.db.execute(
+      `UPDATE jobs
+       SET status = 'pending',
+           error_message = NULL,
+           started_at = NULL,
+           completed_at = NULL,
+           failed_at = NULL,
+           updated_at = ${LOCAL_DB_NOW_SQL}
+       WHERE id = ?`,
+      [id]
+    );
+
+    return this.findById(id);
+  }
+
+  /**
    * 标记为完成
    */
   markComplete(id: number): Job | null {

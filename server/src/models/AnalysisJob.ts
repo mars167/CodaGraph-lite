@@ -85,7 +85,7 @@ export class AnalysisJobModel {
    * 更新作业状态
    */
   updateStatus(id: number, status: JobStatus): AnalysisJob | null {
-    const fields: string[] = [];
+    const fields: string[] = ['status = ?'];
     const params: any[] = [status];
 
     if (status === 'processing') {
@@ -97,7 +97,7 @@ export class AnalysisJobModel {
     }
 
     const sql = `UPDATE analysis_job
-       SET status = ?, ${fields.join(', ')}, updated_at = ${LOCAL_DB_NOW_SQL}
+       SET ${fields.join(', ')}, updated_at = ${LOCAL_DB_NOW_SQL}
        WHERE id = ?`;
 
     this.db.execute(sql, [...params, id]);
@@ -135,6 +135,26 @@ export class AnalysisJobModel {
    */
   markProcessing(id: number): AnalysisJob | null {
     return this.updateStatus(id, 'processing');
+  }
+
+  /**
+   * 恢复为待处理状态
+   */
+  markPending(id: number, message = '服务重启后自动恢复排队'): AnalysisJob | null {
+    const sql = `UPDATE analysis_job
+       SET status = 'pending',
+           progress = 0,
+           message = ?,
+           error_message = NULL,
+           started_at = NULL,
+           completed_at = NULL,
+           failed_at = NULL,
+           updated_at = ${LOCAL_DB_NOW_SQL}
+       WHERE id = ?`;
+
+    this.db.execute(sql, [sanitizeSensitiveText(message), id]);
+
+    return this.findById(id);
   }
 
   /**

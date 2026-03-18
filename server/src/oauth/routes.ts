@@ -7,7 +7,7 @@
 import express, { Request, Response } from 'express';
 import { getOAuthInstallationModel } from '../models/OAuthInstallation';
 import { getOAuthAuthorizeModel } from '../models/OAuthAuthorize';
-import type { Platform, CreateInstallationDTO } from '../models/types';
+import type { Platform, CreateInstallationDTO, OAuthInstallation } from '../models/types';
 import {
   generateState,
   buildAuthorizationUrl,
@@ -18,8 +18,10 @@ import {
 import { createOAuthSession } from './session';
 import { getGitHubAppService } from '../services/GitHubAppService';
 import { getOAuthInstallationService } from '../services/OAuthInstallationService';
+import { getSystemSettingsService } from '../services/SystemSettingsService';
 
 const router = express.Router();
+const settingsService = getSystemSettingsService();
 
 interface OAuthCallbackSuccessResponse {
   success: true;
@@ -56,12 +58,38 @@ function resolveAuthType(platform: Platform, authType?: string): OAuthAuthType {
   return 'oauth';
 }
 
+function serializeInstallation(installation: OAuthInstallation | null) {
+  if (!installation) {
+    return null;
+  }
+
+  return {
+    id: installation.id,
+    platform: installation.platform,
+    auth_type: installation.auth_type || 'oauth',
+    github_app_installation_id: installation.github_app_installation_id || null,
+    account_id: installation.account_id,
+    account_name: installation.account_name || null,
+    permissions: installation.permissions || null,
+    token_expires_at: installation.token_expires_at || null,
+    has_refresh_token: Boolean(installation.refresh_token),
+    is_active: installation.is_active,
+    created_at: installation.created_at,
+    updated_at: installation.updated_at,
+  };
+}
+
 /**
  * OAuth 授权流程 - 重定向到平台授权页面
  */
 router.get('/authorize/:platform', (req: Request, res: Response) => {
   try {
     const platform = req.params.platform as Platform;
+    if (settingsService.getPlatformAuthMode(platform) !== 'oauth_app') {
+      return res.status(400).json({
+        error: '当前平台已切换为 PAT 模式，请先在系统设置中改回 OAuth / App',
+      });
+    }
     const authType = resolveAuthType(platform, typeof req.query.authType === 'string' ? req.query.authType : undefined);
     const state = generateState();
     const config = getConfig(platform, authType);
@@ -254,6 +282,10 @@ async function handleOAuthCallback(
     const { code, state, installation_id, setup_action } = payload;
     const authType = resolveAuthType(platform, payload.authType);
 
+    if (settingsService.getPlatformAuthMode(platform) !== 'oauth_app') {
+      return res.status(400).json({ error: '当前平台已切换为 PAT 模式，无法完成 OAuth / App 回调' });
+    }
+
     console.log(`📥 OAuth 回调: ${platform}`);
 
     if (!state || (authType !== 'github_app' && !code)) {
@@ -359,6 +391,8 @@ async function handleOAuthCallback(
         installationId = created.id;
       }
 
+      installationModel.deactivateByPlatformAndAuthType(platform, ['pat'], installationId);
+
       console.log(`✅ OAuth 授权成功: ${platform} - 账号: ${userInfo.account_id}`);
 
       const sessionId = createOAuthSession(
@@ -453,11 +487,85 @@ router.get('/installations', async (_req: Request, res: Response) => {
     const installations = installationModel.findActive();
 
     return res.json({
-      installations,
+      installations: installations.map((installation) => serializeInstallation(installation)),
       count: installations.length,
     });
   } catch (error) {
     console.error('获取安装列表失败:', error);
+    return res.status(500).json({
+      error: '内部服务器错误',
+      details: (error as Error).message,
+    });
+  }
+});
+
+router.post('/installations/pat', async (req: Request, res: Response) => {
+  try {
+    const platform = Array.isArray(req.body?.platform) ? req.body.platform[0] : req.body?.platform;
+    const accessToken = Array.isArray(req.body?.accessToken) ? req.body.accessToken[0] : req.body?.accessToken;
+
+    if (platform !== 'github' && platform !== 'gitee' && platform !== 'gitlab') {
+      return res.status(400).json({ error: '不支持的平台' });
+    }
+
+    if (typeof accessToken !== 'string' || accessToken.trim().length === 0) {
+      return res.status(400).json({ error: '缺少 PAT Token' });
+    }
+
+    if (settingsService.getPlatformAuthMode(platform) !== 'pat') {
+      return res.status(400).json({
+        error: '当前平台未启用 PAT 模式，请先在系统设置中切换',
+      });
+    }
+
+    const installationModel = getOAuthInstallationModel();
+    const userInfo = await getUserInfo(platform, accessToken.trim());
+    const existing = installationModel.findByPlatformAndAccount(platform, userInfo.account_id);
+
+    let installationId: number;
+
+    if (existing) {
+      installationModel.update(existing.id, {
+        auth_type: 'pat',
+        github_app_installation_id: null,
+        account_name: userInfo.login || userInfo.name,
+        access_token: accessToken.trim(),
+        refresh_token: null,
+        token_expires_at: null,
+        permissions: existing.permissions || null,
+        is_active: true,
+      });
+      installationId = existing.id;
+    } else {
+      const created = installationModel.create({
+        platform,
+        auth_type: 'pat',
+        github_app_installation_id: null,
+        account_id: userInfo.account_id,
+        account_name: userInfo.login || userInfo.name,
+        access_token: accessToken.trim(),
+        refresh_token: null,
+        token_expires_at: null,
+        permissions: null,
+      } satisfies CreateInstallationDTO);
+      installationId = created.id;
+    }
+
+    installationModel.deactivateByPlatformAndAuthType(platform, ['oauth', 'github_app'], installationId);
+    const installation = installationModel.findById(installationId);
+
+    return res.status(201).json({
+      success: true,
+      message: 'PAT 连接已保存',
+      installation: serializeInstallation(installation),
+    });
+  } catch (error) {
+    console.error('创建 PAT 连接失败:', error);
+    if (error instanceof OAuthCallbackError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+      });
+    }
     return res.status(500).json({
       error: '内部服务器错误',
       details: (error as Error).message,
@@ -509,6 +617,10 @@ router.post('/installations/:id/refresh', async (req: Request, res: Response) =>
     const installation = installationModel.findById(id);
     if (!installation || !installation.is_active) {
       return res.status(404).json({ error: '安装不存在' });
+    }
+
+    if (installation.auth_type === 'pat') {
+      return res.status(400).json({ error: 'PAT 连接不支持刷新，请直接更新 token' });
     }
 
     const refreshed = await getOAuthInstallationService().ensureValidAccessToken(installation, true);

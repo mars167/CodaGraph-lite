@@ -29,12 +29,12 @@ export type Platform = 'github' | 'gitee' | 'gitlab';
 export interface OAuthInstallation {
   id: string;
   platform: Platform;
+  authType: 'oauth' | 'github_app' | 'pat';
   platformUserId: string;
   platformUsername: string;
-  accessToken: string;
-  refreshToken?: string;
   scope: string;
   expiresAt?: string;
+  hasRefreshToken?: boolean;
   createdAt: string;
   updatedAt: string;
   webhookUrl?: string;
@@ -428,6 +428,9 @@ export interface SystemSettings {
   githubEnabled: boolean;
   giteeEnabled: boolean;
   gitlabEnabled: boolean;
+  githubAuthMode: 'oauth_app' | 'pat';
+  giteeAuthMode: 'oauth_app' | 'pat';
+  gitlabAuthMode: 'oauth_app' | 'pat';
   // 系统选项
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   jobTimeout: number;

@@ -36,6 +36,7 @@ export class CodeReviewWorker {
   private reviewExecutionService = getReviewExecutionService();
   private isRunning = false;
   private processingJobId: number | null = null;
+  private pollingTimer: NodeJS.Timeout | null = null;
 
   constructor(private config: WorkerConfig) {}
 
@@ -49,6 +50,10 @@ export class CodeReviewWorker {
     }
 
     logger.info('🚀 启动 PR 代码审查 Worker');
+    const recovery = this.queueService.recoverInterruptedJobs();
+    if (recovery.recoveredCount > 0) {
+      logger.warn(`🔄 启动时恢复了 ${recovery.recoveredCount} 个中断作业`);
+    }
     this.isRunning = true;
 
     // 开始处理作业
@@ -65,6 +70,10 @@ export class CodeReviewWorker {
 
     logger.info('⏹️ 停止 Worker...');
     this.isRunning = false;
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = null;
+    }
 
     logger.info('✅ Worker 已停止');
   }
@@ -73,9 +82,12 @@ export class CodeReviewWorker {
    * 作业处理循环
    */
   private processingLoop(): void {
-    const interval = setInterval(() => {
+    this.pollingTimer = setInterval(() => {
       if (!this.isRunning) {
-        clearInterval(interval);
+        if (this.pollingTimer) {
+          clearInterval(this.pollingTimer);
+          this.pollingTimer = null;
+        }
         return;
       }
 

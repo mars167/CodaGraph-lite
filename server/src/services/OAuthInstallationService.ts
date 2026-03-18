@@ -55,6 +55,10 @@ export class OAuthInstallationService {
       return this.ensureGitHubAppToken(installation, forceRefresh);
     }
 
+    if (installation.auth_type === 'pat') {
+      return installation;
+    }
+
     if (!forceRefresh && !isExpired(installation.token_expires_at)) {
       return installation;
     }

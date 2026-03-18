@@ -13,7 +13,7 @@ import type { TokenResponse } from '../oauth/handlers';
 type FetchHeadersInit = Record<string, string>;
 
 export interface PlatformClientOptions {
-  authType?: 'oauth' | 'github_app';
+  authType?: 'oauth' | 'github_app' | 'pat';
   githubAppInstallationId?: string | null;
 }
 
@@ -120,6 +120,182 @@ export interface PaginationOptions {
   page?: number;
   per_page?: number;
   state?: 'open' | 'closed' | 'all';
+}
+
+type GiteeRepositoryResponse = Repository & {
+  clone_url?: string | null;
+  html_url?: string | null;
+  full_name: string;
+};
+
+type GitLabRepositoryResponse = Record<string, unknown> & {
+  id: number;
+  name: string;
+  path?: string;
+  path_with_namespace?: string;
+  namespace?: {
+    id?: number;
+    full_path?: string;
+  } | null;
+  owner?: {
+    id?: number;
+    username?: string;
+  } | null;
+  visibility?: string | null;
+  description?: string | null;
+  forked_from_project?: unknown;
+  language?: string | null;
+  star_count?: number;
+  forks_count?: number;
+  open_issues_count?: number;
+  created_at?: string;
+  updated_at?: string;
+  last_activity_at?: string | null;
+  web_url?: string;
+  http_url_to_repo?: string;
+  ssh_url_to_repo?: string;
+  default_branch?: string | null;
+};
+
+type GiteePullRequestFileResponse = Record<string, unknown> & {
+  patch?: string | {
+    diff?: string;
+    new_path?: string;
+    old_path?: string;
+    new_file?: boolean;
+    renamed_file?: boolean;
+    deleted_file?: boolean;
+  } | null;
+  diff?: string | null;
+  status?: string | null;
+  new_path?: string;
+  old_path?: string;
+  new_file?: boolean;
+  renamed_file?: boolean;
+  deleted_file?: boolean;
+};
+
+function normalizeGiteeCloneUrl(repository: GiteeRepositoryResponse): string {
+  if (typeof repository.clone_url === 'string' && repository.clone_url.trim()) {
+    return repository.clone_url;
+  }
+
+  if (typeof repository.html_url === 'string' && repository.html_url.trim()) {
+    return repository.html_url.endsWith('.git')
+      ? repository.html_url
+      : `${repository.html_url}.git`;
+  }
+
+  return `https://gitee.com/${repository.full_name}.git`;
+}
+
+function normalizeGiteeRepository(repository: GiteeRepositoryResponse): Repository {
+  return {
+    ...repository,
+    clone_url: normalizeGiteeCloneUrl(repository),
+  };
+}
+
+function resolveGitLabOwnerLogin(repository: GitLabRepositoryResponse, fullName: string): string {
+  if (typeof repository.namespace?.full_path === 'string' && repository.namespace.full_path.trim()) {
+    return repository.namespace.full_path;
+  }
+
+  if (typeof repository.owner?.username === 'string' && repository.owner.username.trim()) {
+    return repository.owner.username;
+  }
+
+  const separatorIndex = fullName.lastIndexOf('/');
+  return separatorIndex > 0 ? fullName.slice(0, separatorIndex) : '';
+}
+
+function resolveGitLabFullName(repository: GitLabRepositoryResponse): string {
+  if (typeof repository.path_with_namespace === 'string' && repository.path_with_namespace.trim()) {
+    return repository.path_with_namespace;
+  }
+
+  const repoPath = repository.path || repository.name;
+  const namespace = repository.namespace?.full_path || repository.owner?.username || '';
+  return namespace ? `${namespace}/${repoPath}` : repoPath;
+}
+
+function normalizeGitLabRepository(repository: GitLabRepositoryResponse): Repository {
+  const fullName = resolveGitLabFullName(repository);
+  const ownerLogin = resolveGitLabOwnerLogin(repository, fullName);
+  const repoName = repository.path || repository.name;
+  const fallbackTimestamp = repository.updated_at || repository.last_activity_at || repository.created_at || new Date(0).toISOString();
+
+  return {
+    id: repository.id,
+    name: repoName,
+    full_name: fullName,
+    owner: {
+      login: ownerLogin,
+      id: repository.owner?.id ?? repository.namespace?.id ?? 0,
+    },
+    private: repository.visibility !== 'public',
+    description: repository.description || null,
+    fork: Boolean(repository.forked_from_project),
+    language: repository.language || null,
+    stargazers_count: repository.star_count ?? 0,
+    watchers_count: 0,
+    forks_count: repository.forks_count ?? 0,
+    open_issues_count: repository.open_issues_count ?? 0,
+    created_at: repository.created_at || fallbackTimestamp,
+    updated_at: repository.updated_at || fallbackTimestamp,
+    pushed_at: repository.last_activity_at || null,
+    html_url: repository.web_url || `https://gitlab.com/${fullName}`,
+    clone_url: repository.http_url_to_repo || `https://gitlab.com/${fullName}.git`,
+    ssh_url: repository.ssh_url_to_repo || `git@gitlab.com:${fullName}.git`,
+    default_branch: repository.default_branch ?? null,
+  };
+}
+
+function normalizeGiteePullRequestFile(
+  file: GiteePullRequestFileResponse
+): Record<string, unknown> {
+  const patchObject = file.patch && typeof file.patch === 'object'
+    ? file.patch as Exclude<GiteePullRequestFileResponse['patch'], string | null>
+    : null;
+  const rawStatus = typeof file.status === 'string'
+    ? file.status
+    : patchObject?.deleted_file
+      ? 'deleted'
+      : patchObject?.renamed_file
+        ? 'renamed'
+        : patchObject?.new_file
+          ? 'added'
+          : 'modified';
+
+  return {
+    ...file,
+    status: rawStatus,
+    diff: typeof file.diff === 'string' && file.diff
+      ? file.diff
+      : typeof patchObject?.diff === 'string'
+        ? patchObject.diff
+        : null,
+    patch: typeof file.patch === 'string'
+      ? file.patch
+      : typeof patchObject?.diff === 'string'
+        ? patchObject.diff
+        : '',
+    new_path: typeof file.new_path === 'string'
+      ? file.new_path
+      : patchObject?.new_path,
+    old_path: typeof file.old_path === 'string'
+      ? file.old_path
+      : patchObject?.old_path,
+    new_file: typeof file.new_file === 'boolean'
+      ? file.new_file
+      : patchObject?.new_file,
+    renamed_file: typeof file.renamed_file === 'boolean'
+      ? file.renamed_file
+      : patchObject?.renamed_file,
+    deleted_file: typeof file.deleted_file === 'boolean'
+      ? file.deleted_file
+      : patchObject?.deleted_file,
+  };
 }
 
 /**
@@ -412,7 +588,8 @@ export class GiteeApiClient extends BaseApiClient {
     const query = params.toString();
     const path = query ? `/user/repos?${query}` : '/user/repos';
 
-    return this.get<Repository[]>(path);
+    const repositories = await this.get<GiteeRepositoryResponse[]>(path);
+    return repositories.map((repository) => normalizeGiteeRepository(repository));
   }
 
   async listPullRequests(owner: string, repo: string, options?: PaginationOptions): Promise<PullRequest[]> {
@@ -428,7 +605,8 @@ export class GiteeApiClient extends BaseApiClient {
   }
 
   async getRepository(owner: string, repo: string): Promise<Repository> {
-    return this.get<Repository>(`/repos/${owner}/${repo}`);
+    const repository = await this.get<GiteeRepositoryResponse>(`/repos/${owner}/${repo}`);
+    return normalizeGiteeRepository(repository);
   }
 
   async getPullRequest(owner: string, repo: string, number: number): Promise<PullRequest> {
@@ -436,7 +614,8 @@ export class GiteeApiClient extends BaseApiClient {
   }
 
   async getPullRequestFiles(owner: string, repo: string, number: number): Promise<unknown[]> {
-    return this.get<unknown[]>(`/repos/${owner}/${repo}/pulls/${number}/files`);
+    const files = await this.get<GiteePullRequestFileResponse[]>(`/repos/${owner}/${repo}/pulls/${number}/files`);
+    return files.map((file) => normalizeGiteePullRequestFile(file));
   }
 
   async createWebhook(
@@ -449,7 +628,7 @@ export class GiteeApiClient extends BaseApiClient {
       content_type: config.content_type || 'json',
       password: config.secret || '',
       push_events: true,
-      pr_events: true,
+      merge_requests_events: true,
       active: true,
     };
 
@@ -509,7 +688,8 @@ export class GitLabApiClient extends BaseApiClient {
     const query = params.toString();
     const path = query ? `/projects?${query}` : '/projects';
 
-    return this.get<Repository[]>(path);
+    const repositories = await this.get<GitLabRepositoryResponse[]>(path);
+    return repositories.map((repository) => normalizeGitLabRepository(repository));
   }
 
   async listPullRequests(owner: string, repo: string, options?: PaginationOptions): Promise<PullRequest[]> {
@@ -527,7 +707,8 @@ export class GitLabApiClient extends BaseApiClient {
 
   async getRepository(owner: string, repo: string): Promise<Repository> {
     const encodedPath = encodeURIComponent(`${owner}/${repo}`);
-    return this.get<Repository>(`/projects/${encodedPath}`);
+    const repository = await this.get<GitLabRepositoryResponse>(`/projects/${encodedPath}`);
+    return normalizeGitLabRepository(repository);
   }
 
   async getPullRequest(owner: string, repo: string, number: number): Promise<PullRequest> {

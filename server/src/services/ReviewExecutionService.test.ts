@@ -210,11 +210,16 @@ jest.mock('../review/reviewEngine', () => ({
   })),
 }));
 
+import { resetConfig } from '../config';
 import { ReviewExecutionService } from './ReviewExecutionService';
 
 describe('ReviewExecutionService', () => {
+  const originalReviewDefaultMode = process.env.REVIEW_DEFAULT_MODE;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.REVIEW_DEFAULT_MODE = 'normal';
+    resetConfig();
     commentClientMock.submitReview.mockResolvedValue(undefined);
     commentClientMock.postReviewComment.mockResolvedValue(undefined);
     commentClientMock.postComment.mockResolvedValue(undefined);
@@ -283,6 +288,15 @@ describe('ReviewExecutionService', () => {
     ]);
 
     reviewEngineReviewMock.mockResolvedValue(createDefaultReviewResult());
+  });
+
+  afterAll(() => {
+    if (originalReviewDefaultMode === undefined) {
+      delete process.env.REVIEW_DEFAULT_MODE;
+    } else {
+      process.env.REVIEW_DEFAULT_MODE = originalReviewDefaultMode;
+    }
+    resetConfig();
   });
 
   it('submits a GitHub review with inline comments and persists the richer payload', async () => {
@@ -478,6 +492,47 @@ describe('ReviewExecutionService', () => {
     expect(GitHubClientMock).toHaveBeenNthCalledWith(2, 'fresh-token');
   });
 
+  it('uses canonical repository coordinates derived from full_name for platform calls', async () => {
+    repositoryModelMock.findById.mockReturnValue({
+      id: 9163,
+      platform: 'gitee',
+      owner: 'mars167',
+      name: 'API REIVEW  PRO1',
+      full_name: 'api-review-test-group/api-reivew-pro1',
+      installation_id: 11,
+    });
+
+    const service = new ReviewExecutionService();
+
+    await service.execute(1007, JSON.stringify({
+      platform: 'gitee',
+      repo_name: 'api-review-test-group/api-reivew-pro1',
+      pr_number: '42',
+      repository_id: '9163',
+      analysis_id: '13',
+      analysis_job_id: '17',
+    }));
+
+    expect(platformApiClientMock.getPullRequest).toHaveBeenCalledWith(
+      'api-review-test-group',
+      'api-reivew-pro1',
+      42
+    );
+    expect(platformApiClientMock.getRepository).toHaveBeenCalledWith(
+      'api-review-test-group',
+      'api-reivew-pro1'
+    );
+    expect(platformApiClientMock.getPullRequestFiles).toHaveBeenCalledWith(
+      'api-review-test-group',
+      'api-reivew-pro1',
+      42
+    );
+    expect(reviewEngineReviewMock).toHaveBeenCalledWith(expect.objectContaining({
+      owner: 'api-review-test-group',
+      repo: 'api-reivew-pro1',
+    }));
+  });
+
   it('still creates a GitHub review when there are no inline findings', async () => {
     reviewEngineReviewMock.mockResolvedValueOnce({
       fileReviews: [
@@ -553,6 +608,8 @@ describe('ReviewExecutionService', () => {
   });
 
   it('persists improve mode metadata and emits trace logs', async () => {
+    process.env.REVIEW_DEFAULT_MODE = 'improve';
+    resetConfig();
     reviewEngineReviewMock.mockResolvedValueOnce({
       fileReviews: [],
       allFindings: [],

@@ -43,7 +43,7 @@ export interface UpdateAdminDTO {
 export interface OAuthInstallation {
   id: number;
   platform: Platform;
-  auth_type?: 'oauth' | 'github_app' | null;
+  auth_type?: 'oauth' | 'github_app' | 'pat' | null;
   github_app_installation_id?: string | null;
   account_id: string;
   account_name?: string | null;
@@ -182,7 +182,7 @@ export interface Installation {
  */
 export interface CreateInstallationDTO {
   platform: Platform;
-  auth_type?: 'oauth' | 'github_app';
+  auth_type?: 'oauth' | 'github_app' | 'pat';
   github_app_installation_id?: string | null;
   account_id: string;
   account_name?: string | null;

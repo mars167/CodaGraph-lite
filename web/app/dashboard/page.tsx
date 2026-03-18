@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Loading } from '@/components/ui/Loading';
 import { useNotificationHelpers } from '@/contexts/NotificationContext';
-import type { ResourceStats, SystemStatus } from '@/types';
+import type { AnalysisJob, Repository, ResourceStats, SystemStatus } from '@/types';
 
 type ThroughputMetricKey =
   | 'jobsProcessed'
@@ -75,6 +75,26 @@ function formatClockMinute(timestamp?: number | null) {
 
   return new Date(timestamp).toLocaleTimeString('zh-CN', {
     hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Asia/Shanghai',
+  });
+}
+
+function formatShortDateTime(value?: string) {
+  if (!value) {
+    return '--';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '--';
+  }
+
+  return date.toLocaleString('zh-CN', {
+    hour12: false,
+    month: '2-digit',
+    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     timeZone: 'Asia/Shanghai',
@@ -321,6 +341,8 @@ export default function DashboardPage() {
   const [customThroughputRange, setCustomThroughputRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
   const [customLlmRange, setCustomLlmRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
   const [trendHistory, setTrendHistory] = useState<TrendSnapshot[]>([]);
+  const [recentJobs, setRecentJobs] = useState<AnalysisJob[]>([]);
+  const [workspaceRepositories, setWorkspaceRepositories] = useState<Repository[]>([]);
 
   useEffect(() => {
     setTrendHistory(readStoredTrendHistory());
@@ -340,9 +362,11 @@ export default function DashboardPage() {
         setIsInitialLoading(true);
       }
 
-      const [statusRes, statsRes] = await Promise.allSettled([
+      const [statusRes, statsRes, jobsRes, workspaceRes] = await Promise.allSettled([
         apiClient.getSystemStatus(),
         apiClient.getResourceStats().catch(() => null),
+        apiClient.getJobs({ page: 1, pageSize: 20 }),
+        apiClient.getRepositories({ favoritesOnly: true, page: 1, pageSize: 8 }),
       ]);
 
       if (statusRes.status === 'fulfilled') {
@@ -355,6 +379,14 @@ export default function DashboardPage() {
           setResourceStats(statsData);
           setTrendHistory((prev) => mergeTrendHistory(prev, createTrendSnapshot(statsData)));
         }
+      }
+
+      if (jobsRes.status === 'fulfilled') {
+        setRecentJobs(jobsRes.value.data.filter((job) => job.status !== 'pending').slice(0, 10));
+      }
+
+      if (workspaceRes.status === 'fulfilled') {
+        setWorkspaceRepositories(workspaceRes.value.data.slice(0, 8));
       }
 
       hasLoadedRef.current = true;
@@ -400,6 +432,20 @@ export default function DashboardPage() {
     running: 'success',
     stopped: 'warning',
     error: 'error',
+  } as const;
+  const jobStatusVariantMap = {
+    pending: 'warning',
+    processing: 'info',
+    completed: 'success',
+    failed: 'error',
+    cancelled: 'default',
+  } as const;
+  const jobStatusLabelMap = {
+    pending: '排队中',
+    processing: '执行中',
+    completed: '已完成',
+    failed: '失败',
+    cancelled: '已取消',
   } as const;
 
   const llmStats = resourceStats?.llm;
@@ -1097,6 +1143,86 @@ export default function DashboardPage() {
         </Card>
       </div>
 
+      <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <Card className="rounded-[28px]">
+          <CardHeader>
+            <CardTitle>最近执行的作业</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {recentJobs.length > 0 ? recentJobs.map((job) => (
+              <div
+                key={job.id}
+                className="flex flex-col gap-3 rounded-3xl border border-slate-200/80 bg-white/80 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/60 lg:flex-row lg:items-center lg:justify-between"
+              >
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link href={`/dashboard/jobs/${job.id}`} className="text-sm font-semibold text-slate-900 hover:text-cyan-700 dark:text-slate-100 dark:hover:text-cyan-300">
+                      Job #{job.id}
+                    </Link>
+                    <Badge variant={jobStatusVariantMap[job.status]}>{jobStatusLabelMap[job.status]}</Badge>
+                    {job.triggerSource && <Badge variant="default">{job.triggerSource}</Badge>}
+                  </div>
+                  <p className="truncate text-sm text-slate-600 dark:text-slate-300">
+                    {job.repoName ? `${job.repoName}${job.prNumber ? ` · PR #${job.prNumber}` : ''}` : '未关联仓库'}
+                  </p>
+                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                    {job.prTitle || '无标题'}{job.errorMessage ? ` · ${job.errorMessage}` : ''}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+                  <span>创建于 {formatShortDateTime(job.createdAt)}</span>
+                  <span>{job.completedAt ? `结束于 ${formatShortDateTime(job.completedAt)}` : job.startedAt ? `开始于 ${formatShortDateTime(job.startedAt)}` : '等待执行'}</span>
+                </div>
+              </div>
+            )) : (
+              <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50/80 px-5 py-10 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-400">
+                暂无最近执行作业。
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-[28px]">
+          <CardHeader>
+            <CardTitle>工作空间仓库</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {workspaceRepositories.length > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {workspaceRepositories.map((repo) => (
+                  <Link
+                    key={repo.id}
+                    href={`/dashboard/repositories/${repo.id}`}
+                    className="group rounded-3xl border border-slate-200/80 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.16),_transparent_40%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.92))] p-4 transition hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-sm dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.18),_transparent_40%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.9))]"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-950 group-hover:text-cyan-700 dark:text-slate-100 dark:group-hover:text-cyan-300">
+                          {repo.fullName}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          {repo.language || '未知语言'}
+                        </p>
+                      </div>
+                      <Badge variant="info">{repo.platform}</Badge>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                      <span>Star {repo.stars ?? 0}</span>
+                      <span>Fork {repo.forks ?? 0}</span>
+                      <span>{repo.watchEnabled ? 'Watch 开启' : 'Watch 关闭'}</span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50/80 px-5 py-10 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-400">
+                工作空间还没有已收藏仓库，可以先去仓库页加入。
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
       <Card className="rounded-[28px]">
         <CardHeader>
           <CardTitle>快捷操作</CardTitle>
@@ -1107,7 +1233,7 @@ export default function DashboardPage() {
               {
                 href: '/dashboard/settings',
                 title: '系统设置',
-                description: '统一管理管理员密码、OAuth 连接和 LLM API',
+                description: '统一管理管理员密码、认证连接和 LLM API',
                 accent: 'text-cyan-600 dark:text-cyan-400',
               },
               {

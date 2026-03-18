@@ -60,6 +60,18 @@ export class RepositoryModel {
     return result || null;
   }
 
+  findByPlatformFullName(
+    platform: Platform,
+    fullName: string
+  ): Repository | null {
+    const result = this.db.get<Repository>(
+      `SELECT * FROM repository
+       WHERE platform = ? AND full_name = ?`,
+      [platform, fullName]
+    );
+    return result || null;
+  }
+
   /**
    * 获取指定安装的所有仓库
    */
@@ -201,6 +213,9 @@ export class RepositoryModel {
         | 'webhook_url'
         | 'is_active'
         | 'remote_id'
+        | 'owner'
+        | 'name'
+        | 'full_name'
         | 'description'
         | 'is_private'
         | 'language'
@@ -236,6 +251,18 @@ export class RepositoryModel {
     if (updates.remote_id !== undefined) {
       fields.push('remote_id = ?');
       params.push(toNullableText(updates.remote_id));
+    }
+    if (updates.owner !== undefined) {
+      fields.push('owner = ?');
+      params.push(updates.owner);
+    }
+    if (updates.name !== undefined) {
+      fields.push('name = ?');
+      params.push(updates.name);
+    }
+    if (updates.full_name !== undefined) {
+      fields.push('full_name = ?');
+      params.push(updates.full_name);
     }
     if (updates.description !== undefined) {
       fields.push('description = ?');
@@ -321,7 +348,8 @@ export class RepositoryModel {
   }
 
   upsert(dto: CreateRepositoryDTO): Repository {
-    const existing = this.findByPlatformOwnerName(dto.platform, dto.owner, dto.name);
+    const existing = this.findByPlatformOwnerName(dto.platform, dto.owner, dto.name)
+      || this.findByPlatformFullName(dto.platform, dto.full_name);
 
     if (!existing) {
       return this.create(dto);
@@ -329,6 +357,9 @@ export class RepositoryModel {
 
     const updated = this.update(existing.id, {
       remote_id: dto.remote_id,
+      owner: dto.owner,
+      name: dto.name,
+      full_name: dto.full_name,
       description: dto.description,
       is_private: dto.is_private ?? false,
       language: dto.language,

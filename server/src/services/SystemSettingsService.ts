@@ -1,6 +1,8 @@
 import { getConfig } from '../config';
 import { getAppSettingModel } from '../models/AppSetting';
 
+export type PlatformAuthMode = 'oauth_app' | 'pat';
+
 export interface SystemSettingsRecord {
   apiPort: number;
   apiHost: string;
@@ -12,6 +14,9 @@ export interface SystemSettingsRecord {
   githubEnabled: boolean;
   giteeEnabled: boolean;
   gitlabEnabled: boolean;
+  githubAuthMode: PlatformAuthMode;
+  giteeAuthMode: PlatformAuthMode;
+  gitlabAuthMode: PlatformAuthMode;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   jobTimeout: number;
   jobMaxRetries: number;
@@ -42,6 +47,9 @@ const settingKeys = [
   'githubEnabled',
   'giteeEnabled',
   'gitlabEnabled',
+  'githubAuthMode',
+  'giteeAuthMode',
+  'gitlabAuthMode',
   'logLevel',
   'jobTimeout',
   'jobMaxRetries',
@@ -112,6 +120,13 @@ function toLogLevel(value: unknown, fallback: SystemSettingsRecord['logLevel']):
   return fallback;
 }
 
+function toPlatformAuthMode(value: unknown, fallback: PlatformAuthMode): PlatformAuthMode {
+  if (value === 'oauth_app' || value === 'pat') {
+    return value;
+  }
+  return fallback;
+}
+
 function parseNodeMemoryLimit(nodeOptions: string): number {
   const match = nodeOptions.match(/--max-old-space-size=(\d+)/);
   return match ? parseInt(match[1], 10) : 1024;
@@ -134,6 +149,9 @@ export class SystemSettingsService {
       githubEnabled: true,
       giteeEnabled: false,
       gitlabEnabled: false,
+      githubAuthMode: 'oauth_app',
+      giteeAuthMode: 'oauth_app',
+      gitlabAuthMode: 'oauth_app',
       logLevel: config.logging.logLevel,
       jobTimeout: 300,
       jobMaxRetries: 3,
@@ -168,6 +186,9 @@ export class SystemSettingsService {
       githubEnabled: toBoolean(input.githubEnabled, defaults.githubEnabled),
       giteeEnabled: toBoolean(input.giteeEnabled, defaults.giteeEnabled),
       gitlabEnabled: toBoolean(input.gitlabEnabled, defaults.gitlabEnabled),
+      githubAuthMode: toPlatformAuthMode(input.githubAuthMode, defaults.githubAuthMode),
+      giteeAuthMode: toPlatformAuthMode(input.giteeAuthMode, defaults.giteeAuthMode),
+      gitlabAuthMode: toPlatformAuthMode(input.gitlabAuthMode, defaults.gitlabAuthMode),
       logLevel: toLogLevel(input.logLevel, defaults.logLevel),
       jobTimeout: clampNumber(input.jobTimeout, defaults.jobTimeout, 30, 86400),
       jobMaxRetries: clampNumber(input.jobMaxRetries, defaults.jobMaxRetries, 0, 20),
@@ -228,6 +249,19 @@ export class SystemSettingsService {
       maxRetries: settings.llmMaxRetries,
     };
   }
+
+  getPlatformAuthMode(platform: 'github' | 'gitee' | 'gitlab'): PlatformAuthMode {
+    const settings = this.getSettings();
+    switch (platform) {
+      case 'github':
+        return settings.githubAuthMode;
+      case 'gitee':
+        return settings.giteeAuthMode;
+      case 'gitlab':
+        return settings.gitlabAuthMode;
+    }
+  }
+
 }
 
 let systemSettingsServiceInstance: SystemSettingsService | null = null;

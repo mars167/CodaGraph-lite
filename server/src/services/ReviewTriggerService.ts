@@ -7,9 +7,11 @@ import { getRepositoryModel } from '../models/Repository';
 import { getReviewLockModel } from '../models/ReviewLock';
 import type { Repository as CachedRepository, Analysis, AnalysisJob, Job, Platform } from '../models/types';
 import type { PullRequest as PlatformPullRequest } from '../platform/client';
+import { getConfig } from '../config';
 import { createPlatformClient } from '../platform/client';
 import { getQueueService } from '../jobs/QueueService';
 import { getOAuthInstallationService } from './OAuthInstallationService';
+import { resolveRepositoryCoordinates } from '../utils/repositoryCoordinates';
 
 export type ReviewTriggerSource = 'manual' | 'watch' | 'webhook';
 
@@ -72,6 +74,7 @@ export class ReviewTriggerService {
     prNumber: number,
     options: TriggerReviewOptions
   ): Promise<TriggerReviewResult> {
+    const repositoryCoordinates = resolveRepositoryCoordinates(repository);
     const pullRequest = options.pullRequest ?? await this.fetchPullRequest(repository, prNumber);
     const headCommit = pullRequest.head?.sha || pullRequest.head?.ref || '';
 
@@ -79,7 +82,13 @@ export class ReviewTriggerService {
       throw new Error(`无法获取 ${repository.full_name}#${prNumber} 的 head commit`);
     }
 
-    const activeLock = this.resolveActiveLock(repository.platform, repository.owner, repository.name, prNumber, headCommit);
+    const activeLock = this.resolveActiveLock(
+      repository.platform,
+      repositoryCoordinates.owner,
+      repositoryCoordinates.repoName,
+      prNumber,
+      headCommit
+    );
     if (activeLock) {
       return {
         created: false,
@@ -93,7 +102,12 @@ export class ReviewTriggerService {
       };
     }
 
-    const latestAnalysis = this.analysisModel.findByPR(repository.platform, repository.owner, repository.name, prNumber);
+    const latestAnalysis = this.analysisModel.findByPR(
+      repository.platform,
+      repositoryCoordinates.owner,
+      repositoryCoordinates.repoName,
+      prNumber
+    );
     const latestJob = latestAnalysis ? this.jobModel.findLatestByAnalysisId(latestAnalysis.id) : null;
 
     if (!options.force && latestAnalysis?.head_commit === headCommit) {
@@ -122,15 +136,21 @@ export class ReviewTriggerService {
 
     const lock = this.reviewLockModel.acquire({
       platform: repository.platform,
-      owner: repository.owner,
-      repoName: repository.name,
+      owner: repositoryCoordinates.owner,
+      repoName: repositoryCoordinates.repoName,
       prNumber,
       headCommit,
       source: options.source,
     });
 
     if (!lock) {
-      const concurrentLock = this.resolveActiveLock(repository.platform, repository.owner, repository.name, prNumber, headCommit);
+      const concurrentLock = this.resolveActiveLock(
+        repository.platform,
+        repositoryCoordinates.owner,
+        repositoryCoordinates.repoName,
+        prNumber,
+        headCommit
+      );
       return {
         created: false,
         analysis: concurrentLock?.analysis_id ? this.analysisModel.findById(concurrentLock.analysis_id) : null,
@@ -145,8 +165,8 @@ export class ReviewTriggerService {
 
     const analysis = this.analysisModel.create({
       platform: repository.platform,
-      owner: repository.owner,
-      repo_name: repository.name,
+      owner: repositoryCoordinates.owner,
+      repo_name: repositoryCoordinates.repoName,
       pr_number: prNumber,
       pr_title: pullRequest.title,
       pr_author: pullRequest.user?.login || 'unknown',
@@ -157,11 +177,12 @@ export class ReviewTriggerService {
     this.reviewLockModel.attach(lock.id, { analysisId: analysis.id });
 
     try {
+      const reviewMode = getConfig().review.defaultMode;
       const queueResult = await this.queueService.createJob(
         'pr_analysis',
         {
           platform: repository.platform,
-          repo_name: `${repository.owner}/${repository.name}`,
+          repo_name: repositoryCoordinates.fullName,
           pr_number: String(prNumber),
           pr_title: pullRequest.title,
           pr_author: pullRequest.user?.login || 'unknown',
@@ -170,7 +191,7 @@ export class ReviewTriggerService {
           analysis_job_id: String(analysisJob.id),
           head_commit: headCommit,
           trigger_source: options.source,
-          review_mode: options.reviewMode || 'normal',
+          review_mode: reviewMode,
         },
         options.priority ?? this.defaultPriority(options.source)
       );
@@ -216,7 +237,8 @@ export class ReviewTriggerService {
       authType: validInstallation.auth_type || 'oauth',
       githubAppInstallationId: validInstallation.github_app_installation_id || null,
     });
-    return client.getPullRequest(repository.owner, repository.name, prNumber);
+    const repositoryCoordinates = resolveRepositoryCoordinates(repository);
+    return client.getPullRequest(repositoryCoordinates.owner, repositoryCoordinates.repoName, prNumber);
   }
 
   private resolveActiveLock(

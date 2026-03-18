@@ -5,6 +5,7 @@ import type { PullRequest as PlatformPullRequest } from '../platform/client';
 import { createPlatformClient } from '../platform/client';
 import { isAuthenticationFailure } from '../utils/authFailures';
 import { logger } from '../utils/logger';
+import { resolveRepositoryCoordinates } from '../utils/repositoryCoordinates';
 import { getOAuthInstallationService } from './OAuthInstallationService';
 import { getReviewTriggerService } from './ReviewTriggerService';
 
@@ -80,6 +81,7 @@ export class RepositoryWatchService {
       }
 
       let activeInstallation = await this.oauthInstallationService.ensureValidAccessToken(installation);
+      const repositoryCoordinates = resolveRepositoryCoordinates(repository);
       let client = createPlatformClient(repository.platform, activeInstallation.access_token, {
         authType: activeInstallation.auth_type || 'oauth',
         githubAppInstallationId: activeInstallation.github_app_installation_id || null,
@@ -87,7 +89,7 @@ export class RepositoryWatchService {
 
       let pullRequests: PlatformPullRequest[];
       try {
-        pullRequests = await this.listOpenPullRequests(client, repository.owner, repository.name);
+        pullRequests = await this.listOpenPullRequests(client, repositoryCoordinates.owner, repositoryCoordinates.repoName);
       } catch (error) {
         if (!isAuthenticationFailure(error)) {
           throw error;
@@ -101,7 +103,7 @@ export class RepositoryWatchService {
           authType: activeInstallation.auth_type || 'oauth',
           githubAppInstallationId: activeInstallation.github_app_installation_id || null,
         });
-        pullRequests = await this.listOpenPullRequests(client, repository.owner, repository.name);
+        pullRequests = await this.listOpenPullRequests(client, repositoryCoordinates.owner, repositoryCoordinates.repoName);
       }
 
       let queuedCount = 0;

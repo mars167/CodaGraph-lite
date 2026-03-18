@@ -89,6 +89,19 @@ function isRetryableStatus(statusCode: number): boolean {
   return RETRY_CONFIG.retryableStatuses.includes(statusCode as any);
 }
 
+function wrapTransientFetchError(
+  platform: string,
+  operation: string,
+  error: unknown
+): PlatformApiError {
+  const message = error instanceof Error ? error.message : String(error);
+  return new PlatformApiError(
+    `${platform} ${operation}请求失败: ${message}`,
+    undefined,
+    true
+  );
+}
+
 /**
  * 重试装饰器 - 使用指数退避
  */
@@ -445,14 +458,19 @@ export class GiteeClient implements PlatformClient {
     return withRetry(async () => {
       const url = `${this.apiUrl}/repos/${prInfo.owner}/${prInfo.repo}/pulls/${prInfo.prNumber}/comments`;
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-          'Content-Type': 'application/json;charset=UTF-8',
-        },
-        body: JSON.stringify({ body: comment.body }),
-      });
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json;charset=UTF-8',
+          },
+          body: JSON.stringify({ body: comment.body }),
+        });
+      } catch (error) {
+        throw wrapTransientFetchError('Gitee API', '评论发布', error);
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -487,14 +505,19 @@ export class GiteeClient implements PlatformClient {
         requestBody.commit_id = comment.commitId;
       }
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-          'Content-Type': 'application/json;charset=UTF-8',
-        },
-        body: JSON.stringify(requestBody),
-      });
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json;charset=UTF-8',
+          },
+          body: JSON.stringify(requestBody),
+        });
+      } catch (error) {
+        throw wrapTransientFetchError('Gitee API', '行级评论发布', error);
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
