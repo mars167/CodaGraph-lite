@@ -697,6 +697,12 @@ class ApiClient {
 
   // ============ 认证 API ============
 
+  // 获取认证模式（免登录/正常）
+  async getAuthMode(): Promise<{ noLoginMode: boolean }> {
+    const response = await this.get<{ success: boolean; noLoginMode: boolean }>('/api/auth/mode');
+    return { noLoginMode: Boolean(response.noLoginMode) };
+  }
+
   // 管理员登录
   async login(credentials: LoginRequest): Promise<LoginResponse> {
     try {

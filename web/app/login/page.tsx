@@ -8,7 +8,7 @@ import styles from './Login.module.css';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, noLoginMode } = useAuth();
   const { error, success } = useNotificationHelpers();
 
   const [username, setUsername] = useState('');
@@ -21,6 +21,13 @@ export default function LoginPage() {
       router.push('/dashboard');
     }
   }, [isAuthenticated, router]);
+
+  // 免登录模式：直接跳转到仪表盘
+  React.useEffect(() => {
+    if (noLoginMode) {
+      router.push('/dashboard');
+    }
+  }, [noLoginMode, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

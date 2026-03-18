@@ -8,6 +8,7 @@ interface AuthContextType {
   admin: Admin | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  noLoginMode: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshAdmin: () => Promise<void>;
@@ -30,6 +31,7 @@ function isValidSession(session: Session | null): session is Session {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [admin, setAdmin] = useState<Admin | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [noLoginMode, setNoLoginMode] = useState(false);
 
   // 清除会话
   const clearSession = useCallback(() => {
@@ -131,26 +133,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [clearSession]);
 
-  // 初始化：检查会话
+  // 初始化：检查认证模式，并根据模式恢复会话
   useEffect(() => {
-    const hasValidSession = loadSession();
+    async function init() {
+      try {
+        const { noLoginMode: noLogin } = await apiClient.getAuthMode();
+        setNoLoginMode(noLogin);
 
-    // 如果有有效会话，尝试验证
-    if (hasValidSession) {
-      refreshAdmin().catch((error) => {
-        if (error instanceof Error && isNetworkErrorMessage(error.message)) {
-          return;
+        if (noLogin) {
+          // 免登录模式：从 verify 端点获取管理员信息
+          try {
+            const response = await apiClient.getCurrentAdmin();
+            if (response.success && response.data.admin) {
+              setAdmin({
+                id: response.data.admin.id,
+                username: response.data.admin.username,
+                createdAt: new Date().toISOString(),
+              });
+            }
+          } catch {
+            // 忽略错误，免登录模式下保持未认证状态也可接受
+          }
+        } else {
+          // 正常模式：从本地存储恢复会话
+          const hasValidSession = loadSession();
+          if (hasValidSession) {
+            await refreshAdmin().catch((error) => {
+              if (error instanceof Error && isNetworkErrorMessage(error.message)) {
+                return;
+              }
+              clearSession();
+            });
+          }
         }
-        clearSession();
-      });
+      } catch (error) {
+        // 无法获取认证模式时（例如后端未启动），退回到本地存储会话
+        if (error instanceof Error && !isNetworkErrorMessage(error.message)) {
+          const hasValidSession = loadSession();
+          if (hasValidSession) {
+            await refreshAdmin().catch(() => clearSession());
+          }
+        }
+      } finally {
+        setIsLoading(false);
+      }
     }
 
-    setIsLoading(false);
+    void init();
   }, [loadSession, refreshAdmin, clearSession]);
 
-  // 检查会话过期
+  // 检查会话过期（仅在非免登录模式下）
   useEffect(() => {
-    if (!admin) return;
+    if (!admin || noLoginMode) return;
 
     const checkExpiry = setInterval(() => {
       const sessionData = localStorage.getItem(STORAGE_KEY_SESSION);
@@ -163,12 +197,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, 60000); // 每分钟检查一次
 
     return () => clearInterval(checkExpiry);
-  }, [admin, clearSession]);
+  }, [admin, noLoginMode, clearSession]);
 
   const value: AuthContextType = {
     admin,
     isAuthenticated: admin !== null,
     isLoading,
+    noLoginMode,
     login,
     logout,
     refreshAdmin,
