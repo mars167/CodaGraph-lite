@@ -15,8 +15,8 @@ export default defineConfig({
       timeout: 30_000,
     },
     {
-      command: 'cd web && mkdir -p .next/standalone/.next && ln -sfn ../../static .next/standalone/.next/static && PORT=3001 HOSTNAME=127.0.0.1 NEXT_PUBLIC_API_URL=http://127.0.0.1:7901 node .next/standalone/server.js',
-      url: 'http://127.0.0.1:3001/login',
+      command: 'cd web && mkdir -p .next/standalone/.next && if [ -d .next/static ]; then ln -sfn ../../static .next/standalone/.next/static; fi && PORT=3001 HOSTNAME=127.0.0.1 NEXT_PUBLIC_API_URL=http://127.0.0.1:7901 node .next/standalone/server.js',
+      url: 'http://127.0.0.1:3001/api/health',
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
     },

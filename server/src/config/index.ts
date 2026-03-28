@@ -324,6 +324,10 @@ function validateSecurityConfig(config: Partial<AppConfig>): void {
     warnings.push('WEBHOOK_SECRET 使用默认值，存在安全风险');
   }
 
+  if (config.cors?.corsOrigins?.includes('*')) {
+    warnings.push('CORS_ORIGINS 包含通配符 *，会允许任意来源访问，仅建议用于受控开发环境');
+  }
+
   // 输出警告
   warnings.forEach(warning => logger.warn(`⚠️  ${warning}`));
 }

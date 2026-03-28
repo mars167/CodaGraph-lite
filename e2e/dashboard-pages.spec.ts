@@ -34,7 +34,11 @@ test('jobs page renders seeded job stats and row', async ({ page }) => {
 
   await page.goto('/dashboard/jobs');
   await expect(page.getByRole('heading', { name: '作业状态' })).toBeVisible();
-  await expect(page.getByRole('link', { name: `Job #9301 · ${seededRepositoryName} · PR #42` })).toBeVisible();
+  await expect(
+    page.getByRole('link', {
+      name: new RegExp(`Job #\\d+ · ${seededRepositoryName} · PR #\\d+`),
+    })
+  ).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
 

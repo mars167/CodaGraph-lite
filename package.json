@@ -13,7 +13,7 @@
     "build:web": "npm --prefix web run build",
     "build:server": "npm --prefix server run build",
     "build": "npm run build:web && npm run build:server",
-    "check:web": "npm --prefix web run lint -- app src next.config.ts",
+    "check:web": "npm --prefix web run lint",
     "check:server": "npm --prefix server run typecheck",
     "check": "npm run check:web && npm run check:server && npm run build",
     "start:web": "npm --prefix web run start",

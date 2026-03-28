@@ -65,6 +65,7 @@ describe('authRoutes', () => {
     expect(response.body).toEqual({
       error: '用户名或密码错误',
     });
+    expect(adminModelMock.verifyPassword).toHaveBeenCalledWith('admin', 'wrong-password');
     expect(activityLogModelMock.logFailedLogin).toHaveBeenCalledWith(
       7,
       'admin',
@@ -88,6 +89,7 @@ describe('authRoutes', () => {
     expect(response.body).toEqual({
       error: '用户名或密码错误',
     });
+    expect(adminModelMock.verifyPassword).toHaveBeenCalledWith('ghost', 'wrong-password');
     expect(activityLogModelMock.logFailedLogin).not.toHaveBeenCalled();
   });
 });

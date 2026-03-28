@@ -17,4 +17,14 @@ describe('CORS origin matching', () => {
   it('supports wildcard origins', () => {
     expect(isCorsOriginAllowed(['*'], 'https://preview.example.com')).toBe(true);
   });
+
+  it('rejects origins outside the trusted allow-list', () => {
+    expect(isCorsOriginAllowed([
+      'https://app.example.com',
+    ], 'https://evil.example.com')).toBe(false);
+  });
+
+  it('rejects all browser origins when the allow-list is empty', () => {
+    expect(isCorsOriginAllowed([], 'https://app.example.com')).toBe(false);
+  });
 });

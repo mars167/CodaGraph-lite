@@ -1,13 +1,29 @@
 const path = require('path');
+const crypto = require('crypto');
 const Database = require(require.resolve('better-sqlite3', {
   paths: [path.join(__dirname, '..', 'server')],
 }));
 
 const dbPath = path.join(__dirname, '..', 'server', 'data', 'codagraph-lite.db');
 const db = new Database(dbPath);
+// Keep fixture data ahead of existing rows so the e2e smoke tests can locate it deterministically.
 const seededTimestamp = "datetime('now', 'localtime', '+1 day')";
+const seededAdminPasswordHash = crypto
+  .createHash('sha256')
+  .update('changeme')
+  .digest('hex');
 
-db.exec(`
+try {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS admin (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    last_login_at TEXT
+  );
+
   CREATE TABLE IF NOT EXISTS oauth_installations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     platform TEXT NOT NULL CHECK(platform IN ('github', 'gitee', 'gitlab')),
@@ -79,6 +95,12 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  INSERT OR REPLACE INTO admin (
+    id, username, password_hash, created_at, updated_at, last_login_at
+  ) VALUES (
+    1, 'admin', '${seededAdminPasswordHash}', ${seededTimestamp}, ${seededTimestamp}, NULL
+  );
+
   INSERT OR REPLACE INTO oauth_installations (
     id, platform, auth_type, account_id, account_name, access_token, permissions, is_active, created_at, updated_at
   ) VALUES (
@@ -109,7 +131,9 @@ db.exec(`
     9301, 'pr_analysis', '{"platform":"github","repo_name":"codagraph-lite-e2e-fixture","pr_number":"42"}',
     'completed', 3, 1, 3, NULL, ${seededTimestamp}, ${seededTimestamp}, ${seededTimestamp}, ${seededTimestamp}
   );
-`);
+  `);
 
-console.log(`Seeded E2E data into ${dbPath}`);
-db.close();
+  console.log(`Seeded E2E data into ${dbPath}`);
+} finally {
+  db.close();
+}
