@@ -235,6 +235,32 @@ function normalizeCorsMethods(methods: string[]): string[] {
   return normalized;
 }
 
+function normalizeCorsOrigin(origin: string): string {
+  const trimmed = origin.trim();
+  if (!trimmed || trimmed === '*') {
+    return trimmed;
+  }
+
+  try {
+    return new URL(trimmed).origin;
+  } catch {
+    return trimmed.replace(/\/+$/, '');
+  }
+}
+
+function normalizeCorsOrigins(origins: string[]): string[] {
+  return [...new Set(origins.map(normalizeCorsOrigin).filter(Boolean))];
+}
+
+export function isCorsOriginAllowed(allowedOrigins: string[], origin: string): boolean {
+  const normalizedAllowedOrigins = normalizeCorsOrigins(allowedOrigins);
+  if (normalizedAllowedOrigins.includes('*')) {
+    return true;
+  }
+
+  return normalizedAllowedOrigins.includes(normalizeCorsOrigin(origin));
+}
+
 function getReviewMode(key: string, defaultValue: ReviewConfig['defaultMode']): ReviewConfig['defaultMode'] {
   const value = getEnv(key, defaultValue);
   if (value === 'normal' || value === 'improve') {
@@ -372,7 +398,7 @@ export function loadConfig(): AppConfig {
     },
 
     cors: {
-      corsOrigins: getEnvArray('CORS_ORIGINS', ['http://localhost:3000']),
+      corsOrigins: normalizeCorsOrigins(getEnvArray('CORS_ORIGINS', ['http://localhost:3000'])),
       corsMethods: normalizeCorsMethods(
         getEnvArray('CORS_METHODS', ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
       ),

@@ -27,7 +27,7 @@ import analysisRoutes from './routes/analysisRoutes';
 import settingsRoutes from './routes/settingsRoutes';
 import cookieParser from 'cookie-parser';
 import cors, { type CorsOptions } from 'cors';
-import { getConfig, printConfigSummary, ConfigurationError } from './config';
+import { getConfig, printConfigSummary, ConfigurationError, isCorsOriginAllowed } from './config';
 import { getMemoryMonitor } from './config/memory';
 import { getResourceAllocator } from './config/resource';
 import { RepositoryWatchService } from './services/RepositoryWatchService';
@@ -109,7 +109,7 @@ async function main() {
           callback(null, true);
           return;
         }
-        if (config.cors.corsOrigins.includes(origin)) {
+        if (isCorsOriginAllowed(config.cors.corsOrigins, origin)) {
           callback(null, true);
           return;
         }

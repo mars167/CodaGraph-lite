@@ -11,7 +11,7 @@ import { Input, PasswordInput } from '@/components/ui/Input';
 import { Loading } from '@/components/ui/Loading';
 import { useNotificationHelpers } from '@/contexts/NotificationContext';
 import { rememberOAuthStatePlatform } from '@/lib/oauth-state';
-import type { LlmTestResult, OAuthInstallation, Platform, SystemSettings } from '@/types';
+import type { LlmProfile, LlmTestResult, OAuthInstallation, Platform, SystemSettings } from '@/types';
 
 const logLevels = [
   { value: 'debug', label: '调试 (Debug)' },
@@ -68,6 +68,16 @@ const platformIcons: Record<Platform, React.ReactNode> = {
   ),
 };
 
+const defaultLlmProfile: LlmProfile = {
+  id: 'default-llm-profile',
+  name: '默认配置',
+  provider: 'openai-compatible',
+  apiKey: '',
+  apiBaseUrl: '',
+  model: '',
+  maxRetries: 2,
+};
+
 const defaultSettings: SystemSettings = {
   apiPort: 7900,
   apiHost: 'localhost',
@@ -100,6 +110,8 @@ const defaultSettings: SystemSettings = {
   llmApiBaseUrl: '',
   llmModel: '',
   llmMaxRetries: 2,
+  llmProfiles: [defaultLlmProfile],
+  activeLlmProfileId: defaultLlmProfile.id,
 };
 
 type SettingsTab = 'general' | 'security' | 'oauth' | 'llm' | 'database' | 'backup';
@@ -125,6 +137,110 @@ type NumberInputProps = {
   max?: number;
   unit?: string;
 };
+
+function createLlmProfileId(): string {
+  return `llm-profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeLlmProfile(profile: Partial<LlmProfile> | undefined, index: number): LlmProfile {
+  const rawMaxRetries = typeof profile?.maxRetries === 'number' ? profile.maxRetries : Number.NaN;
+
+  return {
+    id: profile?.id?.trim() || defaultLlmProfile.id || `llm-profile-${index + 1}`,
+    name: typeof profile?.name === 'string' && profile.name.length > 0 ? profile.name : `LLM 配置 ${index + 1}`,
+    provider: typeof profile?.provider === 'string' && profile.provider.length > 0 ? profile.provider : defaultLlmProfile.provider,
+    apiKey: typeof profile?.apiKey === 'string' ? profile.apiKey : '',
+    apiBaseUrl: typeof profile?.apiBaseUrl === 'string' ? profile.apiBaseUrl : '',
+    model: typeof profile?.model === 'string' ? profile.model : '',
+    maxRetries: Number.isFinite(rawMaxRetries)
+      ? Math.max(0, Math.min(10, Math.round(rawMaxRetries)))
+      : defaultLlmProfile.maxRetries,
+  };
+}
+
+function normalizeSettings(input: Partial<SystemSettings>): SystemSettings {
+  const base = {
+    ...defaultSettings,
+    ...input,
+  };
+
+  const legacyProfile = normalizeLlmProfile({
+    id: base.activeLlmProfileId || defaultLlmProfile.id,
+    name: defaultLlmProfile.name,
+    provider: base.llmProvider,
+    apiKey: base.llmApiKey,
+    apiBaseUrl: base.llmApiBaseUrl,
+    model: base.llmModel,
+    maxRetries: base.llmMaxRetries,
+  }, 0);
+
+  const rawProfiles = Array.isArray(base.llmProfiles) && base.llmProfiles.length > 0
+    ? base.llmProfiles
+    : [legacyProfile];
+
+  const llmProfiles = rawProfiles
+    .map((profile, index) => normalizeLlmProfile(profile, index))
+    .filter((profile, index, list) => list.findIndex((item) => item.id === profile.id) === index);
+  const activeLlmProfileId = llmProfiles.some((profile) => profile.id === base.activeLlmProfileId)
+    ? base.activeLlmProfileId
+    : llmProfiles[0]?.id || defaultLlmProfile.id;
+  const activeLlmProfile = llmProfiles.find((profile) => profile.id === activeLlmProfileId) || legacyProfile;
+
+  return {
+    ...base,
+    llmProvider: activeLlmProfile.provider,
+    llmApiKey: activeLlmProfile.apiKey,
+    llmApiBaseUrl: activeLlmProfile.apiBaseUrl,
+    llmModel: activeLlmProfile.model,
+    llmMaxRetries: activeLlmProfile.maxRetries,
+    llmProfiles,
+    activeLlmProfileId,
+  };
+}
+
+function getActiveLlmProfile(settings: SystemSettings): LlmProfile {
+  return settings.llmProfiles.find((profile) => profile.id === settings.activeLlmProfileId)
+    || settings.llmProfiles[0]
+    || defaultLlmProfile;
+}
+
+function getLlmProfileById(settings: SystemSettings, profileId?: string | null): LlmProfile {
+  if (!profileId) {
+    return getActiveLlmProfile(settings);
+  }
+
+  return settings.llmProfiles.find((profile) => profile.id === profileId)
+    || getActiveLlmProfile(settings);
+}
+
+function updateLlmProfileById(
+  settings: SystemSettings,
+  profileId: string,
+  updater: (profile: LlmProfile) => LlmProfile
+): SystemSettings {
+  const llmProfiles = settings.llmProfiles.map((profile, index) => (
+    profile.id === profileId ? normalizeLlmProfile(updater(profile), index) : profile
+  ));
+
+  return normalizeSettings({
+    ...settings,
+    llmProfiles,
+  });
+}
+
+function deleteLlmProfile(settings: SystemSettings, profileId: string): SystemSettings {
+  const remainingProfiles = settings.llmProfiles.filter((profile) => profile.id !== profileId);
+  const llmProfiles = remainingProfiles.length > 0 ? remainingProfiles : [defaultLlmProfile];
+  const activeLlmProfileId = settings.activeLlmProfileId === profileId
+    ? llmProfiles[0].id
+    : settings.activeLlmProfileId;
+
+  return normalizeSettings({
+    ...settings,
+    llmProfiles,
+    activeLlmProfileId,
+  });
+}
 
 function mergeModelOptions(result: string[], currentModel: string): string[] {
   return [...new Set([currentModel, ...result].filter((item) => item.trim().length > 0))];
@@ -248,6 +364,8 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [settings, setSettings] = useState<SystemSettings>(defaultSettings);
   const [savedSettings, setSavedSettings] = useState<SystemSettings>(defaultSettings);
+  const [selectedLlmProfileId, setSelectedLlmProfileId] = useState<string>(defaultSettings.activeLlmProfileId);
+  const [isLlmEditorOpen, setIsLlmEditorOpen] = useState(false);
   const [installations, setInstallations] = useState<OAuthInstallation[]>([]);
   const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
   const [llmTestResult, setLlmTestResult] = useState<LlmTestResult | null>(null);
@@ -266,18 +384,17 @@ export default function SettingsPage() {
     try {
       setIsLoading(true);
       const response = await apiClient.getSettings();
-      const nextSettings = {
-        ...defaultSettings,
-        ...(response.data || {}),
-      };
+      const nextSettings = normalizeSettings(response.data || defaultSettings);
 
       setSettings(nextSettings);
       setSavedSettings(nextSettings);
+      setSelectedLlmProfileId(nextSettings.activeLlmProfileId);
       setDiscoveredModels(mergeModelOptions([], nextSettings.llmModel));
     } catch (err) {
       console.error('加载设置失败:', err);
       setSettings(defaultSettings);
       setSavedSettings(defaultSettings);
+      setSelectedLlmProfileId(defaultSettings.activeLlmProfileId);
     } finally {
       setIsLoading(false);
     }
@@ -299,13 +416,15 @@ export default function SettingsPage() {
     try {
       setIsSaving(true);
       const response = await apiClient.saveSettings(settings);
-      const persisted = {
-        ...defaultSettings,
-        ...(response.data || settings),
-      };
+      const persisted = normalizeSettings(response.data || settings);
 
       setSettings(persisted);
       setSavedSettings(persisted);
+      setSelectedLlmProfileId((current) => (
+        persisted.llmProfiles.some((profile) => profile.id === current)
+          ? current
+          : persisted.activeLlmProfileId
+      ));
       success('保存成功', '系统设置已保存，运行中服务可能需要重启后完全生效');
     } catch (err) {
       const message = err instanceof Error ? err.message : '保存设置失败';
@@ -351,16 +470,17 @@ export default function SettingsPage() {
   const handleTestLlm = async () => {
     try {
       setIsTestingLlm(true);
+      const editingLlmProfile = getLlmProfileById(settings, selectedLlmProfileId);
       const response = await apiClient.testLlmSettings({
-        llmProvider: settings.llmProvider,
-        llmApiKey: settings.llmApiKey,
-        llmApiBaseUrl: settings.llmApiBaseUrl,
-        llmModel: settings.llmModel,
-        llmMaxRetries: settings.llmMaxRetries,
+        llmProvider: editingLlmProfile.provider,
+        llmApiKey: editingLlmProfile.apiKey,
+        llmApiBaseUrl: editingLlmProfile.apiBaseUrl,
+        llmModel: editingLlmProfile.model,
+        llmMaxRetries: editingLlmProfile.maxRetries,
       });
 
       setLlmTestResult(response.data);
-      setDiscoveredModels(mergeModelOptions(response.data.availableModels, response.data.model || settings.llmModel));
+      setDiscoveredModels(mergeModelOptions(response.data.availableModels, response.data.model || editingLlmProfile.model));
       success('测试成功', response.data.message);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'LLM API 测试失败';
@@ -468,6 +588,7 @@ export default function SettingsPage() {
     }
 
     setSettings(defaultSettings);
+    setSelectedLlmProfileId(defaultSettings.activeLlmProfileId);
     setDiscoveredModels(mergeModelOptions(discoveredModels, defaultSettings.llmModel));
     setLlmTestResult(null);
   };
@@ -492,6 +613,29 @@ export default function SettingsPage() {
     setHasChanges(JSON.stringify(settings) !== JSON.stringify(savedSettings));
   }, [savedSettings, settings]);
 
+  useEffect(() => {
+    if (settings.llmProfiles.some((profile) => profile.id === selectedLlmProfileId)) {
+      return;
+    }
+
+    setSelectedLlmProfileId(settings.activeLlmProfileId || settings.llmProfiles[0]?.id || defaultLlmProfile.id);
+  }, [selectedLlmProfileId, settings.activeLlmProfileId, settings.llmProfiles]);
+
+  useEffect(() => {
+    if (!isLlmEditorOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsLlmEditorOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isLlmEditorOpen]);
+
   const tabs: Array<{ id: SettingsTab; label: string; accent: string }> = [
     { id: 'general', label: '通用设置', accent: 'from-emerald-500 to-teal-600' },
     { id: 'security', label: '管理员与安全', accent: 'from-rose-500 to-red-600' },
@@ -511,8 +655,11 @@ export default function SettingsPage() {
     );
   }
 
-  const llmConfigured = settings.llmApiKey.trim().length > 0;
-  const testBadgeVariant = llmTestResult?.available ? 'success' : llmConfigured ? 'warning' : 'default';
+  const activeLlmProfile = getActiveLlmProfile(settings);
+  const editingLlmProfile = getLlmProfileById(settings, selectedLlmProfileId);
+  const llmConfigured = activeLlmProfile.apiKey.trim().length > 0;
+  const editingLlmConfigured = editingLlmProfile.apiKey.trim().length > 0;
+  const testBadgeVariant = llmTestResult?.available ? 'success' : editingLlmConfigured ? 'warning' : 'default';
 
   return (
     <div className="space-y-6">
@@ -971,221 +1118,428 @@ export default function SettingsPage() {
       )}
 
       {activeTab === 'llm' && (
-        <div className="grid gap-6 xl:grid-cols-[1.45fr_0.9fr]">
-          <div className="space-y-6">
-            <SettingsSection
-              title="模型接入"
-              description="优先适配 OpenAI-compatible API。Base URL 填写到 `/v1` 即可，系统会自动补全 `chat/completions` 和 `models`。"
-            >
-              <div className="grid gap-4 lg:grid-cols-2">
+        <>
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.72fr)]">
+            <div className="space-y-6">
+              <SettingsSection
+                title="模型接入"
+                description="优先适配 OpenAI-compatible API。Base URL 填写到 `/v1` 即可，系统会自动补全 `chat/completions` 和 `models`。"
+              >
                 <div className="rounded-2xl border border-gray-200/80 bg-gray-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/70">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Provider</label>
-                  <select
-                    value={settings.llmProvider}
-                    onChange={(event) => setSettings({ ...settings, llmProvider: event.target.value })}
-                    className="mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-                  >
-                    {llmProviders.map((provider) => (
-                      <option key={provider.value} value={provider.value}>
-                        {provider.label}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                    {llmProviders.find((item) => item.value === settings.llmProvider)?.description}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-gray-200/80 bg-gray-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/70">
-                  <Input
-                    label="Base URL"
-                    placeholder="https://api.example.com/v1"
-                    value={settings.llmApiBaseUrl}
-                    onChange={(event) => setSettings({ ...settings, llmApiBaseUrl: event.target.value })}
-                    helperText="如果使用官方 OpenAI/OpenRouter，可留空使用默认地址。"
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
-                <PasswordInput
-                  label="API Key"
-                  placeholder="sk-..."
-                  value={settings.llmApiKey}
-                  onChange={(event) => setSettings({ ...settings, llmApiKey: event.target.value })}
-                  helperText="会保存在本地管理库中，仅管理后台可见。"
-                />
-                <NumberInput
-                  label="最大重试次数"
-                  value={settings.llmMaxRetries}
-                  onChange={(value) => setSettings({ ...settings, llmMaxRetries: value })}
-                  min={0}
-                  max={10}
-                />
-              </div>
-
-              <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-                <div className="rounded-2xl border border-gray-200/80 bg-white px-4 py-4 dark:border-gray-800 dark:bg-gray-950/60">
-                  <Input
-                    label="模型 ID"
-                    placeholder="gpt-4.1-mini / glm-4.5 / DeepSeek-V3"
-                    value={settings.llmModel}
-                    onChange={(event) => setSettings({ ...settings, llmModel: event.target.value })}
-                    list="llm-model-list"
-                    helperText="可以手填，也可以先测试接口后从返回的模型列表中选择。"
-                  />
-                  <datalist id="llm-model-list">
-                    {discoveredModels.map((model) => (
-                      <option key={model} value={model} />
-                    ))}
-                  </datalist>
-                </div>
-
-                <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-950/50">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">模型发现</p>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">API 配置列表</p>
                       <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                        {discoveredModels.length > 0 ? `已发现 ${discoveredModels.length} 个模型` : '尚未获取模型列表'}
+                        每一行是一套完整的 LLM API 配置。点击编辑会以弹窗形式打开详情表单。
                       </p>
                     </div>
-                    <Badge variant={discoveredModels.length > 0 ? 'success' : 'default'}>
-                      {discoveredModels.length > 0 ? 'Ready' : 'Idle'}
-                    </Badge>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const nextId = createLlmProfileId();
+                        setSettings((current) => normalizeSettings({
+                          ...current,
+                          llmProfiles: [
+                            ...current.llmProfiles,
+                            normalizeLlmProfile({
+                              ...defaultLlmProfile,
+                              id: nextId,
+                              name: `LLM 配置 ${current.llmProfiles.length + 1}`,
+                            }, current.llmProfiles.length),
+                          ],
+                        }));
+                        setSelectedLlmProfileId(nextId);
+                        setDiscoveredModels([]);
+                        setLlmTestResult(null);
+                        setIsLlmEditorOpen(true);
+                      }}
+                    >
+                      新增配置
+                    </Button>
                   </div>
-                  {discoveredModels.length > 0 && (
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {discoveredModels.slice(0, 8).map((model) => (
-                        <button
-                          key={model}
-                          type="button"
-                          onClick={() => setSettings({ ...settings, llmModel: model })}
-                          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                            settings.llmModel === model
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-white text-gray-700 ring-1 ring-gray-200 hover:bg-blue-50 dark:bg-slate-900 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-slate-800'
+
+                  <div className="mt-4 overflow-hidden rounded-2xl border border-gray-200/80 dark:border-gray-800">
+                    <div className="hidden border-b border-gray-200/80 bg-gray-100/80 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-gray-500 dark:border-gray-800 dark:bg-gray-900/80 dark:text-gray-400 lg:grid lg:grid-cols-[minmax(0,1.18fr)_minmax(240px,0.82fr)_280px] lg:items-center lg:gap-6">
+                      <p>配置</p>
+                      <p>连接信息</p>
+                      <p>操作</p>
+                    </div>
+                    {settings.llmProfiles.map((profile) => {
+                      const isActive = profile.id === settings.activeLlmProfileId;
+                      const isSelected = profile.id === editingLlmProfile.id;
+
+                      return (
+                        <div
+                          key={profile.id}
+                          className={`grid gap-x-6 gap-y-3 border-b px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(0,1.18fr)_minmax(240px,0.82fr)_280px] lg:items-center ${
+                            isActive
+                              ? 'border-blue-200 bg-blue-50/70 dark:border-blue-900/60 dark:bg-blue-950/20'
+                              : 'border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950/60'
                           }`}
                         >
-                          {model}
-                        </button>
-                      ))}
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="truncate text-sm font-medium text-gray-900 dark:text-white">
+                                {profile.name}
+                              </p>
+                              {isActive && <Badge variant="success">当前使用中</Badge>}
+                              {isSelected && <Badge variant="info">编辑中</Badge>}
+                            </div>
+                            <p className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
+                              {profile.provider} · {profile.model || '未设置模型'}
+                            </p>
+                          </div>
+
+                          <div className="min-w-0 space-y-1 text-sm text-gray-500 dark:text-gray-400">
+                            <p className="truncate">Base URL: {profile.apiBaseUrl || '使用默认地址'}</p>
+                            <p className="truncate">重试: {profile.maxRetries} 次</p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 lg:grid lg:w-[280px] lg:grid-cols-[72px_128px_64px] lg:gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="lg:w-full"
+                              onClick={() => {
+                                setSelectedLlmProfileId(profile.id);
+                                setDiscoveredModels((current) => mergeModelOptions(current, profile.model));
+                                setLlmTestResult(null);
+                                setIsLlmEditorOpen(true);
+                              }}
+                            >
+                              编辑
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={isActive ? 'secondary' : 'ghost'}
+                              className="lg:w-full"
+                              disabled={isActive}
+                              onClick={() => {
+                                setSettings((current) => normalizeSettings({
+                                  ...current,
+                                  activeLlmProfileId: profile.id,
+                                }));
+                              }}
+                            >
+                              {isActive ? '当前配置' : '使用当前配置'}
+                            </Button>
+                            {settings.llmProfiles.length > 1 && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="lg:w-full"
+                                onClick={() => {
+                                  setSettings((current) => deleteLlmProfile(current, profile.id));
+                                  setLlmTestResult(null);
+                                  if (profile.id === editingLlmProfile.id) {
+                                    setIsLlmEditorOpen(false);
+                                  }
+                                }}
+                              >
+                                删除
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </SettingsSection>
+            </div>
+
+            <div>
+              <SettingsSection title="连接状态" description="这里展示当前编辑配置最近一次测试结果，和实际生效中的默认配置是分开的。">
+                <div className="rounded-3xl border border-gray-200/80 bg-gray-50/80 p-5 dark:border-gray-800 dark:bg-gray-950/60">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">最近一次测试</p>
+                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        {llmTestResult?.message || '还没有执行过接口测试'}
+                      </p>
+                    </div>
+                    <Badge variant={testBadgeVariant}>
+                      {llmTestResult?.available ? 'Available' : editingLlmConfigured ? 'Pending' : 'Unset'}
+                    </Badge>
+                  </div>
+
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl bg-white px-4 py-3 dark:bg-slate-900">
+                      <p className="text-xs uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">Provider</p>
+                      <p className="mt-2 font-semibold text-gray-900 dark:text-white">
+                        {llmTestResult?.provider || editingLlmProfile.provider}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl bg-white px-4 py-3 dark:bg-slate-900">
+                      <p className="text-xs uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">Model</p>
+                      <p className="mt-2 font-semibold text-gray-900 dark:text-white">
+                        {llmTestResult?.model || editingLlmProfile.model || '未选择'}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl bg-white px-4 py-3 dark:bg-slate-900">
+                      <p className="text-xs uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">Latency</p>
+                      <p className="mt-2 font-semibold text-gray-900 dark:text-white">
+                        {formatLatency(llmTestResult?.latencyMs)}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl bg-white px-4 py-3 dark:bg-slate-900">
+                      <p className="text-xs uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">Usage</p>
+                      <p className="mt-2 font-semibold text-gray-900 dark:text-white">
+                        {formatCount(llmTestResult?.usage?.totalTokens)} tokens
+                      </p>
+                    </div>
+                  </div>
+
+                  {llmTestResult?.responsePreview && (
+                    <div className="mt-5 rounded-2xl bg-slate-950 px-4 py-4 text-sm text-slate-100">
+                      <p className="mb-2 text-xs uppercase tracking-[0.24em] text-slate-400">Response Preview</p>
+                      <p className="leading-6 text-slate-200">{llmTestResult.responsePreview}</p>
                     </div>
                   )}
                 </div>
-              </div>
+              </SettingsSection>
+            </div>
+          </div>
 
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  onClick={handleTestLlm}
-                  loading={isTestingLlm}
-                  disabled={!settings.llmApiKey.trim()}
-                  className="rounded-xl"
-                >
-                  {isTestingLlm ? '测试中...' : '测试 API 可用性'}
-                </Button>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  建议先测试连接，再保存到系统默认配置。
-                </p>
-              </div>
-            </SettingsSection>
-
-            <SettingsSection
-              title="接入建议"
-              description="不同提供方都可以走这条配置链路，关键是 Base URL 与 model id 要匹配。"
+          {isLlmEditorOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+              role="dialog"
+              aria-modal="true"
+              aria-label="编辑 LLM API 配置"
+              onClick={(event) => {
+                if (event.target === event.currentTarget) {
+                  setIsLlmEditorOpen(false);
+                }
+              }}
             >
-              <div className="grid gap-4 md:grid-cols-3">
-                {llmProviders.map((provider) => (
-                  <div
-                    key={provider.value}
-                    className={`rounded-2xl border p-4 ${
-                      settings.llmProvider === provider.value
-                        ? 'border-blue-500 bg-blue-50 dark:border-blue-500/70 dark:bg-blue-950/30'
-                        : 'border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950/50'
-                    }`}
-                  >
-                    <p className="font-medium text-gray-900 dark:text-white">{provider.label}</p>
-                    <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{provider.description}</p>
-                  </div>
-                ))}
-              </div>
-            </SettingsSection>
-          </div>
-
-          <div className="space-y-6">
-            <SettingsSection title="连接状态" description="测试结果会显示模型是否可用，以及接口返回的基本信息。">
-              <div className="rounded-3xl border border-gray-200/80 bg-gray-50/80 p-5 dark:border-gray-800 dark:bg-gray-950/60">
-                <div className="flex items-start justify-between gap-3">
+              <div className="w-full max-w-4xl overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+                <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-6 py-5 dark:border-slate-800">
                   <div>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">最近一次测试</p>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      {llmTestResult?.message || '还没有执行过接口测试'}
+                    <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">
+                      LLM API 配置
+                    </p>
+                    <h3 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                      {editingLlmProfile.name}
+                    </h3>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      在弹窗里修改当前选中配置。保存系统设置后才会真正写入后端。
                     </p>
                   </div>
-                  <Badge variant={testBadgeVariant}>
-                    {llmTestResult?.available ? 'Available' : llmConfigured ? 'Pending' : 'Unset'}
-                  </Badge>
+                  <button
+                    type="button"
+                    onClick={() => setIsLlmEditorOpen(false)}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white"
+                    aria-label="关闭弹窗"
+                  >
+                    ×
+                  </button>
                 </div>
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl bg-white px-4 py-3 dark:bg-slate-900">
-                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">Provider</p>
-                    <p className="mt-2 font-semibold text-gray-900 dark:text-white">
-                      {llmTestResult?.provider || settings.llmProvider}
-                    </p>
+                <div className="max-h-[calc(100vh-12rem)] space-y-5 overflow-y-auto px-6 py-6">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-4 dark:border-slate-700 dark:bg-slate-900/50">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900 dark:text-white">编辑状态</p>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        {editingLlmProfile.id === activeLlmProfile.id ? '这套配置当前已经在使用中。' : '这套配置已选中，但尚未切换成当前默认配置。'}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={editingLlmProfile.id === activeLlmProfile.id}
+                        onClick={() => {
+                          setSettings((current) => normalizeSettings({
+                            ...current,
+                            activeLlmProfileId: editingLlmProfile.id,
+                          }));
+                        }}
+                      >
+                        {editingLlmProfile.id === activeLlmProfile.id ? '当前默认配置' : '设为当前配置'}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleTestLlm}
+                        loading={isTestingLlm}
+                        disabled={!editingLlmProfile.apiKey.trim()}
+                      >
+                        {isTestingLlm ? '测试中...' : '测试当前编辑配置'}
+                      </Button>
+                    </div>
                   </div>
-                  <div className="rounded-2xl bg-white px-4 py-3 dark:bg-slate-900">
-                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">Model</p>
-                    <p className="mt-2 font-semibold text-gray-900 dark:text-white">
-                      {llmTestResult?.model || settings.llmModel || '未选择'}
-                    </p>
+
+                  <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+                    <div className="rounded-2xl border border-gray-200/80 bg-gray-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/70">
+                      <Input
+                        label="配置名称"
+                        placeholder="例如：OpenAI 生产 / OpenRouter 备用"
+                        value={editingLlmProfile.name}
+                        onChange={(event) => {
+                          setSettings((current) => updateLlmProfileById(current, editingLlmProfile.id, (profile) => ({
+                            ...profile,
+                            name: event.target.value,
+                          })));
+                          setLlmTestResult(null);
+                        }}
+                        helperText="保存后会作为可切换的 LLM API 配置名称。"
+                      />
+                    </div>
+
+                    <div className="rounded-2xl border border-gray-200/80 bg-gray-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/70">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Provider</label>
+                      <select
+                        value={editingLlmProfile.provider}
+                        onChange={(event) => {
+                          setSettings((current) => updateLlmProfileById(current, editingLlmProfile.id, (profile) => ({
+                            ...profile,
+                            provider: event.target.value,
+                          })));
+                          setLlmTestResult(null);
+                        }}
+                        className="mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                      >
+                        {llmProviders.map((provider) => (
+                          <option key={provider.value} value={provider.value}>
+                            {provider.label}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                        {llmProviders.find((item) => item.value === editingLlmProfile.provider)?.description}
+                      </p>
+                    </div>
                   </div>
-                  <div className="rounded-2xl bg-white px-4 py-3 dark:bg-slate-900">
-                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">Latency</p>
-                    <p className="mt-2 font-semibold text-gray-900 dark:text-white">
-                      {formatLatency(llmTestResult?.latencyMs)}
-                    </p>
+
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-gray-200/80 bg-gray-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/70">
+                      <Input
+                        label="Base URL"
+                        placeholder="https://api.example.com/v1"
+                        value={editingLlmProfile.apiBaseUrl}
+                        onChange={(event) => {
+                          setSettings((current) => updateLlmProfileById(current, editingLlmProfile.id, (profile) => ({
+                            ...profile,
+                            apiBaseUrl: event.target.value,
+                          })));
+                          setLlmTestResult(null);
+                        }}
+                        helperText="如果使用官方 OpenAI/OpenRouter，可留空使用默认地址。"
+                      />
+                    </div>
                   </div>
-                  <div className="rounded-2xl bg-white px-4 py-3 dark:bg-slate-900">
-                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">Usage</p>
-                    <p className="mt-2 font-semibold text-gray-900 dark:text-white">
-                      {formatCount(llmTestResult?.usage?.totalTokens)} tokens
-                    </p>
+
+                  <div className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
+                    <PasswordInput
+                      label="API Key"
+                      placeholder="sk-..."
+                      value={editingLlmProfile.apiKey}
+                      onChange={(event) => {
+                        setSettings((current) => updateLlmProfileById(current, editingLlmProfile.id, (profile) => ({
+                          ...profile,
+                          apiKey: event.target.value,
+                        })));
+                        setLlmTestResult(null);
+                      }}
+                      helperText="会保存在本地管理库中，仅管理后台可见。"
+                    />
+                    <NumberInput
+                      label="最大重试次数"
+                      value={editingLlmProfile.maxRetries}
+                      onChange={(value) => {
+                        setSettings((current) => updateLlmProfileById(current, editingLlmProfile.id, (profile) => ({
+                          ...profile,
+                          maxRetries: value,
+                        })));
+                        setLlmTestResult(null);
+                      }}
+                      min={0}
+                      max={10}
+                    />
+                  </div>
+
+                  <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                    <div className="rounded-2xl border border-gray-200/80 bg-white px-4 py-4 dark:border-gray-800 dark:bg-gray-950/60">
+                      <Input
+                        label="模型 ID"
+                        placeholder="gpt-4.1-mini / glm-4.5 / DeepSeek-V3"
+                        value={editingLlmProfile.model}
+                        onChange={(event) => {
+                          setSettings((current) => updateLlmProfileById(current, editingLlmProfile.id, (profile) => ({
+                            ...profile,
+                            model: event.target.value,
+                          })));
+                          setLlmTestResult(null);
+                        }}
+                        list="llm-model-list"
+                        helperText="可以手填，也可以先测试接口后从返回的模型列表中选择。"
+                      />
+                      <datalist id="llm-model-list">
+                        {discoveredModels.map((model) => (
+                          <option key={model} value={model} />
+                        ))}
+                      </datalist>
+                    </div>
+
+                    <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-950/50">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white">模型发现</p>
+                          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                            {discoveredModels.length > 0 ? `已发现 ${discoveredModels.length} 个模型` : '尚未获取模型列表'}
+                          </p>
+                        </div>
+                        <Badge variant={discoveredModels.length > 0 ? 'success' : 'default'}>
+                          {discoveredModels.length > 0 ? 'Ready' : 'Idle'}
+                        </Badge>
+                      </div>
+                      {discoveredModels.length > 0 && (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {discoveredModels.slice(0, 8).map((model) => (
+                            <button
+                              key={model}
+                              type="button"
+                              onClick={() => {
+                                setSettings((current) => updateLlmProfileById(current, editingLlmProfile.id, (profile) => ({
+                                  ...profile,
+                                  model,
+                                })));
+                                setLlmTestResult(null);
+                              }}
+                              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                                editingLlmProfile.model === model
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-white text-gray-700 ring-1 ring-gray-200 hover:bg-blue-50 dark:bg-slate-900 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-slate-800'
+                              }`}
+                            >
+                              {model}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                {llmTestResult?.responsePreview && (
-                  <div className="mt-5 rounded-2xl bg-slate-950 px-4 py-4 text-sm text-slate-100">
-                    <p className="mb-2 text-xs uppercase tracking-[0.24em] text-slate-400">Response Preview</p>
-                    <p className="leading-6 text-slate-200">{llmTestResult.responsePreview}</p>
-                  </div>
-                )}
+                <div className="flex items-center justify-between gap-3 border-t border-slate-200/80 px-6 py-4 dark:border-slate-800">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    这里修改的是当前页面内的配置草稿，点击页面顶部“保存设置”后才会正式持久化。
+                  </p>
+                  <Button type="button" variant="outline" onClick={() => setIsLlmEditorOpen(false)}>
+                    完成编辑
+                  </Button>
+                </div>
               </div>
-            </SettingsSection>
-
-            <SettingsSection title="当前默认值" description="保存后，新的 review 作业会直接使用这里的默认模型配置。">
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-gray-200/80 px-4 py-4 dark:border-gray-800">
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Base URL</p>
-                  <p className="mt-2 break-all font-medium text-gray-900 dark:text-white">
-                    {settings.llmApiBaseUrl || '使用 provider 默认地址'}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-gray-200/80 px-4 py-4 dark:border-gray-800">
-                  <p className="text-sm text-gray-500 dark:text-gray-400">模型选择</p>
-                  <p className="mt-2 font-medium text-gray-900 dark:text-white">
-                    {settings.llmModel || '尚未指定'}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-gray-200/80 px-4 py-4 dark:border-gray-800">
-                  <p className="text-sm text-gray-500 dark:text-gray-400">重试策略</p>
-                  <p className="mt-2 font-medium text-gray-900 dark:text-white">
-                    最多 {settings.llmMaxRetries} 次重试
-                  </p>
-                </div>
-              </div>
-            </SettingsSection>
-          </div>
-        </div>
+            </div>
+          )}
+        </>
       )}
 
       {activeTab === 'database' && (
