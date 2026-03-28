@@ -677,7 +677,7 @@ export default function SettingsPage() {
                 <PasswordInput
                   label="当前密码"
                   value={passwordForm.currentPassword}
-                  onChange={(event) => setPasswordForm({ ...passwordForm, currentPassword: event.target.value })}
+                  onChange={(event) => setPasswordForm((current) => ({ ...current, currentPassword: event.target.value }))}
                 />
                 <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-950/50">
                   <p className="text-sm font-medium text-gray-900 dark:text-white">修改建议</p>
@@ -691,13 +691,13 @@ export default function SettingsPage() {
                 <PasswordInput
                   label="新密码"
                   value={passwordForm.newPassword}
-                  onChange={(event) => setPasswordForm({ ...passwordForm, newPassword: event.target.value })}
+                  onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))}
                   helperText={`至少 ${Math.max(settings.passwordMinLength, 6)} 位`}
                 />
                 <PasswordInput
                   label="确认新密码"
                   value={passwordForm.confirmPassword}
-                  onChange={(event) => setPasswordForm({ ...passwordForm, confirmPassword: event.target.value })}
+                  onChange={(event) => setPasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))}
                 />
               </div>
 
