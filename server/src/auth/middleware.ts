@@ -5,10 +5,43 @@
  * - 会话验证
  * - 检查会话过期
  * - 禁止未登录用户访问受保护路由
+ * - 支持免登录模式 (NO_LOGIN_MODE)
  */
 
 import { Request, Response, NextFunction } from 'express';
 import { getSessionManager } from './SessionManager';
+import { getAdminModel } from '../models/Admin';
+import { getSystemSettingsService } from '../services/SystemSettingsService';
+
+/**
+ * 检查是否处于免登录模式
+ */
+function isNoLoginMode(): boolean {
+  try {
+    return getSystemSettingsService().getSettings().noLoginMode;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 注入免登录虚拟会话
+ */
+function injectNoLoginSession(req: Request): void {
+  const adminModel = getAdminModel();
+  const admin = adminModel.findAll()[0];
+  if (admin) {
+    const fakeSession = {
+      id: 'no-login-session',
+      adminId: admin.id,
+      adminUsername: admin.username,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    };
+    (req as any).session = fakeSession;
+    (req as any).sessionData = fakeSession;
+  }
+}
 
 /**
  * 检查会话是否有效的中间件
@@ -75,6 +108,12 @@ export function authenticate(
   res: Response,
   next: NextFunction
 ): void | Response {
+  // 免登录模式：注入虚拟会话，直接放行
+  if (isNoLoginMode()) {
+    injectNoLoginSession(req);
+    return next();
+  }
+
   const sessionId = req.cookies?.session_id;
 
   if (!sessionId) {
@@ -121,6 +160,12 @@ export function requireAuth(
 ): (req: Request, res: Response, next: NextFunction) => void | Response {
   return (req, res, next) => {
     try {
+      // 免登录模式：注入虚拟会话，直接放行
+      if (isNoLoginMode()) {
+        injectNoLoginSession(req);
+        return next();
+      }
+
       // 验证会话
       const sessionId = req.cookies?.session_id;
       if (!sessionId) {

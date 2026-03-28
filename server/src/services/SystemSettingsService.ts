@@ -26,6 +26,7 @@ export interface SystemSettingsRecord {
   sessionTimeout: number;
   passwordMinLength: number;
   requireStrongPassword: boolean;
+  noLoginMode: boolean;
   autoBackupEnabled: boolean;
   backupSchedule: string;
   backupRetentionDays: number;
@@ -59,6 +60,7 @@ const settingKeys = [
   'sessionTimeout',
   'passwordMinLength',
   'requireStrongPassword',
+  'noLoginMode',
   'autoBackupEnabled',
   'backupSchedule',
   'backupRetentionDays',
@@ -161,6 +163,7 @@ export class SystemSettingsService {
       sessionTimeout: config.auth.sessionTimeout,
       passwordMinLength: 8,
       requireStrongPassword: true,
+      noLoginMode: config.auth.noLoginMode,
       autoBackupEnabled: config.backup.enableAutoBackup,
       backupSchedule: 'daily',
       backupRetentionDays: 7,
@@ -198,6 +201,7 @@ export class SystemSettingsService {
       sessionTimeout: clampNumber(input.sessionTimeout, defaults.sessionTimeout, 300, 2592000),
       passwordMinLength: clampNumber(input.passwordMinLength, defaults.passwordMinLength, 6, 64),
       requireStrongPassword: toBoolean(input.requireStrongPassword, defaults.requireStrongPassword),
+      noLoginMode: toBoolean(input.noLoginMode, defaults.noLoginMode),
       autoBackupEnabled: toBoolean(input.autoBackupEnabled, defaults.autoBackupEnabled),
       backupSchedule: toStringValue(input.backupSchedule, defaults.backupSchedule) || defaults.backupSchedule,
       backupRetentionDays: clampNumber(input.backupRetentionDays, defaults.backupRetentionDays, 1, 365),

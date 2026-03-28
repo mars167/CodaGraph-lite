@@ -91,6 +91,7 @@ const defaultSettings: SystemSettings = {
   sessionTimeout: 86400,
   passwordMinLength: 8,
   requireStrongPassword: true,
+  noLoginMode: false,
   autoBackupEnabled: true,
   backupSchedule: 'daily',
   backupRetentionDays: 7,
@@ -637,6 +638,36 @@ export default function SettingsPage() {
             <SettingsSection title="会话管理">
               <NumberInput label="会话超时时间（秒）" value={settings.sessionTimeout} onChange={(value) => setSettings({ ...settings, sessionTimeout: value })} min={300} max={604800} unit="秒" />
               <p className="text-sm text-gray-500 dark:text-gray-400">超时后需要重新登录。建议生产环境不要低于 15 分钟。</p>
+            </SettingsSection>
+
+            <SettingsSection title="免登录模式" description="仅适用于纯本地部署、不对外暴露的私有场景。">
+              {settings.noLoginMode && (
+                <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-950/30">
+                  <svg className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                  </svg>
+                  <div>
+                    <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">安全风险提示</p>
+                    <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">
+                      免登录模式已启用。任何能访问本服务地址的用户都将无需身份验证即可进入系统，请确保该服务仅在受信任的本地网络环境中使用，切勿对外开放访问。
+                    </p>
+                  </div>
+                </div>
+              )}
+              <ToggleSetting
+                label="启用免登录模式"
+                description="开启后访问系统无需输入用户名和密码。适合纯本地、不对外暴露的部署场景。"
+                checked={settings.noLoginMode}
+                onChange={(value) => {
+                  if (value) {
+                    const confirmed = confirm(
+                      '⚠️ 安全风险提示\n\n启用免登录模式后，任何能访问本服务地址的用户都将无需身份验证即可进入系统。\n\n请确认：\n- 本服务仅在本地运行，未开放外网访问\n- 您了解并接受由此带来的安全风险\n\n确定要启用免登录模式吗？'
+                    );
+                    if (!confirmed) return;
+                  }
+                  setSettings({ ...settings, noLoginMode: value });
+                }}
+              />
             </SettingsSection>
           </div>
 

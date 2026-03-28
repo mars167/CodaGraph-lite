@@ -6,15 +6,29 @@
  * - POST /api/auth/logout - 管理员登出
  * - POST /api/auth/change-password - 修改密码
  * - GET /api/auth/verify - 验证会话
+ * - GET /api/auth/mode - 查询当前认证模式（免登录/正常）
  */
 
 import express, { Request, Response } from 'express';
 import { getAdminModel } from '../models/Admin';
 import { getActivityLogModel } from '../models/ActivityLog';
 import { getSessionManager } from './SessionManager';
+import { getSystemSettingsService } from '../services/SystemSettingsService';
 import type { LoginRequest, UpdatePasswordRequest, AuthResponse } from './types';
 
 const router = express.Router();
+
+/**
+ * 查询当前认证模式
+ * 此端点无需认证，供前端初始化时使用
+ */
+router.get('/mode', (_req: Request, res: Response) => {
+  const noLoginMode = getSystemSettingsService().getSettings().noLoginMode;
+  return res.json({
+    success: true,
+    noLoginMode,
+  });
+});
 
 /**
  * 管理员登录
@@ -140,6 +154,24 @@ router.post('/logout', async (req: Request, res: Response) => {
  */
 router.get('/verify', async (req: Request, res: Response) => {
   try {
+    // 免登录模式：直接返回成功
+    const noLoginMode = getSystemSettingsService().getSettings().noLoginMode;
+    if (noLoginMode) {
+      const adminModel = getAdminModel();
+      const admin = adminModel.findAll()[0] ?? null;
+      return res.json({
+        success: true,
+        message: '免登录模式已启用',
+        noLoginMode: true,
+        admin: admin ? {
+          id: admin.id,
+          username: admin.username,
+          created_at: admin.created_at,
+          updated_at: admin.updated_at,
+        } : null,
+      });
+    }
+
     const sessionId = req.cookies?.session_id;
 
     if (!sessionId) {

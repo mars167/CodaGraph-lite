@@ -443,6 +443,7 @@ export interface SystemSettings {
   sessionTimeout: number;
   passwordMinLength: number;
   requireStrongPassword: boolean;
+  noLoginMode: boolean;
   // 备份配置
   autoBackupEnabled: boolean;
   backupSchedule: string;

@@ -73,6 +73,7 @@ export interface AuthConfig {
   adminPassword: string;
   sessionSecret: string;
   sessionTimeout: number;
+  noLoginMode: boolean;
 }
 
 /**
@@ -331,6 +332,7 @@ export function loadConfig(): AppConfig {
       adminPassword: getEnv('ADMIN_PASSWORD', 'changeme'),
       sessionSecret: getEnv('SESSION_SECRET', 'changeme_to_secure_random_string'),
       sessionTimeout: getEnvNumber('SESSION_TIMEOUT', 86400),
+      noLoginMode: getEnvBoolean('NO_LOGIN_MODE', false),
     },
 
     agent: {
