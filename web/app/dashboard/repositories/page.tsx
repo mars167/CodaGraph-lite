@@ -83,6 +83,36 @@ function makeRepositoryCacheKey(platform: Platform, page: number, pageSize: numb
   return `${platform}:${page}:${pageSize}`;
 }
 
+function isRepositoryPageCacheEntry(entry: unknown): entry is RepositoryPageCacheEntry {
+  if (!entry || typeof entry !== 'object') {
+    return false;
+  }
+
+  const candidate = entry as Partial<RepositoryPageCacheEntry>;
+  return Array.isArray(candidate.repositories)
+    && typeof candidate.total === 'number'
+    && typeof candidate.page === 'number'
+    && typeof candidate.pageSize === 'number'
+    && (candidate.platform === 'github' || candidate.platform === 'gitee' || candidate.platform === 'gitlab')
+    && typeof candidate.cachedAt === 'number';
+}
+
+function shouldCacheRepositoryPageEntry(entry: RepositoryPageCacheEntry): boolean {
+  return entry.repositories.length > 0;
+}
+
+function sanitizeRepositoryPageCacheStore(store: unknown): RepositoryPageCacheStore {
+  if (!store || typeof store !== 'object') {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(store).filter(([, entry]) => (
+      isRepositoryPageCacheEntry(entry) && shouldCacheRepositoryPageEntry(entry)
+    ))
+  ) as RepositoryPageCacheStore;
+}
+
 function readRepositoryPageCacheStore(): RepositoryPageCacheStore {
   if (typeof window === 'undefined') {
     return {};
@@ -94,8 +124,7 @@ function readRepositoryPageCacheStore(): RepositoryPageCacheStore {
       return {};
     }
 
-    const parsed = JSON.parse(raw) as RepositoryPageCacheStore;
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    return sanitizeRepositoryPageCacheStore(JSON.parse(raw));
   } catch {
     return {};
   }
@@ -107,7 +136,10 @@ function writeRepositoryPageCacheStore(store: RepositoryPageCacheStore): void {
   }
 
   try {
-    window.sessionStorage.setItem(REPOSITORY_PAGE_CACHE_KEY, JSON.stringify(store));
+    window.sessionStorage.setItem(
+      REPOSITORY_PAGE_CACHE_KEY,
+      JSON.stringify(sanitizeRepositoryPageCacheStore(store))
+    );
   } catch {
     // ignore storage failures
   }
@@ -139,9 +171,18 @@ export default function RepositoriesPage() {
   const [updatingFavoriteId, setUpdatingFavoriteId] = useState<string | null>(null);
 
   const syncCache = useCallback((entry: RepositoryPageCacheEntry) => {
+    const cacheKey = makeRepositoryCacheKey(entry.platform, entry.page, entry.pageSize);
+    if (!shouldCacheRepositoryPageEntry(entry)) {
+      const nextStore = { ...cacheRef.current };
+      delete nextStore[cacheKey];
+      cacheRef.current = nextStore;
+      writeRepositoryPageCacheStore(nextStore);
+      return;
+    }
+
     cacheRef.current = {
       ...cacheRef.current,
-      [makeRepositoryCacheKey(entry.platform, entry.page, entry.pageSize)]: entry,
+      [cacheKey]: entry,
     };
     writeRepositoryPageCacheStore(cacheRef.current);
   }, []);
