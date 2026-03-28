@@ -1152,10 +1152,10 @@ export default function DashboardPage() {
             {recentJobs.length > 0 ? recentJobs.map((job) => (
               <div
                 key={job.id}
-                className="flex flex-col gap-3 rounded-3xl border border-slate-200/80 bg-white/80 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/60 lg:flex-row lg:items-center lg:justify-between"
+                className="grid gap-3 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/60 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
               >
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <Link href={`/dashboard/jobs/${job.id}`} className="text-sm font-semibold text-slate-900 hover:text-cyan-700 dark:text-slate-100 dark:hover:text-cyan-300">
                       Job #{job.id}
                     </Link>
@@ -1169,9 +1169,11 @@ export default function DashboardPage() {
                     {job.prTitle || '无标题'}{job.errorMessage ? ` · ${job.errorMessage}` : ''}
                   </p>
                 </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
-                  <span>创建于 {formatShortDateTime(job.createdAt)}</span>
-                  <span>{job.completedAt ? `结束于 ${formatShortDateTime(job.completedAt)}` : job.startedAt ? `开始于 ${formatShortDateTime(job.startedAt)}` : '等待执行'}</span>
+                <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400 lg:justify-end lg:text-right">
+                  <span className="truncate">创建于 {formatShortDateTime(job.createdAt)}</span>
+                  <span className="truncate">
+                    {job.completedAt ? `结束于 ${formatShortDateTime(job.completedAt)}` : job.startedAt ? `开始于 ${formatShortDateTime(job.startedAt)}` : '等待执行'}
+                  </span>
                 </div>
               </div>
             )) : (

@@ -17,7 +17,8 @@ export function Input({
   type = 'text',
   ...props
 }: InputProps) {
-  const inputId = id || `input-${Math.random().toString(36).slice(2, 11)}`;
+  const generatedId = React.useId();
+  const inputId = id || generatedId;
 
   return (
     <div className={`flex flex-col gap-1 ${containerClassName}`}>
@@ -59,7 +60,7 @@ export function PasswordInput(props: Omit<InputProps, 'type'>) {
 
   return (
     <div className="relative">
-      <Input {...props} type={showPassword ? 'text' : 'password'} />
+      <Input {...props} type={showPassword ? 'text' : 'password'} className={`pr-11 ${props.className || ''}`.trim()} />
       <button
         type="button"
         onClick={() => setShowPassword(!showPassword)}

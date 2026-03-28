@@ -104,6 +104,28 @@ const defaultSettings: SystemSettings = {
 
 type SettingsTab = 'general' | 'security' | 'oauth' | 'llm' | 'database' | 'backup';
 
+type SettingsSectionProps = {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+};
+
+type ToggleSettingProps = {
+  label: string;
+  description?: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+};
+
+type NumberInputProps = {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  min?: number;
+  max?: number;
+  unit?: string;
+};
+
 function mergeModelOptions(result: string[], currentModel: string): string[] {
   return [...new Set([currentModel, ...result].filter((item) => item.trim().length > 0))];
 }
@@ -143,6 +165,72 @@ function setPlatformMode(settings: SystemSettings, platform: Platform, mode: 'oa
     case 'gitlab':
       return { ...settings, gitlabAuthMode: mode };
   }
+}
+
+function SettingsSection({ title, description, children }: SettingsSectionProps) {
+  return (
+    <Card className="border-gray-200/80 dark:border-gray-800">
+      <CardHeader className="mb-5">
+        <CardTitle className="text-lg">{title}</CardTitle>
+        {description && (
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">{description}</p>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-4">{children}</CardContent>
+    </Card>
+  );
+}
+
+function ToggleSetting({
+  label,
+  description,
+  checked,
+  onChange,
+}: ToggleSettingProps) {
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-2xl border border-gray-200/80 bg-white/70 px-4 py-4 dark:border-gray-800 dark:bg-gray-950/60">
+      <div className="space-y-1">
+        <p className="font-medium text-gray-900 dark:text-white">{label}</p>
+        {description && (
+          <p className="text-sm text-gray-500 dark:text-gray-400">{description}</p>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+          checked ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
+        }`}
+      >
+        <span
+          className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+            checked ? 'translate-x-5' : 'translate-x-0'
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
+function NumberInput({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  unit,
+}: NumberInputProps) {
+  return (
+    <Input
+      label={label}
+      type="number"
+      value={value.toString()}
+      onChange={(event) => onChange(Number(event.target.value))}
+      min={min}
+      max={max}
+      helperText={unit ? `单位：${unit}` : undefined}
+    />
+  );
 }
 
 export default function SettingsPage() {
@@ -413,78 +501,6 @@ export default function SettingsPage() {
     { id: 'backup', label: '备份恢复', accent: 'from-slate-500 to-slate-700' },
   ];
 
-  const SettingsSection = ({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) => (
-    <Card className="border-gray-200/80 dark:border-gray-800">
-      <CardHeader className="mb-5">
-        <CardTitle className="text-lg">{title}</CardTitle>
-        {description && (
-          <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">{description}</p>
-        )}
-      </CardHeader>
-      <CardContent className="space-y-4">{children}</CardContent>
-    </Card>
-  );
-
-  const ToggleSetting = ({
-    label,
-    description,
-    checked,
-    onChange,
-  }: {
-    label: string;
-    description?: string;
-    checked: boolean;
-    onChange: (value: boolean) => void;
-  }) => (
-    <div className="flex items-start justify-between gap-4 rounded-2xl border border-gray-200/80 bg-white/70 px-4 py-4 dark:border-gray-800 dark:bg-gray-950/60">
-      <div className="space-y-1">
-        <p className="font-medium text-gray-900 dark:text-white">{label}</p>
-        {description && (
-          <p className="text-sm text-gray-500 dark:text-gray-400">{description}</p>
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
-          checked ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-        }`}
-      >
-        <span
-          className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
-            checked ? 'translate-x-5' : 'translate-x-0'
-          }`}
-        />
-      </button>
-    </div>
-  );
-
-  const NumberInput = ({
-    label,
-    value,
-    onChange,
-    min,
-    max,
-    unit,
-  }: {
-    label: string;
-    value: number;
-    onChange: (value: number) => void;
-    min?: number;
-    max?: number;
-    unit?: string;
-  }) => (
-    <Input
-      label={label}
-      type="number"
-      value={value.toString()}
-      onChange={(event) => onChange(Number(event.target.value))}
-      min={min}
-      max={max}
-      helperText={unit ? `单位：${unit}` : undefined}
-    />
-  );
-
   if (isLoading) {
     return (
       <Card>
@@ -677,7 +693,7 @@ export default function SettingsPage() {
                 <PasswordInput
                   label="当前密码"
                   value={passwordForm.currentPassword}
-                  onChange={(event) => setPasswordForm({ ...passwordForm, currentPassword: event.target.value })}
+                  onChange={(event) => setPasswordForm((current) => ({ ...current, currentPassword: event.target.value }))}
                 />
                 <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-950/50">
                   <p className="text-sm font-medium text-gray-900 dark:text-white">修改建议</p>
@@ -691,13 +707,13 @@ export default function SettingsPage() {
                 <PasswordInput
                   label="新密码"
                   value={passwordForm.newPassword}
-                  onChange={(event) => setPasswordForm({ ...passwordForm, newPassword: event.target.value })}
+                  onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))}
                   helperText={`至少 ${Math.max(settings.passwordMinLength, 6)} 位`}
                 />
                 <PasswordInput
                   label="确认新密码"
                   value={passwordForm.confirmPassword}
-                  onChange={(event) => setPasswordForm({ ...passwordForm, confirmPassword: event.target.value })}
+                  onChange={(event) => setPasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))}
                 />
               </div>
 
