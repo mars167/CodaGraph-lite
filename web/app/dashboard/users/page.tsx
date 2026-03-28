@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { formatDateTime } from '@/lib/datetime';
 import type { Admin } from '@/types';
@@ -52,11 +52,7 @@ export default function UsersPage() {
   });
 
   // 加载用户数据
-  useEffect(() => {
-    loadUsersData();
-  }, []);
-
-  const loadUsersData = async () => {
+  const loadUsersData = useCallback(async () => {
     try {
       setIsLoading(true);
       // 获取当前管理员信息
@@ -104,7 +100,11 @@ export default function UsersPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [error]);
+
+  useEffect(() => {
+    void loadUsersData();
+  }, [loadUsersData]);
 
   // 添加用户
   const handleAddUser = async () => {

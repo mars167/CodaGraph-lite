@@ -13,12 +13,16 @@
     "build:web": "npm --prefix web run build",
     "build:server": "npm --prefix server run build",
     "build": "npm run build:web && npm run build:server",
+    "check:web": "npm --prefix web run lint -- app src next.config.ts",
+    "check:server": "npm --prefix server run typecheck",
+    "check": "npm run check:web && npm run check:server && npm run build",
     "start:web": "npm --prefix web run start",
     "start:server": "npm --prefix server run start",
     "start": "concurrently \"npm run start:web\" \"npm run start:server\"",
     "seed:e2e": "node scripts/seed-e2e-data.js",
     "e2e:playwright": "npm run seed:e2e && playwright test e2e/dashboard-pages.spec.ts",
-    "e2e:puppeteer": "npm run seed:e2e && node scripts/puppeteer-dashboard-smoke.js"
+    "e2e:puppeteer": "npm run seed:e2e && node scripts/puppeteer-dashboard-smoke.js",
+    "test:e2e": "NEXT_PUBLIC_API_URL=http://127.0.0.1:7901 npm run build && npm run e2e:playwright"
   },
   "repository": {
     "type": "git",

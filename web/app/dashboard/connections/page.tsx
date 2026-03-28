@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { formatDateTime } from '@/lib/datetime';
 import type { OAuthInstallation, Platform } from '@/types';
@@ -47,11 +47,7 @@ export default function ConnectionsPage() {
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
   // 加载连接列表
-  useEffect(() => {
-    loadInstallations();
-  }, []);
-
-  const loadInstallations = async () => {
+  const loadInstallations = useCallback(async () => {
     try {
       setIsLoading(true);
       const response = await apiClient.getOAuthInstallations();
@@ -64,7 +60,11 @@ export default function ConnectionsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [error]);
+
+  useEffect(() => {
+    void loadInstallations();
+  }, [loadInstallations]);
 
   // 刷新 Token
   const handleRefreshToken = async (id: string) => {

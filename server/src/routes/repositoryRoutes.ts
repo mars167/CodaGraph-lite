@@ -166,6 +166,10 @@ function normalizeRepositoryPayload(
 }
 
 async function hydrateRepositoryCache(platform?: Platform) {
+  if (process.env.SKIP_REMOTE_REPOSITORY_SYNC === '1') {
+    return [];
+  }
+
   const installationModel = getOAuthInstallationModel();
   const repositoryModel = getRepositoryModel();
   const installations = platform

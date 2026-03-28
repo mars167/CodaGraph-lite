@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
@@ -108,12 +109,9 @@ export default function LoginPage() {
         </div>
 
         <div className={styles.backWrap}>
-          <a
-            href="/"
-            className={styles.backLink}
-          >
+          <Link href="/" className={styles.backLink}>
             返回首页
-          </a>
+          </Link>
         </div>
       </div>
     </div>
