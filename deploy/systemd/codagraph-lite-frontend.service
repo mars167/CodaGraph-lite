@@ -8,16 +8,18 @@ After=network.target
 Wants=network.target
 
 [Service]
-Type=notify
+Type=simple
 NotifyAccess=all
 WorkingDirectory=/opt/codagraph-lite/web
 
 # 环境变量
 Environment="NODE_ENV=production"
 Environment="NODE_OPTIONS=--max-old-space-size=200"
+Environment="PORT=3000"
+Environment="HOSTNAME=0.0.0.0"
 
 # 启动命令
-ExecStart=/usr/bin/node /opt/codagraph-lite/web/node_modules/.bin/next start
+ExecStart=/usr/bin/node /opt/codagraph-lite/web/node_modules/next/dist/bin/next start -p 3000 -H 0.0.0.0
 ExecReload=/bin/kill -s HUP $MAINPID
 
 # 2u2g 资源限制

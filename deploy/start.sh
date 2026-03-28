@@ -124,14 +124,19 @@ main() {
         ((attempt++))
         sleep 2
 
-        # 检查前端
-        if curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then
-            log_success "前端健康检查通过"
-            break
+        local frontend_ok=false
+        local backend_ok=false
+
+        if curl -sf "http://localhost:${FRONTEND_PORT}/api/health" >/dev/null 2>&1; then
+            frontend_ok=true
         fi
 
-        # 检查后端
-        if curl -sf http://localhost:7900/api/health >/dev/null 2>&1; then
+        if curl -sf "http://localhost:${BACKEND_PORT}/health" >/dev/null 2>&1; then
+            backend_ok=true
+        fi
+
+        if [ "$frontend_ok" = true ] && [ "$backend_ok" = true ]; then
+            log_success "前端健康检查通过"
             log_success "后端健康检查通过"
             break
         fi
