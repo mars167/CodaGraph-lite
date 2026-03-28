@@ -122,6 +122,75 @@ export interface PaginationOptions {
   state?: 'open' | 'closed' | 'all';
 }
 
+function normalizeErrorPreview(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function pushErrorPart(parts: string[], value: string | null | undefined): void {
+  if (!value || parts.includes(value)) {
+    return;
+  }
+
+  parts.push(value);
+}
+
+function appendRequestErrorMetadata(parts: string[], source: unknown): void {
+  if (!source || typeof source !== 'object') {
+    return;
+  }
+
+  const candidate = source as Record<string, unknown>;
+  const fields: Array<[string, string]> = [
+    ['code', 'code'],
+    ['errno', 'errno'],
+    ['syscall', 'syscall'],
+    ['host', 'host'],
+    ['hostname', 'hostname'],
+    ['address', 'address'],
+    ['port', 'port'],
+  ];
+
+  for (const [key, label] of fields) {
+    const value = candidate[key];
+    if (typeof value === 'string' || typeof value === 'number') {
+      pushErrorPart(parts, `${label}=${String(value)}`);
+    }
+  }
+}
+
+function describeRequestError(error: unknown): string {
+  const parts: string[] = [];
+  const message = error instanceof Error ? normalizeErrorPreview(error.message) : normalizeErrorPreview(String(error));
+  pushErrorPart(parts, message);
+
+  const cause = error instanceof Error
+    ? (error as Error & { cause?: unknown }).cause
+    : undefined;
+
+  if (cause instanceof Error) {
+    pushErrorPart(parts, `cause=${normalizeErrorPreview(cause.message)}`);
+  } else if (typeof cause === 'string') {
+    pushErrorPart(parts, `cause=${normalizeErrorPreview(cause)}`);
+  }
+
+  appendRequestErrorMetadata(parts, error);
+  appendRequestErrorMetadata(parts, cause);
+
+  return parts.join(' | ');
+}
+
+async function describeErrorResponse(response: Response): Promise<string> {
+  const statusLine = `${response.status} ${response.statusText}`;
+
+  try {
+    const rawBody = await response.text();
+    const preview = normalizeErrorPreview(rawBody).slice(0, 240);
+    return preview ? `${statusLine} | body=${preview}` : statusLine;
+  } catch {
+    return statusLine;
+  }
+}
+
 type GiteeRepositoryResponse = Repository & {
   clone_url?: string | null;
   html_url?: string | null;
@@ -325,75 +394,65 @@ abstract class BaseApiClient {
     };
   }
 
+  protected async requestJson<T>(
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    path: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    const url = `${this.baseUrl}${path}`;
+    let response: Response;
+
+    try {
+      response = await fetch(url, {
+        method,
+        headers: this.getHeaders(),
+        ...options,
+      });
+    } catch (error) {
+      throw new Error(`${method} ${url} 失败: ${describeRequestError(error)}`);
+    }
+
+    if (!response.ok) {
+      throw new Error(`${method} ${url} 失败: ${await describeErrorResponse(response)}`);
+    }
+
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    return response.json() as Promise<T>;
+  }
+
   /**
    * 发起 GET 请求
    */
   protected async get<T>(path: string, options?: RequestInit): Promise<T> {
-    const url = `${this.baseUrl}${path}`;
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: this.getHeaders(),
-      ...options,
-    });
-
-    if (!response.ok) {
-      throw new Error(`GET ${url} 失败: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json() as Promise<T>;
+    return this.requestJson<T>('GET', path, options);
   }
 
   /**
    * 发起 POST 请求
    */
   protected async post<T>(path: string, data?: unknown): Promise<T> {
-    const url = `${this.baseUrl}${path}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: this.getHeaders(),
+    return this.requestJson<T>('POST', path, {
       body: data ? JSON.stringify(data) : undefined,
     });
-
-    if (!response.ok) {
-      throw new Error(`POST ${url} 失败: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json() as Promise<T>;
   }
 
   /**
    * 发起 PUT 请求
    */
   protected async put<T>(path: string, data?: unknown): Promise<T> {
-    const url = `${this.baseUrl}${path}`;
-    const response = await fetch(url, {
-      method: 'PUT',
-      headers: this.getHeaders(),
+    return this.requestJson<T>('PUT', path, {
       body: data ? JSON.stringify(data) : undefined,
     });
-
-    if (!response.ok) {
-      throw new Error(`PUT ${url} 失败: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json() as Promise<T>;
   }
 
   /**
    * 发起 DELETE 请求
    */
   protected async delete<T>(path: string): Promise<T> {
-    const url = `${this.baseUrl}${path}`;
-    const response = await fetch(url, {
-      method: 'DELETE',
-      headers: this.getHeaders(),
-    });
-
-    if (!response.ok) {
-      throw new Error(`DELETE ${url} 失败: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json() as Promise<T>;
+    return this.requestJson<T>('DELETE', path);
   }
 
   /**
