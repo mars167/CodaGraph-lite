@@ -9,7 +9,7 @@ const settingsService = getSystemSettingsService();
 
 type LlmTestPayload = Partial<Pick<
   SystemSettingsRecord,
-  'llmProvider' | 'llmApiKey' | 'llmApiBaseUrl' | 'llmModel' | 'llmMaxRetries'
+  'llmProvider' | 'llmApiKey' | 'llmApiBaseUrl' | 'llmModel' | 'llmMaxRetries' | 'llmProfiles' | 'activeLlmProfileId'
 >>;
 
 router.use(authenticate);

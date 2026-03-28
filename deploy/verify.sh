@@ -368,7 +368,7 @@ check_api_health() {
     check
     log_info "检查 API 健康状态..."
 
-    local backend_url="http://localhost:${BACKEND_PORT:-7900}/api/health"
+    local backend_url="http://localhost:${BACKEND_PORT:-7900}/health"
     local frontend_url="http://localhost:${FRONTEND_PORT:-3000}"
 
     # 检查后端 API

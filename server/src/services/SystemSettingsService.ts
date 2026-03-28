@@ -3,6 +3,16 @@ import { getAppSettingModel } from '../models/AppSetting';
 
 export type PlatformAuthMode = 'oauth_app' | 'pat';
 
+export interface LlmProfileRecord {
+  id: string;
+  name: string;
+  provider: string;
+  apiKey: string;
+  apiBaseUrl: string;
+  model: string;
+  maxRetries: number;
+}
+
 export interface SystemSettingsRecord {
   apiPort: number;
   apiHost: string;
@@ -35,6 +45,8 @@ export interface SystemSettingsRecord {
   llmApiBaseUrl: string;
   llmModel: string;
   llmMaxRetries: number;
+  llmProfiles: LlmProfileRecord[];
+  activeLlmProfileId: string;
 }
 
 const settingKeys = [
@@ -69,6 +81,8 @@ const settingKeys = [
   'llmApiBaseUrl',
   'llmModel',
   'llmMaxRetries',
+  'llmProfiles',
+  'activeLlmProfileId',
 ] as const satisfies readonly (keyof SystemSettingsRecord)[];
 
 function clampNumber(value: unknown, fallback: number, min?: number, max?: number): number {
@@ -134,11 +148,76 @@ function parseNodeMemoryLimit(nodeOptions: string): number {
   return match ? parseInt(match[1], 10) : 1024;
 }
 
+function normalizeLlmProfileId(value: unknown, fallback: string): string {
+  const next = toStringValue(value, fallback).replace(/\s+/g, '-');
+  return next || fallback;
+}
+
+function normalizeLlmProfile(
+  value: Partial<LlmProfileRecord> | undefined,
+  fallback: LlmProfileRecord,
+  index: number
+): LlmProfileRecord {
+  const fallbackId = fallback.id || `llm-profile-${index + 1}`;
+  return {
+    id: normalizeLlmProfileId(value?.id, fallbackId),
+    name: toStringValue(value?.name, fallback.name) || `LLM 配置 ${index + 1}`,
+    provider: toStringValue(value?.provider, fallback.provider) || fallback.provider,
+    apiKey: toStringValue(value?.apiKey, fallback.apiKey),
+    apiBaseUrl: toStringValue(value?.apiBaseUrl, fallback.apiBaseUrl),
+    model: toStringValue(value?.model, fallback.model),
+    maxRetries: clampNumber(value?.maxRetries, fallback.maxRetries, 0, 10),
+  };
+}
+
+function normalizeLlmProfiles(
+  value: unknown,
+  fallback: LlmProfileRecord[]
+): LlmProfileRecord[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    return fallback.map((profile, index) => normalizeLlmProfile(profile, profile, index));
+  }
+
+  const normalized = value
+    .map((profile, index) =>
+      normalizeLlmProfile(
+        typeof profile === 'object' && profile !== null ? profile as Partial<LlmProfileRecord> : undefined,
+        fallback[index] || fallback[0],
+        index
+      )
+    )
+    .filter((profile, index, list) => list.findIndex((item) => item.id === profile.id) === index);
+
+  return normalized.length > 0
+    ? normalized
+    : fallback.map((profile, index) => normalizeLlmProfile(profile, profile, index));
+}
+
+function resolveActiveLlmProfileId(
+  value: unknown,
+  profiles: LlmProfileRecord[],
+  fallback: string
+): string {
+  const nextId = toStringValue(value, fallback);
+  return profiles.some((profile) => profile.id === nextId)
+    ? nextId
+    : profiles[0]?.id || fallback;
+}
+
 export class SystemSettingsService {
   private model = getAppSettingModel();
 
   private buildDefaults(): SystemSettingsRecord {
     const config = getConfig();
+    const defaultLlmProfile: LlmProfileRecord = {
+      id: 'default-llm-profile',
+      name: '默认配置',
+      provider: config.llm.llmProvider || 'openai-compatible',
+      apiKey: config.llm.llmApiKey || '',
+      apiBaseUrl: config.llm.llmApiBaseUrl || '',
+      model: config.llm.llmModel || '',
+      maxRetries: config.llm.llmMaxRetries,
+    };
 
     return {
       apiPort: config.server.backendPort,
@@ -167,16 +246,34 @@ export class SystemSettingsService {
       autoBackupEnabled: config.backup.enableAutoBackup,
       backupSchedule: 'daily',
       backupRetentionDays: 7,
-      llmProvider: config.llm.llmProvider || 'openai-compatible',
-      llmApiKey: config.llm.llmApiKey || '',
-      llmApiBaseUrl: config.llm.llmApiBaseUrl || '',
-      llmModel: config.llm.llmModel || '',
-      llmMaxRetries: config.llm.llmMaxRetries,
+      llmProvider: defaultLlmProfile.provider,
+      llmApiKey: defaultLlmProfile.apiKey,
+      llmApiBaseUrl: defaultLlmProfile.apiBaseUrl,
+      llmModel: defaultLlmProfile.model,
+      llmMaxRetries: defaultLlmProfile.maxRetries,
+      llmProfiles: [defaultLlmProfile],
+      activeLlmProfileId: defaultLlmProfile.id,
     };
   }
 
   private normalize(input: Partial<SystemSettingsRecord>): SystemSettingsRecord {
     const defaults = this.buildDefaults();
+    const fallbackLegacyProfile = normalizeLlmProfile({
+      id: input.activeLlmProfileId || defaults.activeLlmProfileId,
+      name: defaults.llmProfiles[0]?.name || '默认配置',
+      provider: input.llmProvider ?? defaults.llmProvider,
+      apiKey: input.llmApiKey ?? defaults.llmApiKey,
+      apiBaseUrl: input.llmApiBaseUrl ?? defaults.llmApiBaseUrl,
+      model: input.llmModel ?? defaults.llmModel,
+      maxRetries: input.llmMaxRetries ?? defaults.llmMaxRetries,
+    }, defaults.llmProfiles[0], 0);
+    const llmProfiles = normalizeLlmProfiles(input.llmProfiles, [fallbackLegacyProfile]);
+    const activeLlmProfileId = resolveActiveLlmProfileId(
+      input.activeLlmProfileId,
+      llmProfiles,
+      defaults.activeLlmProfileId
+    );
+    const activeLlmProfile = llmProfiles.find((profile) => profile.id === activeLlmProfileId) || llmProfiles[0];
 
     return {
       apiPort: clampNumber(input.apiPort, defaults.apiPort, 1, 65535),
@@ -205,20 +302,19 @@ export class SystemSettingsService {
       autoBackupEnabled: toBoolean(input.autoBackupEnabled, defaults.autoBackupEnabled),
       backupSchedule: toStringValue(input.backupSchedule, defaults.backupSchedule) || defaults.backupSchedule,
       backupRetentionDays: clampNumber(input.backupRetentionDays, defaults.backupRetentionDays, 1, 365),
-      llmProvider: toStringValue(input.llmProvider, defaults.llmProvider) || defaults.llmProvider,
-      llmApiKey: toStringValue(input.llmApiKey, defaults.llmApiKey),
-      llmApiBaseUrl: toStringValue(input.llmApiBaseUrl, defaults.llmApiBaseUrl),
-      llmModel: toStringValue(input.llmModel, defaults.llmModel),
-      llmMaxRetries: clampNumber(input.llmMaxRetries, defaults.llmMaxRetries, 0, 10),
+      llmProvider: activeLlmProfile.provider,
+      llmApiKey: activeLlmProfile.apiKey,
+      llmApiBaseUrl: activeLlmProfile.apiBaseUrl,
+      llmModel: activeLlmProfile.model,
+      llmMaxRetries: activeLlmProfile.maxRetries,
+      llmProfiles,
+      activeLlmProfileId,
     };
   }
 
   getSettings(): SystemSettingsRecord {
     const stored = this.model.getAll() as Partial<SystemSettingsRecord>;
-    return this.normalize({
-      ...this.buildDefaults(),
-      ...stored,
-    });
+    return this.normalize(stored);
   }
 
   saveSettings(input: Partial<SystemSettingsRecord>): SystemSettingsRecord {

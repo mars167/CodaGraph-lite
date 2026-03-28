@@ -13,6 +13,11 @@ import type {
 } from './types';
 import crypto from 'crypto';
 
+const DUMMY_PASSWORD_HASH = crypto
+  .createHash('sha256')
+  .update('codagraph-lite-dummy-password')
+  .digest();
+
 export class AdminModel {
   private db = getConnection();
 
@@ -107,16 +112,16 @@ export class AdminModel {
    */
   verifyPassword(username: string, password: string): boolean {
     const admin = this.findByUsername(username);
-    if (!admin) {
-      return false;
-    }
-
     const passwordHash = crypto
       .createHash('sha256')
       .update(password)
-      .digest('hex');
+      .digest();
+    const expectedHash = admin
+      ? Buffer.from(admin.password_hash, 'hex')
+      : DUMMY_PASSWORD_HASH;
 
-    return admin.password_hash === passwordHash;
+    const isMatch = crypto.timingSafeEqual(passwordHash, expectedHash);
+    return Boolean(admin) && isMatch;
   }
 
   /**

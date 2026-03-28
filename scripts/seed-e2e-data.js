@@ -1,10 +1,45 @@
 const path = require('path');
-const Database = require('../server/node_modules/better-sqlite3');
+const crypto = require('crypto');
+const Database = require(require.resolve('better-sqlite3', {
+  paths: [path.join(__dirname, '..', 'server')],
+}));
 
 const dbPath = path.join(__dirname, '..', 'server', 'data', 'codagraph-lite.db');
 const db = new Database(dbPath);
+// Keep fixture data ahead of existing rows so the e2e smoke tests can locate it deterministically.
+const seededTimestamp = "datetime('now', 'localtime', '+1 day')";
+const seededAdminPasswordHash = crypto
+  .createHash('sha256')
+  .update('changeme')
+  .digest('hex');
 
-db.exec(`
+try {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS admin (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    last_login_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS oauth_installations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform TEXT NOT NULL CHECK(platform IN ('github', 'gitee', 'gitlab')),
+    auth_type TEXT DEFAULT 'oauth',
+    github_app_installation_id TEXT,
+    account_id TEXT NOT NULL,
+    account_name TEXT,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT,
+    token_expires_at DATETIME,
+    permissions TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+    updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
+  );
+
   CREATE TABLE IF NOT EXISTS repository (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     platform TEXT NOT NULL,
@@ -60,11 +95,23 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  INSERT OR REPLACE INTO admin (
+    id, username, password_hash, created_at, updated_at, last_login_at
+  ) VALUES (
+    1, 'admin', '${seededAdminPasswordHash}', ${seededTimestamp}, ${seededTimestamp}, NULL
+  );
+
+  INSERT OR REPLACE INTO oauth_installations (
+    id, platform, auth_type, account_id, account_name, access_token, permissions, is_active, created_at, updated_at
+  ) VALUES (
+    9001, 'github', 'oauth', 'mars167-e2e', 'mars167 E2E', 'e2e-token', 'repo', 1, ${seededTimestamp}, ${seededTimestamp}
+  );
+
   INSERT OR REPLACE INTO repository (
     id, platform, owner, name, full_name, installation_id, webhook_url, is_active, created_at, updated_at, last_analyzed_at
   ) VALUES (
-    9101, 'github', 'mars167', 'codagraph-lite', 'mars167/codagraph-lite',
-    9001, 'https://example.com/webhook', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    9101, 'github', 'mars167', 'codagraph-lite-e2e-fixture', 'mars167/codagraph-lite-e2e-fixture',
+    9001, 'https://example.com/webhook', 1, ${seededTimestamp}, ${seededTimestamp}, ${seededTimestamp}
   );
 
   INSERT OR REPLACE INTO analysis (
@@ -72,19 +119,21 @@ db.exec(`
     status, analysis_result, comment_count, file_count, issue_count, started_at, completed_at,
     error_message, created_at, updated_at
   ) VALUES (
-    9201, 'github', 'mars167', 'codagraph-lite', 42, 'E2E validation PR', 'mars167',
-    'main', 'feature/e2e', 'completed', '{}', 3, 5, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
-    NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    9201, 'github', 'mars167', 'codagraph-lite-e2e-fixture', 42, 'E2E validation PR', 'mars167',
+    'main', 'feature/e2e', 'completed', '{}', 3, 5, 1, ${seededTimestamp}, ${seededTimestamp},
+    NULL, ${seededTimestamp}, ${seededTimestamp}
   );
 
   INSERT OR REPLACE INTO jobs (
     id, type, payload, status, priority, attempts, max_attempts,
     error_message, created_at, updated_at, started_at, completed_at
   ) VALUES (
-    9301, 'pr_analysis', '{"platform":"github","repo_name":"codagraph-lite","pr_number":"42"}',
-    'completed', 3, 1, 3, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    9301, 'pr_analysis', '{"platform":"github","repo_name":"codagraph-lite-e2e-fixture","pr_number":"42"}',
+    'completed', 3, 1, 3, NULL, ${seededTimestamp}, ${seededTimestamp}, ${seededTimestamp}, ${seededTimestamp}
   );
-`);
+  `);
 
-console.log(`Seeded E2E data into ${dbPath}`);
-db.close();
+  console.log(`Seeded E2E data into ${dbPath}`);
+} finally {
+  db.close();
+}

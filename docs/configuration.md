@@ -392,6 +392,8 @@ WORKSPACE_ROOT=/opt/codagraph-lite/workspace
 
 ### LLM 提供商
 
+这些环境变量会初始化后台里的默认 LLM 配置。需要多套 LLM API 时，可以在设置页继续新增、保存并切换。
+
 | 环境变量 | 默认值 | 可选值 |
 |-----------|---------|--------|
 | `LLM_PROVIDER` | `openai` | `openai`, `anthropic`, `deepseek`, `自定义` |
@@ -611,9 +613,9 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 **配置示例**：
 ```bash
 # 开发环境
-CORS_ORIGINS=http://localhost:3000
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 
-# 生产环境（多个域名）
+# 生产环境（多个可信域名）
 CORS_ORIGINS=https://app1.com,https://app2.com
 
 # 允许所有（不推荐生产环境）

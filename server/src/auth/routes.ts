@@ -49,22 +49,15 @@ router.post('/login', async (req: Request, res: Response) => {
     const adminModel = getAdminModel();
     const activityLogModel = getActivityLogModel();
 
-    // 验证密码
     const isValid = adminModel.verifyPassword(username, password);
+    const admin = adminModel.findByUsername(username);
 
-    if (!isValid) {
-      // 记录失败登录尝试
-      activityLogModel.logFailedLogin(username, ipAddress, userAgent);
+    if (!isValid || !admin) {
+      if (admin) {
+        activityLogModel.logFailedLogin(admin.id, username, ipAddress, userAgent);
+      }
       return res.status(401).json({
         error: '用户名或密码错误',
-      });
-    }
-
-    // 获取管理员信息
-    const admin = adminModel.findByUsername(username);
-    if (!admin) {
-      return res.status(401).json({
-        error: '用户不存在',
       });
     }
 

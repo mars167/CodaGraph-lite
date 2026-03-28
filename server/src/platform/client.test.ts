@@ -1,4 +1,4 @@
-import { GiteeApiClient, GitLabApiClient } from './client';
+import { GiteeApiClient, GitHubApiClient, GitLabApiClient } from './client';
 
 describe('GiteeApiClient', () => {
   afterEach(() => {
@@ -167,5 +167,47 @@ describe('GitLabApiClient', () => {
         default_branch: 'main',
       }),
     ]);
+  });
+});
+
+describe('GitHubApiClient', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('includes request cause metadata when fetch throws before receiving a response', async () => {
+    const networkError = new TypeError('fetch failed', {
+      cause: {
+        code: 'ENOTFOUND',
+        syscall: 'getaddrinfo',
+        hostname: 'api.github.com',
+      },
+    });
+
+    jest.spyOn(global, 'fetch').mockRejectedValue(networkError);
+
+    const client = new GitHubApiClient('token');
+
+    await expect(client.getPullRequest('mars167', 'CodaGraph-lite', 12)).rejects.toThrow(
+      'GET https://api.github.com/repos/mars167/CodaGraph-lite/pulls/12 失败: fetch failed | code=ENOTFOUND | syscall=getaddrinfo | hostname=api.github.com'
+    );
+  });
+
+  it('includes status code and response body preview when the platform returns an error response', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ message: 'Bad credentials' }), {
+        status: 401,
+        statusText: 'Unauthorized',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+    );
+
+    const client = new GitHubApiClient('token');
+
+    await expect(client.getPullRequest('mars167', 'CodaGraph-lite', 12)).rejects.toThrow(
+      'GET https://api.github.com/repos/mars167/CodaGraph-lite/pulls/12 失败: 401 Unauthorized | body={"message":"Bad credentials"}'
+    );
   });
 });

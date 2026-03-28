@@ -413,6 +413,16 @@ export interface MemoryInfo {
   swapPercentage?: number;
 }
 
+export interface LlmProfile {
+  id: string;
+  name: string;
+  provider: string;
+  apiKey: string;
+  apiBaseUrl: string;
+  model: string;
+  maxRetries: number;
+}
+
 // 系统设置相关类型
 export interface SystemSettings {
   // 环境变量
@@ -454,6 +464,8 @@ export interface SystemSettings {
   llmApiBaseUrl: string;
   llmModel: string;
   llmMaxRetries: number;
+  llmProfiles: LlmProfile[];
+  activeLlmProfileId: string;
 }
 
 export interface BackupInfo {

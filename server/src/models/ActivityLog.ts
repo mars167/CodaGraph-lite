@@ -112,10 +112,9 @@ export class ActivityLogModel {
   /**
    * 记录失败登录尝试
    */
-  logFailedLogin(username: string, ipAddress?: string, userAgent?: string): ActivityLog {
-    // 对于失败登录，admin_id 为 null，使用 0 占位
+  logFailedLogin(adminId: number, username: string, ipAddress?: string, userAgent?: string): ActivityLog {
     return this.create({
-      admin_id: 0,
+      admin_id: adminId,
       action: 'failed_login',
       ip_address: ipAddress,
       user_agent: userAgent,

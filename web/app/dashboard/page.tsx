@@ -1143,8 +1143,8 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-        <Card className="rounded-[28px]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+        <Card className="min-w-0 rounded-[28px]">
           <CardHeader>
             <CardTitle>最近执行的作业</CardTitle>
           </CardHeader>
@@ -1184,21 +1184,21 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-[28px]">
+        <Card className="min-w-0 rounded-[28px]">
           <CardHeader>
             <CardTitle>工作空间仓库</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {workspaceRepositories.length > 0 ? (
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 2xl:grid-cols-2">
                 {workspaceRepositories.map((repo) => (
                   <Link
                     key={repo.id}
                     href={`/dashboard/repositories/${repo.id}`}
-                    className="group rounded-3xl border border-slate-200/80 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.16),_transparent_40%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.92))] p-4 transition hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-sm dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.18),_transparent_40%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.9))]"
+                    className="group min-w-0 overflow-hidden rounded-3xl border border-slate-200/80 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.16),_transparent_40%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.92))] p-4 transition hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-sm dark:border-slate-800 dark:bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.18),_transparent_40%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.9))]"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold text-slate-950 group-hover:text-cyan-700 dark:text-slate-100 dark:group-hover:text-cyan-300">
                           {repo.fullName}
                         </p>

@@ -12,6 +12,7 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import type { Request, Response } from 'express';
 import { logger } from './utils/logger';
 import { getQueueService } from './jobs/QueueService';
 import { CodeReviewWorker } from './jobs/CodeReviewWorker';
@@ -26,7 +27,7 @@ import analysisRoutes from './routes/analysisRoutes';
 import settingsRoutes from './routes/settingsRoutes';
 import cookieParser from 'cookie-parser';
 import cors, { type CorsOptions } from 'cors';
-import { getConfig, printConfigSummary, ConfigurationError } from './config';
+import { getConfig, printConfigSummary, ConfigurationError, isCorsOriginAllowed } from './config';
 import { getMemoryMonitor } from './config/memory';
 import { getResourceAllocator } from './config/resource';
 import { RepositoryWatchService } from './services/RepositoryWatchService';
@@ -108,7 +109,7 @@ async function main() {
           callback(null, true);
           return;
         }
-        if (config.cors.corsOrigins.includes(origin)) {
+        if (isCorsOriginAllowed(config.cors.corsOrigins, origin)) {
           callback(null, true);
           return;
         }
@@ -177,7 +178,7 @@ async function main() {
     // ============================================
     // 6. 健康检查
     // ============================================
-    app.get('/health', (_req, res) => {
+    const respondHealth = (_req: Request, res: Response) => {
       const memoryStatus = memoryMonitor.canStartJob();
 
       res.json({
@@ -191,7 +192,10 @@ async function main() {
           rss: Math.round(process.memoryUsage().rss / 1024 / 1024),
         },
       });
-    });
+    };
+
+    app.get('/health', respondHealth);
+    app.get('/api/health', respondHealth);
 
     // ============================================
     // 7. 优雅关闭
