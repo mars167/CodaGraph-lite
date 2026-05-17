@@ -12,6 +12,76 @@ const seededAdminPasswordHash = crypto
   .createHash('sha256')
   .update('changeme')
   .digest('hex');
+const seededReportPayload = {
+  generatedAt: new Date().toISOString(),
+  jobId: 9301,
+  riskLevel: 'low',
+  confidence: 'low',
+  reviewMode: 'normal',
+  summary: 'E2E report with low-signal structured metadata keeps markdown visible.',
+  reportMarkdown: [
+    '# E2E Raw Markdown',
+    '',
+    'E2E raw markdown body should be visible by default.',
+    '',
+    '<script>window.__codagraphXss = true</script>',
+    '',
+    '[unsafe link](javascript:alert(1))',
+  ].join('\n'),
+  files: [
+    {
+      path: 'src/e2e-low.ts',
+      status: 'modified',
+      additions: 1,
+      deletions: 0,
+      changes: 1,
+    },
+  ],
+  fileReviews: [
+    {
+      filePath: 'src/e2e-low.ts',
+      status: 'modified',
+      language: 'typescript',
+      fileSummary: 'Metadata-only file context used by report-page E2E.',
+      findings: [],
+      patch: '@@ -1,1 +1,2 @@\n export const value = 1;\n+export const lowSignal = true;\n',
+      semanticContext: {
+        changedSymbols: [],
+        relatedSnippets: [],
+        impactReferences: [],
+        relatedTests: [],
+        contextEngineAvailable: false,
+      },
+      usedFallback: true,
+    },
+  ],
+  findings: [
+    {
+      filePath: 'src/e2e-low.ts',
+      lineNumber: 2,
+      severity: 'low',
+      category: 'style',
+      title: 'Low-signal E2E finding',
+      description: 'This low-severity finding should not collapse the raw markdown by default.',
+      suggestion: 'Keep the raw markdown visible unless high-signal findings exist.',
+      source: 'e2e',
+    },
+  ],
+  coverage: {
+    totalFiles: 1,
+    reviewedFiles: 1,
+    skippedFiles: [],
+    partialReview: false,
+  },
+  nextActions: [],
+  suppressedFindings: [],
+  trace: {
+    mode: 'normal',
+    promptVersion: 'e2e',
+    generatedAt: new Date().toISOString(),
+    entries: [],
+  },
+};
 
 try {
   db.exec(`
@@ -132,6 +202,12 @@ try {
     'completed', 3, 1, 3, NULL, ${seededTimestamp}, ${seededTimestamp}, ${seededTimestamp}, ${seededTimestamp}
   );
   `);
+
+  db.prepare(`
+    UPDATE analysis
+    SET analysis_result = ?, comment_count = ?, file_count = ?, issue_count = ?
+    WHERE id = 9201
+  `).run(JSON.stringify(seededReportPayload), 3, 1, seededReportPayload.findings.length);
 
   console.log(`Seeded E2E data into ${dbPath}`);
 } finally {

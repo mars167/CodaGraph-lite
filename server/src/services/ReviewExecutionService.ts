@@ -20,6 +20,7 @@ import { getConfig } from '../config';
 import { isAuthenticationFailure } from '../utils/authFailures';
 import { resolveRepositoryCoordinates } from '../utils/repositoryCoordinates';
 import { sanitizeLogText } from '../utils/redactSensitive';
+import { sanitizeMarkdownForStorage } from '../utils/markdownSanitizer';
 import {
   AdvancedReviewEngine,
   type ReviewFileInput,
@@ -679,7 +680,7 @@ export class ReviewExecutionService {
 
     fallbackFindings = dedupeFindings(fallbackFindings);
 
-    const reportMarkdown = buildMarkdownReport(pullRequest, findings, riskLevel, summary, {
+    const reportMarkdown = sanitizeMarkdownForStorage(buildMarkdownReport(pullRequest, findings, riskLevel, summary, {
       mode: advancedReview.mode,
       reviewMode,
       confidence: advancedReview.confidence,
@@ -691,7 +692,7 @@ export class ReviewExecutionService {
       skippedFiles: advancedReview.coverage.skippedFiles.length,
       nextActions: advancedReview.nextActions,
       traceEntryCount: advancedReview.trace?.entries.length || 0,
-    });
+    }));
     const reportPayload = {
       generatedAt: new Date().toISOString(),
       jobId,

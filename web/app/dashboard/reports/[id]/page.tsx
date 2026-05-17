@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
@@ -41,6 +41,37 @@ const confidenceBadgeMap: Record<NonNullable<ReviewReportDetail['confidence']>, 
   low: 'default',
 };
 
+const highSignalSeverities = new Set<ReviewFinding['severity']>(['critical', 'high']);
+const reportMarkdownRemarkPlugins = [remarkGfm];
+const reportMarkdownAllowedElements = [
+  'a',
+  'blockquote',
+  'br',
+  'code',
+  'del',
+  'em',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'hr',
+  'input',
+  'li',
+  'ol',
+  'p',
+  'pre',
+  'strong',
+  'table',
+  'tbody',
+  'td',
+  'th',
+  'thead',
+  'tr',
+  'ul',
+] as const;
+
 const lineToneMap: Record<ReviewReportCodeLine['type'], string> = {
   add: 'bg-emerald-50/80 dark:bg-emerald-950/20',
   delete: 'bg-rose-50/75 dark:bg-rose-950/20',
@@ -53,6 +84,10 @@ const formatDate = (value?: string) => formatDateTime(value);
 function getFindingLineLabel(finding: ReviewFinding) {
   const resolved = finding.resolvedLineNumber || finding.lineNumber;
   return resolved ? `${finding.filePath}:${resolved}` : finding.filePath;
+}
+
+function isHighSignalFinding(finding: ReviewFinding) {
+  return highSignalSeverities.has(finding.severity);
 }
 
 function renderFindingCard(finding: ReviewFinding, key: string, compact = false) {
@@ -278,6 +313,7 @@ export default function ReviewReportPage() {
   const [report, setReport] = useState<ReviewReportDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [showReportMarkdown, setShowReportMarkdown] = useState(false);
 
   const loadReport = useCallback(async () => {
     if (!reportId) {
@@ -298,6 +334,10 @@ export default function ReviewReportPage() {
   useEffect(() => {
     void loadReport();
   }, [loadReport]);
+
+  useEffect(() => {
+    setShowReportMarkdown(false);
+  }, [reportId]);
 
   const overallFindings = useMemo(
     () => report?.findings.filter((finding) => finding.filePath === 'PR_OVERALL') || [],
@@ -321,6 +361,10 @@ export default function ReviewReportPage() {
   const traceEntries = report?.trace?.entries || [];
   const skippedFiles = report?.coverage?.skippedFiles || [];
   const suppressedCount = report?.suppressedFindings?.length || 0;
+  const hasRenderedFindingContent = overallFindings.length > 0 || highlightedFileContexts.length > 0 || (report?.findings.length || 0) > 0;
+  const hasHighSignalRenderedFindings = hasRenderedFindingContent && (report?.findings || []).some(isHighSignalFinding);
+  const hasStructuredInsights = hasHighSignalRenderedFindings || traceEntries.length > 0;
+  const shouldRenderMarkdown = Boolean(report?.reportMarkdown) && (!hasStructuredInsights || showReportMarkdown);
 
   const handleRetry = useCallback(async () => {
     if (!reportId) {
@@ -448,20 +492,39 @@ export default function ReviewReportPage() {
             <div className="border-b border-slate-200/80 px-6 py-5 dark:border-slate-800/80">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Rendered Markdown</p>
-                  <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-slate-100">PR 审查报告</h2>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Raw Report</p>
+                  <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-slate-100">原始 Markdown 报告</h2>
                 </div>
-                <span className="rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                  GitHub-style prose
-                </span>
+                {report.reportMarkdown ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowReportMarkdown((current) => !current)}
+                    className="inline-flex items-center justify-center rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    {shouldRenderMarkdown ? '收起原始报告' : '查看原始报告'}
+                  </button>
+                ) : (
+                  <span className="rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                    暂无 Markdown
+                  </span>
+                )}
               </div>
             </div>
             <div className="px-6 py-6">
-              {report.reportMarkdown ? (
+              {shouldRenderMarkdown ? (
                 <div className="[&_a]:text-teal-700 [&_a]:no-underline hover:[&_a]:underline [&_blockquote]:rounded-r-2xl [&_blockquote]:border-l-4 [&_blockquote]:border-teal-400 [&_blockquote]:bg-teal-50/70 [&_blockquote]:px-5 [&_blockquote]:py-3 [&_blockquote]:text-slate-700 dark:[&_blockquote]:bg-teal-950/25 dark:[&_blockquote]:text-slate-200 [&_code]:rounded-md [&_code]:bg-slate-100 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.92em] [&_code]:font-medium [&_code]:text-slate-700 dark:[&_code]:bg-slate-800 dark:[&_code]:text-slate-100 [&_h1]:mb-4 [&_h1]:text-3xl [&_h1]:font-semibold [&_h2]:mt-10 [&_h2]:border-b [&_h2]:border-slate-200 [&_h2]:pb-3 [&_h2]:text-xl [&_h2]:font-semibold dark:[&_h2]:border-slate-800 [&_h3]:mt-7 [&_h3]:text-lg [&_h3]:font-semibold [&_li]:my-1.5 [&_ol]:pl-5 [&_p]:my-4 [&_p]:leading-7 [&_pre]:overflow-x-auto [&_pre]:rounded-2xl [&_pre]:border [&_pre]:border-slate-800 [&_pre]:bg-slate-950 [&_pre]:px-4 [&_pre]:py-4 [&_pre]:text-[13px] [&_pre]:leading-6 [&_pre]:text-slate-100 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_table]:block [&_table]:overflow-x-auto [&_table]:rounded-2xl [&_table]:border [&_table]:border-slate-200 dark:[&_table]:border-slate-800 [&_tbody_tr:nth-child(odd)]:bg-slate-50/80 dark:[&_tbody_tr:nth-child(odd)]:bg-slate-900/50 [&_td]:border-t [&_td]:border-slate-200 [&_td]:px-3 [&_td]:py-2 dark:[&_td]:border-slate-800 [&_th]:bg-slate-100 [&_th]:px-3 [&_th]:py-2 [&_th]:text-left dark:[&_th]:bg-slate-900">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  <ReactMarkdown
+                    allowedElements={reportMarkdownAllowedElements}
+                    remarkPlugins={reportMarkdownRemarkPlugins}
+                    skipHtml
+                    urlTransform={defaultUrlTransform}
+                  >
                     {report.reportMarkdown}
                   </ReactMarkdown>
+                </div>
+              ) : report.reportMarkdown ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 px-4 py-10 text-center text-sm leading-6 text-slate-500 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400">
+                  结构化报告已经展示在当前页面，原始 Markdown 已折叠。需要时可展开查看完整生成文本。
                 </div>
               ) : (
                 <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
