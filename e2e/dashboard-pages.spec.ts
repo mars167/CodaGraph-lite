@@ -52,3 +52,20 @@ test('history page renders seeded analysis entry', async ({ page }) => {
   await expect(page.getByText('E2E validation PR')).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
+
+test('report page keeps low-signal markdown visible and sanitizes unsafe markdown', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+
+  await page.goto('/dashboard/reports/9201');
+  await expect(page.getByRole('heading', { name: 'Review 报告 #9201' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '原始 Markdown 报告' })).toBeVisible();
+  await expect(page.getByText('E2E raw markdown body should be visible by default.')).toBeVisible();
+  await expect(page.getByRole('button', { name: '收起原始报告' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'unsafe link' })).toHaveAttribute('href', /#$/);
+  await expect(page.locator('script', { hasText: 'window.__codagraphXss' })).toHaveCount(0);
+
+  const xssFlag = await page.evaluate(() => (window as unknown as { __codagraphXss?: boolean }).__codagraphXss);
+  expect(xssFlag).toBeUndefined();
+  expect(pageErrors).toEqual([]);
+});

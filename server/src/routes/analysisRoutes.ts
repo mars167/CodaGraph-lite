@@ -35,6 +35,7 @@ import {
 import { getOAuthInstallationService } from '../services/OAuthInstallationService';
 import type { ReviewTracePayload } from '../review/reviewTrace';
 import type { ReviewCoverageSummary, ReviewConfidence, SuppressedFinding } from '../review/reviewPrioritization';
+import { sanitizeMarkdownForStorage } from '../utils/markdownSanitizer';
 
 const router = express.Router();
 
@@ -234,7 +235,13 @@ router.get('/pull-requests', async (req: Request, res: Response) => {
 
 function parseReportPayload(raw: string): StoredReviewReportPayload | null {
   try {
-    return JSON.parse(raw) as StoredReviewReportPayload;
+    const payload = JSON.parse(raw) as StoredReviewReportPayload;
+    return {
+      ...payload,
+      reportMarkdown: typeof payload.reportMarkdown === 'string'
+        ? sanitizeMarkdownForStorage(payload.reportMarkdown)
+        : payload.reportMarkdown,
+    };
   } catch {
     return null;
   }

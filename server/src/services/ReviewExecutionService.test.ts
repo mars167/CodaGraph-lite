@@ -366,6 +366,44 @@ describe('ReviewExecutionService', () => {
     expect(persistedPayload.reportMarkdown).toContain('- Improve Trace: 1');
   });
 
+  it('sanitizes generated markdown before persisting the report payload', async () => {
+    platformApiClientMock.getPullRequest.mockResolvedValue({
+      number: 42,
+      title: '<img src=x onerror=alert(1)> Improve review engine',
+      head: {
+        sha: 'head-sha',
+        ref: 'feature/review',
+        repo: { full_name: 'mars/lite' },
+      },
+      base: {
+        sha: 'base-sha',
+        ref: 'main',
+        repo: { full_name: 'mars/lite' },
+      },
+    });
+
+    const reviewResult = createDefaultReviewResult();
+    reviewResult.allFindings[0].description = '<script>alert(1)</script> [details](javascript:alert(1))';
+    reviewEngineReviewMock.mockResolvedValueOnce(reviewResult);
+
+    const service = new ReviewExecutionService();
+    await service.execute(1002, JSON.stringify({
+      platform: 'github',
+      repo_name: 'mars/lite',
+      pr_number: '42',
+      repository_id: '7',
+      analysis_id: '13',
+      analysis_job_id: '17',
+    }));
+
+    const persistedPayload = JSON.parse(analysisModelMock.markComplete.mock.calls[0][1]);
+    expect(persistedPayload.reportMarkdown).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(persistedPayload.reportMarkdown).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(persistedPayload.reportMarkdown).toContain('[details](#)');
+    expect(persistedPayload.reportMarkdown).not.toContain('<script>');
+    expect(persistedPayload.reportMarkdown).not.toContain('javascript:alert');
+  });
+
   it('falls back to single inline comments and a summary comment when GitHub batch review fails', async () => {
     commentClientMock.submitReview.mockRejectedValueOnce(new Error('review batch rejected'));
     const service = new ReviewExecutionService();
